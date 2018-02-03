@@ -85,7 +85,7 @@ Entity.prototype.addState = function(key) {
 
   let input = document.createElement('input');
   input.type = 'text';
-  input.value = '???';
+  input.value = '0';
   td.appendChild(input);
 
   tr.appendChild(td);
@@ -105,7 +105,16 @@ Entity.prototype.state = function(key, value, isTextarea) {
   return this.existingState(key, value);
 }
 
-tmp = `function(rcv) {
+src = {}
+
+src['vtable.allocate'] = `function(rcv) {
+  let ent = new Entity();
+
+  ent.state('vtable', rcv.state('id'));
+  return ent;
+}`;
+
+src['vtable.delegated'] = `function(rcv) {
   let newVT = new Entity();
   
   if (rcv === '0') {
@@ -123,17 +132,71 @@ function compile(src) {
   return new Function('return '+src)();
 }
 
-vtable_delegated = new Entity();
-vtable_delegated.state('name', 'vtable.delegated');
-vtable_delegated.state('code', tmp, true);
-
-vtable_delegated = compile(vtable_delegated.state('code'));
+vtable_allocate = compile(src['vtable.allocate']);
+vtable_delegated = compile(src['vtable.delegated']);
 
 vtable_vt = vtable_delegated('0');
 vtable_vt.state('name', 'vtable vtable');
+vtable_vt.state('vtable', vtable_vt.state('id'));
 
 object_vt = vtable_delegated(vtable_vt);
 object_vt.state('name', 'object vtable');
 
 vtable_vt.state('parent', object_vt.state('id'));
 
+function_vt = vtable_delegated(vtable_vt);
+function_vt.state('name', 'JS function vtable');
+
+tmp = vtable_allocate(function_vt);
+tmp.state('name', 'vtable.allocate');
+tmp.state('code', src['vtable.allocate'], true);
+
+tmp = vtable_allocate(function_vt);
+tmp.state('name', 'vtable.delegated');
+tmp.state('code', src['vtable.delegated'], true);
+
+Entity.prototype.restoreDims = function() {
+  if (this.state('name') === 'vtable vtable') {
+    this.div.style.width = '5cm';
+    this.div.style.height = '5cm';
+  }
+  if (this.state('name') === 'object vtable') {
+    this.div.style.width = '267px';
+    this.div.style.height = '199px';
+  }
+  if (this.state('name') === 'JS function vtable') {
+    this.div.style.width = '260px';
+    this.div.style.height = '211px';
+  }
+  if (this.state('name') === 'vtable.allocate') {
+    this.div.style.width = '439px';
+    this.div.style.height = '300px';
+  }
+  if (this.state('name') === 'vtable.delegated') {
+    this.div.style.width = '476px';
+    this.div.style.height = '350px';
+  }
+}
+
+for (let e of deref)
+  if (e !== undefined) e.restoreDims();
+
+function saveDims() {
+  let dims = new Map();
+
+  for (let e of deref) {
+    if (e === undefined) continue;
+    const width = e.div.style.width;
+    const height = e.div.style.height;
+    dims.set(e.state('name'), [width,height]);
+  }
+
+  dimsSetters = Array.from(dims).map(([k,[w,h]]) =>
+`if (this.state('name') === '${k}') {
+  this.div.style.width = '${w}';
+  this.div.style.height = '${h}';
+}`
+  );
+
+  return dimsSetters.join('\n');
+}
