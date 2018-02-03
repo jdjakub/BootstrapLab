@@ -3,7 +3,7 @@ Visually bootstrap a self-sustaining system, and take it from there.
 
 Initial substrate system is the "Id" object system from the paper [Open, Reusable Object Models](www.vpri.org/pdf/tr2006003a_objmod.pdf).
 
-More info: https://programmingmadecomplicated.wordpress.com/2018/01/18/3-hacking-together-orom-domctrlshiftj/
+More info at my [blog](https://programmingmadecomplicated.wordpress.com/category/programming/bootstraplab/).
 
 ## How to use
 Open `orom.html` in the browser (I use Chrome). Open the JS console (try Ctrl+Shift+J or F12) and play around.
