@@ -132,8 +132,9 @@ function compile(src) {
   return new Function('return '+src)();
 }
 
-vtable_allocate = compile(src['vtable.allocate']);
+vtable_allocate  = compile(src['vtable.allocate']);
 vtable_delegated = compile(src['vtable.delegated']);
+vtable_lookup    = compile(src['vtable.lookup']);
 
 vtable_vt = vtable_delegated('0');
 vtable_vt.state('name', 'vtable vtable');
@@ -147,34 +148,92 @@ vtable_vt.state('parent', object_vt.state('id'));
 function_vt = vtable_delegated(vtable_vt);
 function_vt.state('name', 'JS function vtable');
 
+src['vtable.addMethod'] = `function(rcv, name, impl) {
+  const symbol = '-'+name;
+  return rcv.state(symbol, impl.state('id'));
+}`;
+vtable_addMethod = compile(src['vtable.addMethod']);
+tmp = vtable_allocate(function_vt);
+tmp.state('name', 'vtable.addMethod');
+tmp.state('code', src['vtable.addMethod'], true);
+vtable_addMethod(vtable_vt, 'addMethod', tmp);
+
+src['vtable.lookup'] = `function(rcv, name) {
+  const symbol = '-'+name;
+  const impl = rcv.state(symbol);
+  const parent = rcv.state('parent');
+  if (impl === '0' && parent !== '0')
+    return send(parent, 'lookup', name);
+  else
+    return deref[impl];
+}`;
+vtable_lookup = compile(src['vtable.lookup']);
+tmp = vtable_allocate(function_vt);
+tmp.state('name', 'vtable.lookup');
+tmp.state('code', src['vtable.lookup'], true);
+vtable_addMethod(vtable_vt, 'lookup', tmp);
+
+src['send'] = `function send(rcv, selector, ...args) {
+  const impl = bind(rcv, selector);
+  const func = compile(impl.state('code'));
+  return func(rcv, ...args);
+}`;
+send = compile(src['send']);
+
+src['bind'] = `function bind(rcv, selector) {
+  if (rcv === vtable_vt && selector === 'lookup') {
+    return vtable_lookup(rcv, selector);
+  } else {
+    return send(deref[rcv.state('vtable')], 'lookup', selector);
+  }
+}`;
+bind = compile(src['bind']);
+
 tmp = vtable_allocate(function_vt);
 tmp.state('name', 'vtable.allocate');
 tmp.state('code', src['vtable.allocate'], true);
+send(vtable_vt, 'addMethod', 'allocate', tmp);
 
-tmp = vtable_allocate(function_vt);
-tmp.state('name', 'vtable.delegated');
-tmp.state('code', src['vtable.delegated'], true);
+tmp = send(function_vt, 'allocate');
+tmp.state('name', 'bind');
+tmp.state('code', src['bind'], true);
+
+tmp = send(function_vt, 'allocate');
+tmp.state('name', 'send');
+tmp.state('code', src['send'], true);
 
 Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable vtable') {
-    this.div.style.width = '5cm';
-    this.div.style.height = '5cm';
+    this.div.style.width = '390px';
+    this.div.style.height = '204px';
   }
   if (this.state('name') === 'object vtable') {
-    this.div.style.width = '267px';
-    this.div.style.height = '199px';
+    this.div.style.width = '188px';
+    this.div.style.height = '129px';
   }
   if (this.state('name') === 'JS function vtable') {
-    this.div.style.width = '260px';
-    this.div.style.height = '211px';
+    this.div.style.width = '187px';
+    this.div.style.height = '136px';
+  }
+  if (this.state('name') === 'vtable.addMethod') {
+    this.div.style.width = '450px';
+    this.div.style.height = '200px';
+  }
+  if (this.state('name') === 'vtable.lookup') {
+    this.div.style.width = '413px';
+    this.div.style.height = '269px';
   }
   if (this.state('name') === 'vtable.allocate') {
-    this.div.style.width = '439px';
-    this.div.style.height = '300px';
+    this.div.style.width = '413px';
+    this.div.style.height = '227px';
   }
-  if (this.state('name') === 'vtable.delegated') {
-    this.div.style.width = '476px';
-    this.div.style.height = '350px';
+  if (this.state('name') === 'bind') {
+    this.div.style.width = '603px';
+    this.div.style.height = '239px';
+  }
+  if (this.state('name') === 'send') {
+    this.div.style.width = '600px';
+    this.div.style.height = '274px';
   }
 }
 
