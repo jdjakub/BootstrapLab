@@ -1,6 +1,8 @@
 # BootstrapLab
 Visually bootstrap a self-sustaining system, and take it from there.
 
+Part of an [effort](https://github.com/d-cook/SomethingNew) to rescue the usage and creation of computer software from its current dismal state.
+
 Initial substrate system is the "Id" object system from the paper [Open, Reusable Object Models](www.vpri.org/pdf/tr2006003a_objmod.pdf).
 
 More info at my [blog](https://programmingmadecomplicated.wordpress.com/category/programming/bootstraplab/).

@@ -204,8 +204,8 @@ tmp.state('code', src['send'], true);
 
 Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable vtable') {
-    this.div.style.width = '390px';
-    this.div.style.height = '204px';
+    this.div.style.width = '371px';
+    this.div.style.height = '218px';
   }
   if (this.state('name') === 'object vtable') {
     this.div.style.width = '188px';
@@ -216,24 +216,24 @@ Entity.prototype.restoreDims = function() {
     this.div.style.height = '136px';
   }
   if (this.state('name') === 'vtable.addMethod') {
-    this.div.style.width = '450px';
-    this.div.style.height = '200px';
+    this.div.style.width = '363px';
+    this.div.style.height = '168px';
   }
   if (this.state('name') === 'vtable.lookup') {
-    this.div.style.width = '413px';
-    this.div.style.height = '269px';
+    this.div.style.width = '334px';
+    this.div.style.height = '224px';
   }
   if (this.state('name') === 'vtable.allocate') {
-    this.div.style.width = '413px';
-    this.div.style.height = '227px';
+    this.div.style.width = '325px';
+    this.div.style.height = '182px';
   }
   if (this.state('name') === 'bind') {
-    this.div.style.width = '603px';
-    this.div.style.height = '239px';
+    this.div.style.width = '469px';
+    this.div.style.height = '203px';
   }
   if (this.state('name') === 'send') {
-    this.div.style.width = '600px';
-    this.div.style.height = '274px';
+    this.div.style.width = '369px';
+    this.div.style.height = '190px';
   }
 }
 
