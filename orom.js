@@ -163,7 +163,7 @@ src['vtable.lookup'] = `function(rcv, name) {
   const impl = rcv.state(symbol);
   const parent = rcv.state('parent');
   if (impl === '0' && parent !== '0')
-    return send(parent, 'lookup', name);
+    return send(deref[parent], 'lookup', name);
   else
     return deref[impl];
 }`;
@@ -220,8 +220,8 @@ Entity.prototype.restoreDims = function() {
     this.div.style.height = '168px';
   }
   if (this.state('name') === 'vtable.lookup') {
-    this.div.style.width = '334px';
-    this.div.style.height = '224px';
+    this.div.style.width = '377px';
+    this.div.style.height = '226px';
   }
   if (this.state('name') === 'vtable.allocate') {
     this.div.style.width = '325px';
