@@ -173,14 +173,14 @@ tmp.state('name', 'vtable.lookup');
 tmp.state('code', src['vtable.lookup'], true);
 vtable_addMethod(vtable_vt, 'lookup', tmp);
 
-src['send'] = `function send(rcv, selector, ...args) {
+src['send'] = `function(rcv, selector, ...args) {
   const impl = bind(rcv, selector);
   const func = compile(impl.state('code'));
   return func(rcv, ...args);
 }`;
 send = compile(src['send']);
 
-src['bind'] = `function bind(rcv, selector) {
+src['bind'] = `function(rcv, selector) {
   if (rcv === vtable_vt && selector === 'lookup') {
     return vtable_lookup(rcv, selector);
   } else {
