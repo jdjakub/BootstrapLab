@@ -24,7 +24,7 @@ Entity = function() { // Because "Object" is taken, as usual...
   this.div = div;
 
   this.state('id', Entity.nextId.toString());
-  deref[Entity.nextId] = this;
+  id_to_entity[Entity.nextId] = this;
   Entity.nextId++;
 };
 
@@ -38,7 +38,12 @@ Entity.defaultStyle = new Map([
 ]);
 
 Entity.nextId = 1;
-deref = [];
+id_to_entity = [];
+function deref(id) {
+  const e = id_to_entity[id];
+  if (e === undefined) throw "There is no such entity "+id;
+  else return e;
+}
 
 Entity.prototype = {};
 
@@ -163,9 +168,9 @@ src['vtable.lookup'] = `function(rcv, name) {
   const impl = rcv.state(symbol);
   const parent = rcv.state('parent');
   if (impl === '0' && parent !== '0')
-    return send(deref[parent], 'lookup', name);
+    return send(deref(parent), 'lookup', name);
   else
-    return deref[impl];
+    return deref(impl);
 }`;
 vtable_lookup = compile(src['vtable.lookup']);
 tmp = vtable_allocate(function_vt);
@@ -184,7 +189,7 @@ src['bind'] = `function(rcv, selector) {
   if (rcv === vtable_vt && selector === 'lookup') {
     return vtable_lookup(rcv, selector);
   } else {
-    return send(deref[rcv.state('vtable')], 'lookup', selector);
+    return send(deref(rcv.state('vtable')), 'lookup', selector);
   }
 }`;
 bind = compile(src['bind']);
@@ -237,13 +242,13 @@ Entity.prototype.restoreDims = function() {
   }
 }
 
-for (let e of deref)
+for (let e of id_to_entity)
   if (e !== undefined) e.restoreDims();
 
 function saveDims() {
   let dims = new Map();
 
-  for (let e of deref) {
+  for (let e of id_to_entity) {
     if (e === undefined) continue;
     const width = e.div.style.width;
     const height = e.div.style.height;
