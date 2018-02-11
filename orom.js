@@ -10,7 +10,7 @@ setup = () => {
 setup();
 cmds.export = function() { return this.join(";\n"); };
 
-Entity = function() { // Because "Object" is taken, as usual...
+Entity = function(id) { // Because "Object" is taken, as usual...
   let div = document.createElement("div"); // Create context-free div
   for (let [k,v] of Entity.defaultStyle.entries()) {
     div.style[k] = v; // See definition of defaultStyle below
@@ -23,9 +23,17 @@ Entity = function() { // Because "Object" is taken, as usual...
   this.stateTab = state;
   this.div = div;
 
-  this.state('id', Entity.nextId.toString());
-  id_to_entity[Entity.nextId] = this;
-  Entity.nextId++;
+  if (id === undefined) {
+    id_to_entity[Entity.nextId] = this;
+    this.state('id', Entity.nextId.toString());
+    Entity.nextId++;
+  } else {
+    if (id_to_entity[id] === undefined) {
+      id_to_entity[id] = this;
+      this.state('id', id);
+    } else
+      throw "Entity "+id+" already initialised";
+  }
 };
 
 Entity.defaultStyle = new Map([
@@ -122,9 +130,9 @@ src['vtable.allocate'] = `function(rcv) {
 src['vtable.delegated'] = `function(rcv) {
   let newVT = new Entity();
   
-  if (rcv === '0') {
-    newVT.state('vtable', '0');
-    newVT.state('parent', '0');
+  if (rcv === undefined_entity) {
+    newVT.state('vtable', rcv.state('id'));
+    newVT.state('parent', rcv.state('id'));
   } else {
     newVT.state('vtable', rcv.state('vtable'));
     newVT.state('parent', rcv.state('id'));
@@ -141,7 +149,9 @@ vtable_allocate  = compile(src['vtable.allocate']);
 vtable_delegated = compile(src['vtable.delegated']);
 vtable_lookup    = compile(src['vtable.lookup']);
 
-vtable_vt = vtable_delegated('0');
+undefined_entity = new Entity('0');
+
+vtable_vt = vtable_delegated(undefined_entity);
 vtable_vt.state('name', 'vtable vtable');
 vtable_vt.state('vtable', vtable_vt.state('id'));
 
