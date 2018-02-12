@@ -200,6 +200,11 @@ tmp.state('code', src['vtable.allocate'], true);
 send(vtable_vt, 'addMethod', 'allocate', tmp);
 
 tmp = send(function_vt, 'allocate');
+tmp.state('name', 'vtable.delegated');
+tmp.state('code', src['vtable.delegated'], true);
+send(vtable_vt, 'addMethod', 'delegated', tmp)
+
+tmp = send(function_vt, 'allocate');
 tmp.state('name', 'bind');
 tmp.state('code', src['bind'], true);
 
@@ -231,6 +236,10 @@ Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable.allocate') {
     this.div.style.width = '325px';
     this.div.style.height = '182px';
+  }
+  if (this.state('name') === 'vtable.delegated') {
+    this.div.style.width = '392px';
+    this.div.style.height = '251px';
   }
   if (this.state('name') === 'bind') {
     this.div.style.width = '469px';
