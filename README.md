@@ -66,7 +66,7 @@ send(e, 'hello-world');
 send(e, 'hello-world', 'Object McObjFace');
 ```
 
-If you want to keep the changes you've made to the system, I'm afraid you'll have to add the steps so far to `orom.js`. Also, resize everything as you like, and then call `saveDims()`. Copy the resulting code into the body of `En-tity.prototype.restoreDims()` in said source file, and the Entity divs will be correctly sized next time it's loaded.
+If you want to keep the changes you've made to the system, I'm afraid you'll have to add the steps so far to `orom.js`. Also, resize everything as you like, and then call `saveDims()`. Copy the resulting code into the body of `Entity.prototype.restoreDims()` in said source file, and the Entity divs will be correctly sized next time it's loaded.
 
 (erk -- don't call one of your objects `'; delete_system32(); /*` or `saveDims()` might not be the only thing that breaks.
 
