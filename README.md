@@ -68,10 +68,8 @@ send(e, 'hello-world', 'Object McObjFace');
 
 Note that this will *still work* even if you change the source code in the `code` property. Currently it just compiles whatever's there at send-time. Anything beyond this is the work of optimisation, which ought to be for the computer to figure out and implement.
 
-If you want to keep the changes you've made to the system, I'm afraid you'll have to add the steps so far to `orom.js`. Also, resize everything as you like, and then call `saveDims()`. Copy the resulting code into the body of `Entity.prototype.restoreDims()` in said source file, and the Entity divs will be correctly sized next time it's loaded.
+If you want to keep the changes you've made to the system, I'm afraid you'll have to add the steps so far to `orom.js`. Also, resize everything as you like, and then call `saveDims()`. Copy the resulting code into the body of `Entity.prototype.restoreDims()` in said source file, and everything will be correctly sized next time it's loaded.
 
 (erk -- don't call one of your objects `'; delete_system32(); /*` or `saveDims()` might not be the only thing that breaks.
 
 (NB: the `saveDims()` and `restoreDims()` functions access `state('name')` of all active Entities in the system. This will create the property as 0 if it doesn't exist, any un-named objects will gain it.)
-
-(TODO: preserve sizes of textarea's as well.)

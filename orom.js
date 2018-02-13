@@ -219,36 +219,54 @@ Entity.prototype.restoreDims = function() {
     this.div.style.height = '218px';
   }
   if (this.state('name') === 'object vtable') {
-    this.div.style.width = '188px';
-    this.div.style.height = '129px';
+    this.div.style.width = '254px';
+    this.div.style.height = '132px';
   }
   if (this.state('name') === 'JS function vtable') {
-    this.div.style.width = '187px';
-    this.div.style.height = '136px';
+    this.div.style.width = '256px';
+    this.div.style.height = '124px';
   }
   if (this.state('name') === 'vtable.addMethod') {
     this.div.style.width = '363px';
     this.div.style.height = '168px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '283px';
+    code.style.height = '57px';
   }
   if (this.state('name') === 'vtable.lookup') {
     this.div.style.width = '377px';
     this.div.style.height = '226px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '296px';
+    code.style.height = '110px';
   }
   if (this.state('name') === 'vtable.allocate') {
     this.div.style.width = '325px';
     this.div.style.height = '182px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '243px';
+    code.style.height = '74px';
   }
   if (this.state('name') === 'vtable.delegated') {
-    this.div.style.width = '392px';
-    this.div.style.height = '251px';
+    this.div.style.width = '395px';
+    this.div.style.height = '278px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '299px';
+    code.style.height = '148px';
   }
   if (this.state('name') === 'bind') {
     this.div.style.width = '469px';
     this.div.style.height = '203px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '396px';
+    code.style.height = '93px';
   }
   if (this.state('name') === 'send') {
     this.div.style.width = '369px';
     this.div.style.height = '190px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '283px';
+    code.style.height = '77px';
   }
 }
 
@@ -262,13 +280,23 @@ function saveDims() {
     if (e === undefined) continue;
     const width = e.div.style.width;
     const height = e.div.style.height;
-    dims.set(e.state('name'), [width,height]);
+    const entry = [width, height];
+    try {
+      let code = e.getStateDOMNode('code');
+      entry.push(code.style.width);
+      entry.push(code.style.height);
+    } catch (TypeError) {}
+    dims.set(e.state('name'), e);
   }
 
-  dimsSetters = Array.from(dims).map(([k,[w,h]]) =>
+  dimsSetters = Array.from(dims).map(([k,[w,h,cw,ch]]) =>
 `if (this.state('name') === '${k}') {
   this.div.style.width = '${w}';
-  this.div.style.height = '${h}';
+  this.div.style.height = '${h}';` +
+  ((cw !== undefined && ch !== undefined) ? `
+  let code = this.getStateDOMNode('code');
+  code.style.width = '${cw}';
+  code.style.height = '${ch}';` : '') + `
 }`
   );
 
