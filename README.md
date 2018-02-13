@@ -73,3 +73,15 @@ If you want to keep the changes you've made to the system, I'm afraid you'll hav
 (erk -- don't call one of your objects `'; delete_system32(); /*` or `saveDims()` might not be the only thing that breaks.
 
 (NB: the `saveDims()` and `restoreDims()` functions access `state('name')` of all active Entities in the system. This will create the property as 0 if it doesn't exist, any un-named objects will gain it.)
+
+## Reminders if confused
+All messages sent to object O cause a lookup in O's *vtable*. Thus, the only time this will lookup *in O itself* is if `O.vtable = O`, such as with the vtable-vtable.
+
+Hence, *nothing* except `vtable_vt` can be sent its own messages. I.e. if I add the method `foo` to `object_vt`, attempting `send(object_vt, 'foo')` **will not work**. The internal state of an object does not affect method lookups to its vtable -- although this is conceptually possible to implement.
+
+Vtables act like extremely flexible, dynamic and late-bound *classes*. The idea is that if multiple objects have the same vtable, then they all 'behave' the same way. We say they are part of the same "clone family".
+
+Of course, this is not strictly true; the result of a message send will probably depend in some way on the receiver's state. But the point is that **vtables are the behaviours**, which can apply to *different* instances "in the same way".
+
+See [here](http://piumarta.com/software/cola/prototypes.html) for an exposition of what this system *doesn't* do, and how it could be added.
+
