@@ -46,7 +46,7 @@ function(self, first_name) {
   let cont = confirm('Hello, '+first_name+'! Continue?');
   if (cont)
     self.state('first-name', first_name);
-  return cont
+  return cont;
 }
 ```
 
@@ -75,13 +75,21 @@ If you want to keep the changes you've made to the system, I'm afraid you'll hav
 (NB: the `saveDims()` and `restoreDims()` functions access `state('name')` of all active Entities in the system. This will create the property as 0 if it doesn't exist, any un-named objects will gain it.)
 
 ## Reminders if confused
-All messages sent to object O cause a lookup in O's *vtable*. Thus, the only time this will lookup *in O itself* is if `O.vtable = O`, such as with the vtable-vtable.
+All messages sent to object O cause a lookup in O's *vtable*. Thus, the only time this will lookup *in O itself* is if `O.vtable = O`, such as with the vtable-vtable, or if O is the object-vtable (because delegation through `parent` will terminate here.)
 
-Hence, *nothing* except `vtable_vt` can be sent its own messages. I.e. if I add the method `foo` to `object_vt`, attempting `send(object_vt, 'foo')` **will not work**. The internal state of an object does not affect method lookups to its vtable -- although this is conceptually possible to implement.
+Hence, *nothing* except `vtable_vt` and `object_vt` can be sent its "own" messages. E.g. if I add the method `foo` to `object_vt`, attempting `send(object_vt, 'foo')` **will not work**. The internal state of an object does not affect method lookups to its vtable -- although this is conceptually possible to implement.
 
 Vtables act like extremely flexible, dynamic and late-bound *classes*. The idea is that if multiple objects have the same vtable, then they all 'behave' the same way. We say they are part of the same "clone family".
 
 Of course, this is not strictly true; the result of a message send will probably depend in some way on the receiver's state. But the point is that **vtables are the behaviours**, which can apply to *different* instances "in the same way".
+
+The object-vtable, function-vtable, vtable-vtable are all part of the "vtable" clone family, because they all behave according to `vtable_vt`.
+
+Think of the following:
+* To create a new function, we send `allocate` to the function-vtable -- *even though* `allocate` lives in `vtable_vt`.
+* To add it to the object-vtable as a method, we send `addMethod` to `object_vt` -- even though `addMethod` also lives in `vtable_vt`.
+
+So if you want a different 'type' of 'vtable', it can be done. (details left as an exercise for the reader, heh heh heh...)
 
 See [here](http://piumarta.com/software/cola/prototypes.html) for an exposition of what this system *doesn't* do, and how it could be added.
 
