@@ -149,6 +149,7 @@ object_vt = vtable_delegated(vtable_vt);
 object_vt.state('name', 'object vtable');
 
 vtable_vt.state('parent', object_vt.state('id'));
+object_vt.state('parent', '0');
 
 function_vt = vtable_delegated(vtable_vt);
 function_vt.state('name', 'JS function vtable');
