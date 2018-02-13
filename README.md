@@ -35,11 +35,10 @@ To do this, we first need an interface-level proxy for a JavaScript function:
 
 ```javascript
 func_entity = send(function_vt, 'allocate'); // Function entities behave according to function_vt
-func_entity.state('name', 'hello world'); // Give it a name for your eyes
-func_entity.state('code', '', true); // Create an empty textarea for the JS source code.
+send(func_entity, 'init', 'hello world'); // Give it a name for your eyes
 ```
 
-Find the "hello world" object in the page and type the following into its `code` property:
+Find the "hello world" object in the page and type / copy+paste the following into its `code` property:
 ```javascript
 function(self, first_name) {
   first_name = first_name || 'whoever you are';
