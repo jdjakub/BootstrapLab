@@ -14,7 +14,7 @@ Open `orom.html` in the browser (I use Chrome). Open the JS console (try Ctrl+Sh
 
 ## Playing around
 
-Create an Entity (concptually, an Object, but this could be confused with plain JavaScript objects) and give it some state:
+Create an Entity (conceptually, an Object, but this could be confused with plain JavaScript objects) and give it some state:
 
 ```javascript
 e = new Entity();
@@ -24,12 +24,12 @@ e.state('name'); // returns the above string
 
 This is the JavaScript, *implementation*-level way to create an Entity. However, a plain JS Entity only becomes an Entity proper once it has a *vtable* -- then it becomes a true part of the *interface*-level system, and messages can be sent to it.
 
-Create an Entity in the *implementation*-level system by sending the message `allocate` to the object-vtable:
+Create an Entity in the *interface*-level system by sending the message `allocate` to the object-vtable:
 ```javascript
 e = send(object_vt, 'allocate');
 ```
 
-We can't do much with this. However, if we add a method to the object-vtable, then all objects (Entities) in the system will automatically accept that message.
+We can't do much with this. However, if we add a method to the object-vtable, then all objects (Entities) in the system will automatically respond to that message.
 
 To do this, we first need an interface-level proxy for a JavaScript function:
 
