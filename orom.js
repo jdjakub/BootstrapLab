@@ -154,14 +154,19 @@ object_vt.state('parent', '0');
 function_vt = vtable_delegated(vtable_vt);
 function_vt.state('name', 'JS function vtable');
 
+src['function.init'] = `function(rcv, name, code) {
+  rcv.state('name', name || '<function>');
+  rcv.state('code', code || '() => "unimplemented"', true);
+}`;
+function_init = compile(src['function.init']);
+
 src['vtable.addMethod'] = `function(rcv, name, impl) {
   const symbol = '-'+name;
   return rcv.state(symbol, impl.state('id'));
 }`;
 vtable_addMethod = compile(src['vtable.addMethod']);
 tmp = vtable_allocate(function_vt);
-tmp.state('name', 'vtable.addMethod');
-tmp.state('code', src['vtable.addMethod'], true);
+function_init(tmp, 'vtable.addMethod', src['vtable.addMethod']);
 vtable_addMethod(vtable_vt, 'addMethod', tmp);
 
 src['vtable.lookup'] = `function(rcv, name) {
@@ -175,8 +180,7 @@ src['vtable.lookup'] = `function(rcv, name) {
 }`;
 vtable_lookup = compile(src['vtable.lookup']);
 tmp = vtable_allocate(function_vt);
-tmp.state('name', 'vtable.lookup');
-tmp.state('code', src['vtable.lookup'], true);
+function_init(tmp, 'vtable.lookup', src['vtable.lookup']);
 vtable_addMethod(vtable_vt, 'lookup', tmp);
 
 src['send'] = `function(rcv, selector, ...args) {
@@ -196,31 +200,22 @@ src['bind'] = `function(rcv, selector) {
 bind = compile(src['bind']);
 
 tmp = vtable_allocate(function_vt);
-tmp.state('name', 'vtable.allocate');
-tmp.state('code', src['vtable.allocate'], true);
+function_init(tmp, 'vtable.allocate', src['vtable.allocate']);
 send(vtable_vt, 'addMethod', 'allocate', tmp);
 
 tmp = send(function_vt, 'allocate');
-tmp.state('name', 'vtable.delegated');
-tmp.state('code', src['vtable.delegated'], true);
+function_init(tmp, 'function.init', src['function.init']);
+send(function_vt, 'addMethod', 'init', tmp)
+
+tmp = send(function_vt, 'allocate');
+send(tmp, 'init', 'vtable.delegated', src['vtable.delegated']);
 send(vtable_vt, 'addMethod', 'delegated', tmp)
 
 tmp = send(function_vt, 'allocate');
-tmp.state('name', 'bind');
-tmp.state('code', src['bind'], true);
+send(tmp, 'init', 'bind', src['bind']);
 
 tmp = send(function_vt, 'allocate');
-tmp.state('name', 'send');
-tmp.state('code', src['send'], true);
-
-tmp = send(function_vt, 'allocate');
-tmp.state('name', 'function.init');
-src['function.init'] = `function(rcv, name, code) {
-  rcv.state('name', name || '<function>');
-  rcv.state('code', code || '() => "unimplemented"');
-}`;
-tmp.state('code', src['function.init'], true);
-send(function_vt, 'addMethod', 'init', tmp)
+send(tmp, 'init', 'send', src['send']);
 
 Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable vtable') {
@@ -232,8 +227,8 @@ Entity.prototype.restoreDims = function() {
     this.div.style.height = '132px';
   }
   if (this.state('name') === 'JS function vtable') {
-    this.div.style.width = '256px';
-    this.div.style.height = '124px';
+    this.div.style.width = '266px';
+    this.div.style.height = '166px';
   }
   if (this.state('name') === 'vtable.addMethod') {
     this.div.style.width = '363px';
@@ -256,6 +251,13 @@ Entity.prototype.restoreDims = function() {
     code.style.width = '243px';
     code.style.height = '74px';
   }
+  if (this.state('name') === 'function.init') {
+    this.div.style.width = '481px';
+    this.div.style.height = '194px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '364px';
+    code.style.height = '65px';
+  }
   if (this.state('name') === 'vtable.delegated') {
     this.div.style.width = '395px';
     this.div.style.height = '278px';
@@ -276,13 +278,6 @@ Entity.prototype.restoreDims = function() {
     let code = this.getStateDOMNode('code');
     code.style.width = '283px';
     code.style.height = '77px';
-  }
-  if (this.state('name') === 'function.init') {
-    this.div.style.width = '410px';
-    this.div.style.height = '207px';
-    let code = this.getStateDOMNode('code');
-    code.style.width = '324px';
-    code.style.height = '65px';
   }
 }
 
@@ -305,16 +300,16 @@ function saveDims() {
     dims.set(e.state('name'), entry);
   }
 
-  dimsSetters = Array.from(dims).map(([k,[w,h,cw,ch]]) =>
-`if (this.state('name') === '${k}') {
-  this.div.style.width = '${w}';
-  this.div.style.height = '${h}';` +
+  dimsSetters = Array.from(dims).map(([k,[w,h,cw,ch]]) => `
+  if (this.state('name') === '${k}') {
+    this.div.style.width = '${w}';
+    this.div.style.height = '${h}';` +
   ((cw !== undefined && ch !== undefined) ? `
-  let code = this.getStateDOMNode('code');
-  code.style.width = '${cw}';
-  code.style.height = '${ch}';` : '') + `
-}`
+    let code = this.getStateDOMNode('code');
+    code.style.width = '${cw}';
+    code.style.height = '${ch}';` : '') + `
+  }`
   );
 
-  return dimsSetters.join('\n');
+  return dimsSetters.join();
 }
