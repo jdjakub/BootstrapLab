@@ -213,6 +213,15 @@ tmp = send(function_vt, 'allocate');
 tmp.state('name', 'send');
 tmp.state('code', src['send'], true);
 
+tmp = send(function_vt, 'allocate');
+tmp.state('name', 'function.init');
+src['function.init'] = `function(rcv, name, code) {
+  rcv.state('name', name || '<function>');
+  rcv.state('code', code || '() => "unimplemented"');
+}`;
+tmp.state('code', src['function.init'], true);
+send(function_vt, 'addMethod', 'init', tmp)
+
 Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable vtable') {
     this.div.style.width = '371px';
@@ -268,6 +277,13 @@ Entity.prototype.restoreDims = function() {
     code.style.width = '283px';
     code.style.height = '77px';
   }
+  if (this.state('name') === 'function.init') {
+    this.div.style.width = '410px';
+    this.div.style.height = '207px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '324px';
+    code.style.height = '65px';
+  }
 }
 
 for (let e of id_to_entity)
@@ -286,7 +302,7 @@ function saveDims() {
       entry.push(code.style.width);
       entry.push(code.style.height);
     } catch (TypeError) {}
-    dims.set(e.state('name'), e);
+    dims.set(e.state('name'), entry);
   }
 
   dimsSetters = Array.from(dims).map(([k,[w,h,cw,ch]]) =>
