@@ -57,7 +57,7 @@ send(object_vt, 'addMethod', 'hello-world', func_entity);
 
 If you expand `object_vt`, you should see it has a `-hello-world` property. The initial hyphen marks a method name, as opposed to the name of some 'private' property.
 
-Since all objects have a vtable, and all vtables pass unhandled messages to their parent, and `object_vt` is at the end of this delegation chain -- all objects in the sytem now respond to the message `hello-world`.
+Since all objects have a vtable, and all vtables pass unhandled messages to their parent, and `object_vt` is at the end of this delegation chain -- all objects in the system now respond to the message `hello-world`.
 
 Including `e` from earlier:
 ```javascript
@@ -69,7 +69,7 @@ Note that this will *still work* even if you change the source code in the `code
 
 If you want to keep the changes you've made to the system, I'm afraid you'll have to add the steps so far to `orom.js`. Also, resize everything as you like, and then call `saveDims()`. Copy the resulting code into the body of `Entity.prototype.restoreDims()` in said source file, and everything will be correctly sized next time it's loaded.
 
-(erk -- don't call one of your objects `'; delete_system32(); /*` or `saveDims()` might not be the only thing that breaks.
+(erk -- don't call one of your objects `'; delete_system32(); /*` or `saveDims()` might not be the only thing that breaks.)
 
 (NB: the `saveDims()` and `restoreDims()` functions access `state('name')` of all active Entities in the system. This will create the property as 0 if it doesn't exist, any un-named objects will gain it.)
 
