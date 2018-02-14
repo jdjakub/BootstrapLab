@@ -217,6 +217,46 @@ send(tmp, 'init', 'bind', src['bind']);
 tmp = send(function_vt, 'allocate');
 send(tmp, 'init', 'send', src['send']);
 
+src['entity.init'] = `function(rcv) {
+  let div = document.createElement("div"); // Create context-free div
+  div.style = 'entity'; // Simple default
+  document.body.appendChild(div); // Give the div a context
+  let state = document.createElement("table");
+  state.setAttribute('class', 'state');
+  div.appendChild(state);
+  div.entity = rcv;
+  rcv.stateTab = state;
+  rcv.div = div;
+
+  state(rcv, 'id', nextId.toString());
+  id_to_entity[nextId] = rcv;
+  nextId++;
+}`;
+
+tmp = send(function_vt, 'allocate')
+send(tmp, 'init', 'entity.init', src['entity.init']);
+
+newsys = document.createElement('div');
+document.body.appendChild(newsys);
+newsys.style = 'border: 2px dashed blue';
+
+transfer = x => {
+  if (typeof(x) === 'number') x = deref(x);
+  document.body.removeChild(x.div);
+  newsys.appendChild(x.div);
+}
+
+transfer(tmp);
+
+src['new vtable.allocate'] = `function(rcv) {
+  let o = new_object();
+  state(o, 'vtable', rcv);
+  return o;
+}`
+tmp = send(function_vt, 'allocate');
+send(tmp, 'init', 'vtable.allocate', src['new vtable.allocate']);
+transfer(tmp);
+
 Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable vtable') {
     this.div.style.width = '371px';
@@ -278,6 +318,13 @@ Entity.prototype.restoreDims = function() {
     let code = this.getStateDOMNode('code');
     code.style.width = '283px';
     code.style.height = '77px';
+  }
+  if (this.state('name') === 'entity.init') {
+    this.div.style.width = '550px';
+    this.div.style.height = '293px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '468px';
+    code.style.height = '180px';
   }
 }
 
