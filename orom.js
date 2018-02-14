@@ -233,8 +233,8 @@ src['entity.init'] = `function(rcv) {
   nextId++;
 }`;
 
-tmp = send(function_vt, 'allocate')
-send(tmp, 'init', 'entity.init', src['entity.init']);
+entity_init = send(function_vt, 'allocate')
+send(entity_init, 'init', 'entity.init', src['entity.init']);
 
 newsys = document.createElement('div');
 document.body.appendChild(newsys);
@@ -246,16 +246,26 @@ transfer = x => {
   newsys.appendChild(x.div);
 }
 
-transfer(tmp);
+transfer(entity_init);
 
-src['new vtable.allocate'] = `function(rcv) {
+src['new-vtable.allocate'] = `function(rcv) {
   let o = new_object();
   state(o, 'vtable', rcv);
   return o;
 }`
 tmp = send(function_vt, 'allocate');
-send(tmp, 'init', 'vtable.allocate', src['new vtable.allocate']);
+send(tmp, 'init', 'new-vtable.allocate', src['new-vtable.allocate']);
 transfer(tmp);
+
+new_vtable_vt = send(vtable_vt, 'delegated');
+new_vtable_vt.state('name', 'new vtable-vtable');
+send(new_vtable_vt, 'addMethod', 'allocate', tmp);
+transfer(new_vtable_vt);
+
+entity_vt = send(new_vtable_vt, 'allocate');
+entity_vt.state('name', 'entity vtable');
+send(entity_vt, 'addMethod', 'init', entity_init);
+transfer(entity_vt);
 
 Entity.prototype.restoreDims = function() {
   if (this.state('name') === 'vtable vtable') {
@@ -325,6 +335,21 @@ Entity.prototype.restoreDims = function() {
     let code = this.getStateDOMNode('code');
     code.style.width = '468px';
     code.style.height = '180px';
+  }
+  if (this.state('name') === 'new-vtable.allocate') {
+    this.div.style.width = '325px';
+    this.div.style.height = '182px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '243px';
+    code.style.height = '74px';
+  }
+  if (this.state('name') === 'new vtable-vtable') {
+    this.div.style.width = '360px';
+    this.div.style.height = '210px';
+  }
+  if (this.state('name') === 'entity vtable') {
+    this.div.style.width = '285px';
+    this.div.style.height = '126px';
   }
 }
 
