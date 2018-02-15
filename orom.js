@@ -149,8 +149,11 @@ src['vtable.delegated'] = `function(rcv) {
   return newVT;
 }`;
 
-function compile(src) {
-  return new Function('return '+src)();
+compile = src => new Function('return '+src)();
+
+call_func = function(f, ...args) {
+  f = compile(state(f, 'code'));
+  return f(...args);
 }
 
 vtable_allocate  = compile(src['vtable.allocate']);
@@ -192,7 +195,7 @@ src['vtable.lookup'] = `function(rcv, name) {
   if (impl === '0' && parent !== '0')
     return send(deref(parent), 'lookup', name);
   else
-    return deref(impl);
+    return impl;
 }`;
 vtable_lookup = compile(src['vtable.lookup']);
 tmp = vtable_allocate(function_vt);
@@ -201,17 +204,20 @@ vtable_addMethod(vtable_vt, 'lookup', tmp);
 
 src['send'] = `function(rcv, selector, ...args) {
   const impl = bind(rcv, selector);
-  const func = compile(state(impl, 'code'));
-  return func(rcv, ...args);
+  return call_func(impl, rcv, ...args);
 }`;
 send = compile(src['send']);
 
 src['bind'] = `function(rcv, selector) {
-  if (rcv === vtable_vt && selector === 'lookup') {
-    return vtable_lookup(rcv, selector);
-  } else {
-    return send(deref(state(rcv, 'vtable')), 'lookup', selector);
-  }
+  let impl;
+  if (rcv === vtable_vt && selector === 'lookup')
+    impl = vtable_lookup(rcv, selector);
+  else
+    impl = send(deref(state(rcv, 'vtable')), 'lookup', selector);
+  if (impl === '0')
+    throw \`Entity \${state(rcv, 'id')} does not understand \${selector}\`;
+  else
+    return deref(impl);
 }`;
 bind = compile(src['bind']);
 
@@ -331,11 +337,11 @@ Entity.prototype.restoreDims = function() {
     code.style.height = '155px';
   }
   if (state(this, 'name') === 'bind') {
-    this.div.style.width = '469px';
-    this.div.style.height = '203px';
+    this.div.style.width = '523px';
+    this.div.style.height = '251px';
     let code = this.getStateDOMNode('code');
-    code.style.width = '396px';
-    code.style.height = '93px';
+    code.style.width = '445px';
+    code.style.height = '132px';
   }
   if (state(this, 'name') === 'send') {
     this.div.style.width = '369px';
