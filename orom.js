@@ -57,6 +57,7 @@ Entity.defaultStyle = new Map([
 Entity.nextId = 1;
 id_to_entity = [];
 function deref(id) {
+  if (typeof(id) !== 'string' && typeof(id) !== 'number') return id;
   const e = id_to_entity[id];
   if (e === undefined) throw "There is no such entity "+id;
   else return e;
@@ -241,7 +242,7 @@ send(tmp, 'init', 'send', src['send']);
 
 src['entity.init'] = `function(rcv) {
   let div = document.createElement("div"); // Create context-free div
-  div.style = 'entity'; // Simple default
+  div.classList = 'entity'; // Simple default
   document.body.appendChild(div); // Give the div a context
   this.stateTab = document.createElement("table");
   this.stateTab.setAttribute('class', 'state');
@@ -252,6 +253,8 @@ src['entity.init'] = `function(rcv) {
   state(rcv, 'id', nextId.toString());
   id_to_entity[nextId] = rcv;
   nextId++;
+
+  transfer(rcv);
 }`;
 
 entity_init = send(function_vt, 'allocate')
@@ -287,6 +290,13 @@ entity_vt = send(new_vtable_vt, 'allocate');
 state(entity_vt, 'name', 'entity vtable');
 send(entity_vt, 'addMethod', 'init', entity_init);
 transfer(entity_vt);
+
+new_object = () => { return {}; };
+
+nextId = 1000;
+
+tmp = send(entity_vt, 'allocate');
+send(tmp, 'init');
 
 Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'vtable vtable') {
