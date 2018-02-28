@@ -432,3 +432,13 @@ function saveDims() {
 
   return dimsSetters.join('\n');
 }
+
+function dom_to_js(elem) {
+  // NB: currently only supports <input> and <textarea>
+  return `dom('${elem.tagName}', '${elem.value}')`;
+}
+
+function describeInJavaScript() {
+  if (typeof(window.dom_to_js) !== 'function') throw "Must have dom_to_js";
+  return id_to_entity.map(e => send(e, 'to-javascript')).join('\n');
+}
