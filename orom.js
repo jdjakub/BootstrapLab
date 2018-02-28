@@ -288,14 +288,34 @@ state(entity_vt, 'name', 'entity vtable');
 send(entity_vt, 'addMethod', 'init', entity_init);
 transfer(entity_vt);
 
+tmp = send(function_vt, 'allocate');
+src['object.to-javascript'] = `function(rcv) {
+  let trs = rcv.stateTab.querySelectorAll('tr');
+  let pairs = Array.from(trs).map(tr => {
+    let key = tr.className;
+    let value_elem = tr.querySelector('.value').children[0];
+    return [key, value_elem];
+  });
+  let state_setters = pairs.map(([k, velem]) => {
+    let value_js_expr = dom_to_js(velem);
+    return \`state('\${k}', \${value_js_expr});\`;
+  });
+  let preamble = \`object(\${state(rcv, 'id')});\`;
+  let code = preamble + '\\n' + state_setters.join('\\n');
+  return code;
+}`
+send(tmp, 'init', 'object.to-javascript', src['object.to-javascript']);
+
+send(object_vt, 'addMethod', 'to-javascript', tmp);
+
 Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'vtable vtable') {
     this.div.style.width = '371px';
     this.div.style.height = '218px';
   }
   if (state(this, 'name') === 'object vtable') {
-    this.div.style.width = '254px';
-    this.div.style.height = '132px';
+    this.div.style.width = '335px';
+    this.div.style.height = '186px';
   }
   if (state(this, 'name') === 'JS function vtable') {
     this.div.style.width = '266px';
@@ -371,6 +391,13 @@ Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'entity vtable') {
     this.div.style.width = '285px';
     this.div.style.height = '126px';
+  }
+  if (state(this, 'name') === 'object.to-javascript') {
+    this.div.style.width = '488px';
+    this.div.style.height = '295px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '390px';
+    code.style.height = '178px';
   }
 }
 
