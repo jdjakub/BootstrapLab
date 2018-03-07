@@ -435,7 +435,8 @@ function saveDims() {
 
 function dom_to_js(elem) {
   // NB: currently only supports <input> and <textarea>
-  return `dom('${elem.tagName}', '${elem.value}')`;
+  let val = elem.tagName === 'TEXTAREA' ? btoa(elem.value) : elem.value;
+  return `dom('${elem.tagName}', '${val}')`;
 }
 
 function describeInJavaScript() {
