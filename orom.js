@@ -57,6 +57,7 @@ Entity.defaultStyle = new Map([
 Entity.nextId = 1;
 id_to_entity = [];
 function deref(id) {
+  if (typeof(id) === 'object') return id;
   const e = id_to_entity[id];
   if (e === undefined) throw "There is no such entity "+id;
   else return e;
@@ -239,23 +240,19 @@ send(tmp, 'init', 'bind', src['bind']);
 tmp = send(function_vt, 'allocate');
 send(tmp, 'init', 'send', src['send']);
 
-src['entity.init'] = `function(rcv) {
-  let div = document.createElement("div"); // Create context-free div
-  div.style = 'entity'; // Simple default
-  document.body.appendChild(div); // Give the div a context
-  this.stateTab = document.createElement("table");
-  this.stateTab.setAttribute('class', 'state');
-  div.appendChild(this.stateTab);
+src['entity.dom-node'] = `function(rcv) {
+  let div = document.createElement('div');
+  div.className = 'entity'; // Simple default
+  let name = document.createElement('h3');
+  name.textContent = state(rcv, 'name') || '<object>';
+  div.appendChild(name);
   div.entity = rcv;
   rcv.div = div;
-
-  state(rcv, 'id', nextId.toString());
-  id_to_entity[nextId] = rcv;
-  nextId++;
+  return div;
 }`;
 
-entity_init = send(function_vt, 'allocate')
-send(entity_init, 'init', 'entity.init', src['entity.init']);
+entity_domNode = send(function_vt, 'allocate')
+send(entity_domNode, 'init', 'entity.dom-node', src['entity.dom-node']);
 
 newsys = document.createElement('div');
 document.body.appendChild(newsys);
@@ -267,7 +264,7 @@ transfer = x => {
   newsys.appendChild(x.div);
 }
 
-transfer(entity_init);
+transfer(entity_domNode);
 
 src['new-vtable.allocate'] = `function(rcv) {
   let o = new_object();
@@ -285,7 +282,7 @@ transfer(new_vtable_vt);
 
 entity_vt = send(new_vtable_vt, 'allocate');
 state(entity_vt, 'name', 'entity vtable');
-send(entity_vt, 'addMethod', 'init', entity_init);
+send(entity_vt, 'addMethod', 'dom-node', entity_domNode);
 transfer(entity_vt);
 
 tmp = send(function_vt, 'allocate');
@@ -307,6 +304,16 @@ src['object.to-javascript'] = `function(rcv) {
 send(tmp, 'init', 'object.to-javascript', src['object.to-javascript']);
 
 send(object_vt, 'addMethod', 'to-javascript', tmp);
+
+src['view.attach'] = `function(view, obj) {
+  let dom = send(obj, 'dom-node', view);
+  view.div.appendChild(dom);
+}`;
+
+tmp = send(function_vt, 'allocate');
+send(tmp, 'init', 'view.attach', src['view.attach'])
+
+transfer(tmp);
 
 Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'vtable vtable') {
@@ -370,12 +377,12 @@ Entity.prototype.restoreDims = function() {
     code.style.width = '283px';
     code.style.height = '77px';
   }
-  if (state(this, 'name') === 'entity.init') {
-    this.div.style.width = '550px';
-    this.div.style.height = '293px';
+  if (state(this, 'name') === 'entity.dom-node') {
+    this.div.style.width = '440px';
+    this.div.style.height = '250px';
     let code = this.getStateDOMNode('code');
-    code.style.width = '468px';
-    code.style.height = '180px';
+    code.style.width = '354px';
+    code.style.height = '137px';
   }
   if (state(this, 'name') === 'new-vtable.allocate') {
     this.div.style.width = '294px';
@@ -389,8 +396,8 @@ Entity.prototype.restoreDims = function() {
     this.div.style.height = '210px';
   }
   if (state(this, 'name') === 'entity vtable') {
-    this.div.style.width = '285px';
-    this.div.style.height = '126px';
+    this.div.style.width = '396px';
+    this.div.style.height = '146px';
   }
   if (state(this, 'name') === 'object.to-javascript') {
     this.div.style.width = '488px';
@@ -398,6 +405,13 @@ Entity.prototype.restoreDims = function() {
     let code = this.getStateDOMNode('code');
     code.style.width = '390px';
     code.style.height = '178px';
+  }
+  if (state(this, 'name') === 'view.attach') {
+    this.div.style.width = '351px';
+    this.div.style.height = '167px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '268px';
+    code.style.height = '59px';
   }
 }
 
