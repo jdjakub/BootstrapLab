@@ -246,6 +246,7 @@ src['entity.dom-node'] = `function(rcv) {
   let name = document.createElement('h3');
   name.textContent = state(rcv, 'name') || '<object>';
   div.appendChild(name);
+  div.addEventListener('click', e => send(rcv, 'clicked', e));
   div.entity = rcv;
   rcv.div = div;
   return div;
@@ -326,8 +327,19 @@ new_object = () => { return {}; };
 
 view = send(view_vt, 'allocate');
 state(view, 'div', newsys);
+
+src['entity.clicked'] = `function(rcv, e) {
+  let [x,y] = [e.offsetX, e.offsetY];
+  alert(\`I was clicked at (\${x},\${y})!\`);
+}`
+
+entity_clicked = send(function_vt, 'allocate');
+send(entity_clicked, 'init', 'entity.clicked', src['entity.clicked']);
+send(entity_vt, 'addMethod', 'clicked', entity_clicked);
+transfer(entity_clicked);
+
 tmp = send(entity_vt, 'allocate');
-state(tmp, 'name', 'Some V1 object');
+state(tmp, 'name', 'Some V1 object - click me!');
 send(view, 'attach', tmp);
 
 Entity.prototype.restoreDims = function() {
@@ -393,11 +405,11 @@ Entity.prototype.restoreDims = function() {
     code.style.height = '77px';
   }
   if (state(this, 'name') === 'entity.dom-node') {
-    this.div.style.width = '440px';
+    this.div.style.width = '489px';
     this.div.style.height = '250px';
     let code = this.getStateDOMNode('code');
-    code.style.width = '354px';
-    code.style.height = '137px';
+    code.style.width = '395px';
+    code.style.height = '131px';
   }
   if (state(this, 'name') === 'new-vtable.allocate') {
     this.div.style.width = '294px';
@@ -411,8 +423,8 @@ Entity.prototype.restoreDims = function() {
     this.div.style.height = '210px';
   }
   if (state(this, 'name') === 'entity vtable') {
-    this.div.style.width = '396px';
-    this.div.style.height = '146px';
+    this.div.style.width = '346px';
+    this.div.style.height = '186px';
   }
   if (state(this, 'name') === 'object.to-javascript') {
     this.div.style.width = '488px';
@@ -431,6 +443,13 @@ Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'view vtable') {
     this.div.style.width = '345px';
     this.div.style.height = '143px';
+  }
+  if (state(this, 'name') === 'entity.clicked') {
+    this.div.style.width = '343px';
+    this.div.style.height = '183px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '259px';
+    code.style.height = '65px';
   }
 }
 
