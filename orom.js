@@ -310,10 +310,25 @@ src['view.attach'] = `function(view, obj) {
   view.div.appendChild(dom);
 }`;
 
-tmp = send(function_vt, 'allocate');
-send(tmp, 'init', 'view.attach', src['view.attach'])
+view_attach = send(function_vt, 'allocate');
+send(view_attach, 'init', 'view.attach', src['view.attach'])
 
-transfer(tmp);
+transfer(view_attach);
+
+view_vt = send(vtable_vt, 'allocate');
+state(view_vt, 'name', 'view vtable');
+send(view_vt, 'addMethod', 'attach', view_attach)
+transfer(view_vt);
+
+state(view_vt, 'vtable', state(new_vtable_vt, 'id'));
+
+new_object = () => { return {}; };
+
+view = send(view_vt, 'allocate');
+state(view, 'div', newsys);
+tmp = send(entity_vt, 'allocate');
+state(tmp, 'name', 'Some V1 object');
+send(view, 'attach', tmp);
 
 Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'vtable vtable') {
@@ -412,6 +427,10 @@ Entity.prototype.restoreDims = function() {
     let code = this.getStateDOMNode('code');
     code.style.width = '268px';
     code.style.height = '59px';
+  }
+  if (state(this, 'name') === 'view vtable') {
+    this.div.style.width = '345px';
+    this.div.style.height = '143px';
   }
 }
 
