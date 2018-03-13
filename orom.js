@@ -243,7 +243,7 @@ send(tmp, 'init', 'send', src['send']);
 src['entity.dom-node'] = `function(rcv) {
   let div = document.createElement('div');
   div.className = 'entity'; // Simple default
-  let name = document.createElement('h3');
+  let name = document.createElement('b');
   name.textContent = state(rcv, 'name') || '<object>';
   div.appendChild(name);
   div.addEventListener('click', e => send(rcv, 'clicked', e));
@@ -487,8 +487,8 @@ function saveDims() {
 
 function dom_to_js(elem) {
   // NB: currently only supports <input> and <textarea>
-  let val = elem.tagName === 'TEXTAREA' ? btoa(elem.value) : elem.value;
-  return `dom('${elem.tagName}', '${val}')`;
+  let val = elem.tagName === 'TEXTAREA' ? `atob('${btoa(elem.value)}')` : `'${elem.value}'`;
+  return `dom('${elem.tagName}', ${val})`;
 }
 
 function describeInJavaScript() {
