@@ -240,52 +240,6 @@ send(tmp, 'init', 'bind', src['bind']);
 tmp = send(function_vt, 'allocate');
 send(tmp, 'init', 'send', src['send']);
 
-src['entity.dom-node'] = `function(rcv) {
-  let div = document.createElement('div');
-  div.className = 'entity'; // Simple default
-  let name = document.createElement('b');
-  name.textContent = state(rcv, 'name') || '<object>';
-  div.appendChild(name);
-  div.addEventListener('click', e => send(rcv, 'clicked', e));
-  div.entity = rcv;
-  rcv.div = div;
-  return div;
-}`;
-
-entity_domNode = send(function_vt, 'allocate')
-send(entity_domNode, 'init', 'entity.dom-node', src['entity.dom-node']);
-
-newsys = document.createElement('div');
-document.body.appendChild(newsys);
-newsys.style = 'border: 2px dashed blue';
-
-transfer = x => {
-  if (typeof(x) === 'number') x = deref(x);
-  document.body.removeChild(x.div);
-  newsys.appendChild(x.div);
-}
-
-transfer(entity_domNode);
-
-src['new-vtable.allocate'] = `function(rcv) {
-  let o = new_object();
-  state(o, 'vtable', rcv);
-  return o;
-}`
-tmp = send(function_vt, 'allocate');
-send(tmp, 'init', 'new-vtable.allocate', src['new-vtable.allocate']);
-transfer(tmp);
-
-new_vtable_vt = send(vtable_vt, 'delegated');
-state(new_vtable_vt, 'name', 'new vtable-vtable');
-send(new_vtable_vt, 'addMethod', 'allocate', tmp);
-transfer(new_vtable_vt);
-
-entity_vt = send(new_vtable_vt, 'allocate');
-state(entity_vt, 'name', 'entity vtable');
-send(entity_vt, 'addMethod', 'dom-node', entity_domNode);
-transfer(entity_vt);
-
 tmp = send(function_vt, 'allocate');
 src['object.to-javascript'] = `function(rcv) {
   let trs = rcv.stateTab.querySelectorAll('tr');
@@ -306,41 +260,63 @@ send(tmp, 'init', 'object.to-javascript', src['object.to-javascript']);
 
 send(object_vt, 'addMethod', 'to-javascript', tmp);
 
-src['view.attach'] = `function(view, obj) {
-  let dom = send(obj, 'dom-node', view);
-  view.div.appendChild(dom);
+mapping_vt = send(vtable_vt, 'delegated');
+state(mapping_vt, 'name', 'mapping vtable');
+
+src['mapping.init'] = `function(mapping, input, output) {
+  state(mapping, 'input', state(input, 'id'));
+  state(mapping, 'output', state(output, 'id'));
 }`;
 
-view_attach = send(function_vt, 'allocate');
-send(view_attach, 'init', 'view.attach', src['view.attach'])
+mapping_init = send(function_vt, 'allocate');
+send(mapping_init, 'init', 'mapping.init', src['mapping.init']);
+send(mapping_vt, 'addMethod', 'init', mapping_init);
 
-transfer(view_attach);
+src['object.dom-node'] = `function(object, sender) {
+  if (sender !== undefined) {
+    let text = document.createElement('b');
+    text.textContent = state(object, 'id');
+    return text;
+  } else {
+    let tmp = document.createElement('div');
+    tmp.className = 'entity';
+    tmp.textContent = state(object, 'name') || state(object, 'id');
+    return tmp;
+  }
+}`;
 
-view_vt = send(vtable_vt, 'allocate');
-state(view_vt, 'name', 'view vtable');
-send(view_vt, 'addMethod', 'attach', view_attach)
-transfer(view_vt);
+object_domNode = send(function_vt, 'allocate');
+send(object_domNode, 'init', 'object.dom-node', src['object.dom-node']);
+send(object_vt, 'addMethod', 'dom-node', object_domNode)
 
-state(view_vt, 'vtable', state(new_vtable_vt, 'id'));
+src['mapping.dom-node'] = `function(mapping) {
+  let tr = document.createElement('tr');
+  let td_in = document.createElement('td');
+  let td_out = document.createElement('td');
+  tr.appendChild(td_in);
+  tr.appendChild(td_out);
+  
+  td_in.appendChild(send(deref(state(mapping, 'input')), 'dom-node', mapping));
+  td_out.appendChild(send(deref(state(mapping, 'output')), 'dom-node', mapping));
 
-new_object = () => { return {}; };
+  return tr;
+}`;
 
-view = send(view_vt, 'allocate');
-state(view, 'div', newsys);
+mapping_domNode = send(function_vt, 'allocate');
+send(mapping_domNode, 'init', 'mapping.dom-node', src['mapping.dom-node']);
+send(mapping_vt, 'addMethod', 'dom-node', mapping_domNode)
 
-src['entity.clicked'] = `function(rcv, e) {
-  let [x,y] = [e.offsetX, e.offsetY];
-  alert(\`I was clicked at (\${x},\${y})!\`);
-}`
+newsys = document.createElement('div');
+document.body.appendChild(newsys);
+newsys.style = 'border: 2px dashed blue';
 
-entity_clicked = send(function_vt, 'allocate');
-send(entity_clicked, 'init', 'entity.clicked', src['entity.clicked']);
-send(entity_vt, 'addMethod', 'clicked', entity_clicked);
-transfer(entity_clicked);
+transfer = x => {
+  if (typeof(x) === 'number') x = deref(x);
+  document.body.removeChild(x.div);
+  newsys.appendChild(x.div);
+}
 
-tmp = send(entity_vt, 'allocate');
-state(tmp, 'name', 'Some V1 object - click me!');
-send(view, 'attach', tmp);
+newsys.appendChild(send(deref(15), 'dom-node'));
 
 Entity.prototype.restoreDims = function() {
   if (state(this, 'name') === 'vtable vtable') {
@@ -404,28 +380,6 @@ Entity.prototype.restoreDims = function() {
     code.style.width = '283px';
     code.style.height = '77px';
   }
-  if (state(this, 'name') === 'entity.dom-node') {
-    this.div.style.width = '489px';
-    this.div.style.height = '250px';
-    let code = this.getStateDOMNode('code');
-    code.style.width = '395px';
-    code.style.height = '131px';
-  }
-  if (state(this, 'name') === 'new-vtable.allocate') {
-    this.div.style.width = '294px';
-    this.div.style.height = '188px';
-    let code = this.getStateDOMNode('code');
-    code.style.width = '189px';
-    code.style.height = '78px';
-  }
-  if (state(this, 'name') === 'new vtable-vtable') {
-    this.div.style.width = '360px';
-    this.div.style.height = '210px';
-  }
-  if (state(this, 'name') === 'entity vtable') {
-    this.div.style.width = '346px';
-    this.div.style.height = '186px';
-  }
   if (state(this, 'name') === 'object.to-javascript') {
     this.div.style.width = '488px';
     this.div.style.height = '295px';
@@ -433,23 +387,30 @@ Entity.prototype.restoreDims = function() {
     code.style.width = '390px';
     code.style.height = '178px';
   }
-  if (state(this, 'name') === 'view.attach') {
-    this.div.style.width = '351px';
-    this.div.style.height = '167px';
-    let code = this.getStateDOMNode('code');
-    code.style.width = '268px';
-    code.style.height = '59px';
+  if (state(this, 'name') === 'mapping vtable') {
+    this.div.style.width = '245px';
+    this.div.style.height = '191px';
   }
-  if (state(this, 'name') === 'view vtable') {
-    this.div.style.width = '345px';
-    this.div.style.height = '143px';
-  }
-  if (state(this, 'name') === 'entity.clicked') {
-    this.div.style.width = '343px';
-    this.div.style.height = '183px';
+  if (state(this, 'name') === 'mapping.init') {
+    this.div.style.width = '375px';
+    this.div.style.height = '185px';
     let code = this.getStateDOMNode('code');
-    code.style.width = '259px';
-    code.style.height = '65px';
+    code.style.width = '297px';
+    code.style.height = '58px';
+  }
+  if (state(this, 'name') === 'object.dom-node') {
+    this.div.style.width = '511px';
+    this.div.style.height = '270px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '435px';
+    code.style.height = '144px';
+  }
+  if (state(this, 'name') === 'mapping.dom-node') {
+    this.div.style.width = '583px';
+    this.div.style.height = '271px';
+    let code = this.getStateDOMNode('code');
+    code.style.width = '497px';
+    code.style.height = '149px';
   }
 }
 
