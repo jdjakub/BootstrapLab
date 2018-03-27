@@ -59,7 +59,7 @@ state(universe, 'dispatch', msg => {
     case 'created': return m => {  
         let svg = svgel('svg', body, { width: body.offsetWidth, height: body.offsetHeight });
         state(m.to, 'svg', svg);
-        svg.addEventListener('click', e => {
+        svg.addEventListener('mouseup', e => {
           send(m.to, 'rect', m.to, {center: [e.offsetX, e.offsetY]});
         });
       };
@@ -70,8 +70,21 @@ state(universe, 'dispatch', msg => {
         let tl = [x - x_extent, y - y_extent];
         let rect = svgel('rect', svg, { x: tl[0].toString(), y: tl[1].toString() });
         attribs(rect, { width: 2*x_extent, height: 2*y_extent });
-        attribs(rect, { fill: '#dddddd', stroke: '#000000' });
+        attribs(rect, { fill: '#dddddd', stroke: '#000000', stroke_width: '2' });
         attribs(rect, { stroke_opacity: '1', fill_opacity: '1' });
+        rect.addEventListener('mouseup', e => {
+          console.log('Overruled!');
+          if (!rect.isActive) {
+            rect.setAttribute('stroke', '#0000ff');
+            rect.setAttribute('stroke-width', '4');
+            rect.isActive = true;
+          } else {
+            rect.setAttribute('stroke', '#000000');
+            rect.setAttribute('stroke-width', '2');
+            rect.isActive = false;
+          }
+          e.stopPropagation();
+        });
       };
     default:
       throw ["Does not understand", msg]
