@@ -47,6 +47,9 @@ state = function(o, k, v) {
   return old;
 }
 
+sends = [];
+messages = [];
+
 send = function(selector, receiver, context) {
   // Short-form to long-form
   let message;
@@ -57,6 +60,7 @@ send = function(selector, receiver, context) {
                 selector: selector,
                 context: context };
   }
+  sends.push(message)
 
   // Let the receiver itself handle the message *however* it wants
   let receive_message = state(message.to, 'receive-message');
@@ -77,7 +81,8 @@ function receive_via_obtain_impl_msg(msg) {
   else if (typeof(impl_or_delegate) === 'function') {
     method_impl = impl_or_delegate;
   } else { // Forward to delegate
-    method_impl = send('method-impl', impl_or_delegate, msg);
+    method_impl = send({ from: msg.to, to: impl_or_delegate,
+                         selector: 'method-impl', context: msg });
     if (method_impl === undefined) throw ["Does not understand", msg];
   }
   
@@ -93,57 +98,93 @@ function method_impl_via_methods_dict_then_delegate(obj, selector) {
 }
 
 universe = {};
+state(universe, 'name', 'universe');
 state(universe, 'receive-message', receive_via_obtain_impl_msg);
 state(universe, 'method-impl', method_impl_via_methods_dict_then_delegate);
 state(universe, 'methods', {});
 state(universe, 'methods')['method-impl'] = function(msg) {
+  let snd = msg.from ? msg.from.name : ''; let rcv = msg.to.name;
+  let sel = msg.selector; let selsel = msg.context.selector;
+  messages.push(`${snd} -> ${rcv} ${sel}: '${selsel}'`);
   let obtain_method_impl = state(universe, 'method-impl');
   return obtain_method_impl(msg.to, msg.context.selector);
 };
+state(universe, 'directory', {});
 state(universe, 'methods')['look-up'] = function(msg) {
+  let snd = msg.from ? msg.from.name : ''; let rcv = msg.to.name;
+  let sel = msg.selector; let keys = msg.context.keys;
+  messages.push(`${snd} -> ${rcv} ${sel}: ${keys}`);
   if (msg.context.keys.length === 0) return msg.to;
 
   let key = msg.context.keys.shift();
   let next = state(msg.to, 'directory')[key];
   if (next === undefined) throw "No such key "+key;
 
-  return send('look-up', next, msg.context);
+  return send({ from: msg.to, to: next,
+                selector: 'look-up', context: msg.context });
 };
-state(universe, 'directory', {});
-
-universe.ui = {}
-state(universe.ui, 'receive-message', receive_via_obtain_impl_msg);
-state(universe.ui, 'method-impl', method_impl_via_methods_dict_then_delegate);
-state(universe.ui, 'parent', universe);
-state(universe.ui, 'directory', {});
-state(universe, 'directory')['ui'] = universe.ui;
-
-universe.ui.mouse = {}
-state(universe.ui.mouse, 'receive-message', receive_via_obtain_impl_msg);
-state(universe.ui.mouse, 'method-impl', method_impl_via_methods_dict_then_delegate);
-state(universe.ui.mouse, 'parent', universe);
-state(universe.ui.mouse, 'directory', {});
-state(universe.ui, 'directory')['mouse'] = universe.ui.mouse;
-
-universe.ui.mouse.left = {}
-state(universe.ui.mouse.left, 'receive-message', receive_via_obtain_impl_msg);
-state(universe.ui.mouse.left, 'method-impl', method_impl_via_methods_dict_then_delegate);
-state(universe.ui.mouse.left, 'parent', universe);
-state(universe.ui.mouse.left, 'methods', {});
-state(universe.ui.mouse.left, 'methods')['pressed'] = function(msg) {};
-state(universe.ui.mouse.left, 'methods')['released'] = function(msg) {
-  console.log(msg);
+state(universe, 'methods')['my-name-is'] = function(msg) {
+  let snd = msg.from ? msg.from.name : ''; let rcv = msg.to.name;
+  let sel = msg.selector; let name = msg.context.name;
+  messages.push(`${snd} -> ${rcv} ${sel}: ${name}`);
+  state(msg.to, 'directory')[msg.context.name] = msg.from;
 };
-state(universe.ui.mouse.left, 'directory', {});
-state(universe.ui.mouse, 'directory')['left'] = universe.ui.mouse.left;
 
-universe.ui.mouse.cursor = {};
-state(universe.ui.mouse.cursor, 'receive-message', receive_via_obtain_impl_msg);
-state(universe.ui.mouse.cursor, 'method-impl', method_impl_via_methods_dict_then_delegate);
-state(universe.ui.mouse.cursor, 'parent', universe);
-state(universe.ui.mouse.cursor, 'methods', {});
-state(universe.ui.mouse.cursor, 'methods')['changed'] = function(msg) {
+ui = {}
+state(ui, 'name', 'ui');
+state(ui, 'receive-message', receive_via_obtain_impl_msg);
+state(ui, 'method-impl', method_impl_via_methods_dict_then_delegate);
+state(ui, 'parent', universe);
+state(ui, 'directory', {});
+send({ from: ui, to: universe,
+       selector: 'my-name-is', context: {name: 'ui'} });
+
+mouse = {}
+state(mouse, 'name', 'mouse');
+state(mouse, 'receive-message', receive_via_obtain_impl_msg);
+state(mouse, 'method-impl', method_impl_via_methods_dict_then_delegate);
+state(mouse, 'parent', universe);
+state(mouse, 'directory', {});
+send({ from: mouse, to: ui,
+       selector: 'my-name-is', context: {name: 'mouse'} });
+
+button_proto = {}
+state(button_proto, 'name', 'button-proto');
+state(button_proto, 'receive-message', receive_via_obtain_impl_msg);
+state(button_proto, 'method-impl', method_impl_via_methods_dict_then_delegate);
+state(button_proto, 'parent', universe);
+state(button_proto, 'methods', {});
+state(button_proto, 'methods')['pressed'] = function(msg) {
+  let snd = msg.from ? msg.from.name : ''; let rcv = msg.to.name;
+  let sel = msg.selector;
+  messages.push(`${snd} -> ${rcv} ${sel}`);
+  //send(???, 'changed', {absolute: 'down'});
+};
+state(button_proto, 'methods')['released'] = function(msg) {
+  let snd = msg.from ? msg.from.name : ''; let rcv = msg.to.name;
+  let sel = msg.selector;
+  messages.push(`${snd} -> ${rcv} ${sel}`);
+  //send(??/, 'changed', {absolute: 'up'});
+};
+
+lmb = {}
+state(lmb, 'name', 'lmb');
+state(lmb, 'receive-message', receive_via_obtain_impl_msg);
+state(lmb, 'method-impl', method_impl_via_methods_dict_then_delegate);
+state(lmb, 'parent', button_proto);
+state(lmb, 'directory', {});
+send({ from: lmb, to: mouse,
+       selector: 'my-name-is', context: {name: 'left'} });
+
+cursor = {};
+state(cursor, 'name', 'cursor');
+state(cursor, 'receive-message', receive_via_obtain_impl_msg);
+state(cursor, 'method-impl', method_impl_via_methods_dict_then_delegate);
+state(cursor, 'parent', universe);
+state(cursor, 'methods', {});
+state(cursor, 'methods')['changed'] = function(msg) {
   state(msg.to, 'value', msg.context.absolute);
 };
-state(universe.ui.mouse.cursor, 'directory', {});
-state(universe.ui.mouse, 'directory')['cursor'] = universe.ui.mouse.cursor;
+state(cursor, 'directory', {});
+send({ from: cursor, to: mouse,
+       selector: 'my-name-is', context: {name: 'cursor'} });
