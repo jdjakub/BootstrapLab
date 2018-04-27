@@ -27,76 +27,24 @@ state = function(o, k, v) {
   return old;
 }
 
-send = function(sender, selector, receiver, context) {
-  // Short-form to long-form
-  let message;
-  if (selector === undefined) message = sender;
-  else {
-    message = { from: sender,
-                to: receiver,
-                selector: selector,
-                context: context };
+svg = svgel('svg', body, {width: body.offsetWidth*.99, height: body.offsetHeight*.99})
+
+// Objective: re-ify mouse and keyboard.
+/*
+svg.onmousedown = e => {
+  if (e.button === 0) {
+    // LMB state is now down
+    // "LMB is down" is not "LMB is equal to down"
+    // LMB and "down" are separate objects
+    // Instead, "LMB is down" => "LMB current state = down"
+    // Some way to translate name-queries to the JS object pointers
+    send(substrate, 'change', left_mouse_button, {new_state: button_down})
   }
-
-  // Let the receiver itself handle the message *however* it wants
-  let receive_message = state(message.to, 'receive-message');
-  return receive_message(message);
 };
 
-recv_by_state_dispatch = msg => {
-  let dispatch = state(msg.to, 'dispatch');
-  let method_impl = dispatch(msg);
-  return method_impl(msg);
-};
-
-dispatch_via_table = msg => {
-  let t = state(msg.to, 'dispatch-table');
-  let method_impl = t[msg.selector];
-  if (method_impl === undefined) throw ["Does not understand", msg];
-  return method_impl;
-};
-
-universe = {};
-
-state(universe, 'receive-message', recv_by_state_dispatch);
-
-state(universe, 'dispatch', dispatch_via_table);
-state(universe, 'dispatch-table', {
-  ['dispatch']: msg => {
-    let d = state(msg.to, 'dispatch');
-    return dispatch(m.context)
-  },
-  ['created']: msg => {  
-    let svg = svgel('svg', body, { width: body.offsetWidth, height: body.offsetHeight });
-    state(msg.to, 'svg', svg);
-    svg.addEventListener('mouseup', e => {
-      send(msg.to, 'rect', msg.to, {center: [e.offsetX, e.offsetY]});
-    });
-  },
-  ['rect']: msg => {
-    let svg = state(msg.to, 'svg');
-    let [x,y] = msg.context.center;
-    let [x_extent, y_extent] = [150, 100];
-    let tl = [x - x_extent, y - y_extent];
-    let rect = svgel('rect', svg, { x: tl[0].toString(), y: tl[1].toString() });
-    attribs(rect, { width: 2*x_extent, height: 2*y_extent });
-    attribs(rect, { fill: '#dddddd', stroke: '#000000', stroke_width: '2' });
-    attribs(rect, { stroke_opacity: '1', fill_opacity: '1' });
-    rect.addEventListener('mouseup', e => {
-      if (!rect.isActive) {
-        rect.setAttribute('stroke', '#0000ff');
-        rect.setAttribute('stroke-width', '4');
-        rect.isActive = true;
-      } else {
-        rect.setAttribute('stroke', '#000000');
-        rect.setAttribute('stroke-width', '2');
-        rect.isActive = false;
-      }
-      e.stopPropagation();
-    });
-  }
-});
-
-send(null, 'created', universe);
-
+// Simulate:
+// Independently evolving JS objects
+// That can receive messages at any time
+// Which can have whatever effect they want
+*/
 
