@@ -3,92 +3,21 @@ Visually bootstrap a self-sustaining system, and take it from there.
 
 Part of an [effort](https://github.com/d-cook/SomethingNew) to rescue the usage and creation of computer software from its current dismal state.
 
-Initial substrate system is the "Id" object system from the paper [Open, Reusable Object Models](www.vpri.org/pdf/tr2006003a_objmod.pdf).
-
 More info at my [blog](https://programmingmadecomplicated.wordpress.com/category/programming/bootstraplab/).
 
-## How to use
-Open `orom.html` in the browser (I use Chrome). Open the JS console (try Ctrl+Shift+J or F12) and play around.
+# SketchpadLab
 
-(This is a simple skeleton referring to the script `orom.js`, so to be honest, run however you like.)
+Current specific research direction, as of late April 2018. [Blog post](https://programmingmadecomplicated.wordpress.com/2018/04/09/back-to-bootstrapping/)
 
-## Playing around
+Goal: build a visual and "pliable" model of arbitrary computation that is capable of modifying its own presentation and pliability.
 
-Create an Entity (conceptually, an Object, but this could be confused with plain JavaScript objects) and give it some state:
+Inspiration drawn from Ivan Sutherland's [1963 Sketchpad thesis](https://programmingmadecomplicated.wordpress.com/2018/04/15/reading-the-sketchpad-thesis/).
 
-```javascript
-e = new Entity();
-e.state('name', 'A bunch of state');
-e.state('name'); // returns the above string
-```
-
-This is the JavaScript, *implementation*-level way to create an Entity. However, a plain JS Entity only becomes an Entity proper once it has a *vtable* -- then it becomes a true part of the *interface*-level system, and messages can be sent to it.
-
-Create an Entity in the *interface*-level system by sending the message `allocate` to the object-vtable:
-```javascript
-e = send(object_vt, 'allocate');
-```
-
-We can't do much with this. However, if we add a method to the object-vtable, then all objects (Entities) in the system will automatically respond to that message.
-
-To do this, we first need an interface-level proxy for a JavaScript function:
-
-```javascript
-func_entity = send(function_vt, 'allocate'); // Function entities behave according to function_vt
-send(func_entity, 'init', 'hello world'); // Give it a name for your eyes
-```
-
-Find the "hello world" object in the page and type / copy+paste the following into its `code` property:
-```javascript
-function(self, first_name) {
-  first_name = first_name || 'whoever you are';
-  let cont = confirm('Hello, '+first_name+'! Continue?');
-  if (cont)
-    self.state('first-name', first_name);
-  return cont;
-}
-```
-
-Now add `func_entity` as a method to `object_vt`, using the `addMethod` message. Call the method whatever you want, keeping in mind that it's a CSS class under the hood -- so no non-alphanumeric characters except `-` and `_`, I think.
-
-```javascript
-send(object_vt, 'addMethod', 'hello-world', func_entity);
-```
-
-If you expand `object_vt`, you should see it has a `-hello-world` property. The initial hyphen marks a method name, as opposed to the name of some 'private' property.
-
-Since all objects have a vtable, and all vtables pass unhandled messages to their parent, and `object_vt` is at the end of this delegation chain -- all objects in the system now respond to the message `hello-world`.
-
-Including `e` from earlier:
-```javascript
-send(e, 'hello-world');
-send(e, 'hello-world', 'Object McObjFace');
-```
-
-Note that this will *still work* even if you change the source code in the `code` property. Currently it just compiles whatever's there at send-time. Anything beyond this is the work of optimisation, which ought to be for the computer to figure out and implement.
-
-If you want to keep the changes you've made to the system, I'm afraid you'll have to add the steps so far to `orom.js`. Also, resize everything as you like, and then call `saveDims()`. Copy the resulting code into the body of `Entity.prototype.restoreDims()` in said source file, and everything will be correctly sized next time it's loaded.
-
-(erk -- don't call one of your objects `'; delete_system32(); /*` or `saveDims()` might not be the only thing that breaks.)
-
-(NB: the `saveDims()` and `restoreDims()` functions access `state('name')` of all active Entities in the system. This will create the property as 0 if it doesn't exist, any un-named objects will gain it.)
-
-## Reminders if confused
-All messages sent to object O cause a lookup in O's *vtable*. Thus, the only time this will lookup *in O itself* is if `O.vtable = O`, such as with the vtable-vtable, or if O is the object-vtable (because delegation through `parent` will terminate here.)
-
-Hence, *nothing* except `vtable_vt` and `object_vt` can be sent its "own" messages. E.g. if I add the method `foo` to `object_vt`, attempting `send(object_vt, 'foo')` **will not work**. The internal state of an object does not affect method lookups to its vtable -- although this is conceptually possible to implement.
-
-Vtables act like extremely flexible, dynamic and late-bound *classes*. The idea is that if multiple objects have the same vtable, then they all 'behave' the same way. We say they are part of the same "clone family".
-
-Of course, this is not strictly true; the result of a message send will probably depend in some way on the receiver's state. But the point is that **vtables are the behaviours**, which can apply to *different* instances "in the same way".
-
-The object-vtable, function-vtable, vtable-vtable are all part of the "vtable" clone family, because they all behave according to `vtable_vt`.
-
-Think of the following:
-* To create a new function, we send `allocate` to the function-vtable -- *even though* `allocate` lives in `vtable_vt`.
-* To add it to the object-vtable as a method, we send `addMethod` to `object_vt` -- even though `addMethod` also lives in `vtable_vt`.
-
-So if you want a different 'type' of 'vtable', it can be done. (details left as an exercise for the reader, heh heh heh...)
-
-See [here](http://piumarta.com/software/cola/prototypes.html) for an exposition of what this system *doesn't* do, and how it could be added.
+Current thoughts:
+* Topology, i.e. "connectedness", rather than specific shape or size or position or arrangement, is *key*.
+* First step: build a "graph" Turing machine where memory is simply the vertices of a graph.
+* Arithmetical operations -- both vector and scalar -- can be done graphically (the ancient Greeks knew this.) However, *spatial* "quantity" requires some unit *ruler* to measure against, and may or may not end up violating the "topological principle".
+* Zeroth step: code a system in JS that lets one *draw* topologically connected SVG elements, and let each SVG element be as smart or dumb as required. Then we can treat SVG elements and their attributes as both "data" and "instructions" for modifying data (other SVG elements)
+* Camera controls: panning, zooming.
+* At some mature point, provide spatial abstraction: collapse groups of objects down to a single object, making infinite use of finite space.
 
