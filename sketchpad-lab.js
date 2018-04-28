@@ -77,6 +77,11 @@ class Variable {
   changeSelf(value) {
     this.value = value;
   }
+  
+  // allow a Variable to be a dependent
+  changed(k, v) {
+    this.change(v);
+  }
 }
 
 // Intended use: setting variable relationships.
@@ -114,7 +119,7 @@ class SvgElement {
 
 class SvgCircle extends SvgElement {
   constructor() {
-    super('circle', svg, ['cx', 'cy', 'r']);
+    super('circle', svg, ['cx', 'cy', 'r', 'stroke', 'fill']);
   }
 }
 
@@ -132,13 +137,29 @@ svg.onmousemove = e => {
   pointer.y.change(y);
 };
 
-c = new SvgCircle();
-c.attrs['r'].change(30);
-variable(c.attrs, 'cx', c, pointer.x);
-variable(c.attrs, 'cy', c, pointer.y);
+new_node = () => {
+  let c = new SvgCircle();
+  c.attrs['r'].change(15);
+  c.attrs['stroke'].change('black');
+  c.attrs['fill'].change('white');
+  return c;
+};
+
+svg_pick_up = (elem, attr_x, attr_y) => {
+  pointer.x.subscribe('', elem.attrs[attr_x]);
+  pointer.y.subscribe('', elem.attrs[attr_y]);
+};
+
+svg_drop = (elem, attr_x, attr_y) => {
+  pointer.x.unsubscribe(elem.attrs[attr_x]);
+  pointer.y.unsubscribe(elem.attrs[attr_y]);
+};
 
 // TODO: When point.x changes, the point as a whole changes.
 // A dependent line should be told: one of your points has changed.
 // However, it should also be able to see the exact nature of this change, since
 // it is linked to a svg x attribute anyway.
 
+tool = "draw";
+edge_start = new_node();
+svg_pick_up(edge_start, 'cx', 'cy');
