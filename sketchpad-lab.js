@@ -57,9 +57,8 @@ class Variable {
   unsubscribe(obj, k) {
     let names = this.dependents.get(obj); // Get names registered for obj
     if (names !== undefined) { // If there is a subscription
-      if (k !== undefined) {  // If specified to unsubscribe a specific name
-        names.delete(k);
-      }
+      if (k !== undefined) names.delete(k); // Unsubscribe specific name
+      else names.clear(); // Or unsubscribe all names by default
       if (names.size === 0) // If there is effectively no subscription
         this.dependents.delete(obj); // Then make this officially true
     }
@@ -163,3 +162,15 @@ svg_drop = (elem, attr_x, attr_y) => {
 tool = "draw";
 edge_start = new_node();
 svg_pick_up(edge_start, 'cx', 'cy');
+
+svg.onmousedown = e => {
+  svg_drop(edge_start, 'cx', 'cy');
+  edge_end = new_node();
+  svg_pick_up(edge_end, 'cx', 'cy');
+};
+
+svg.onmouseup = e => {
+  svg_drop(edge_end, 'cx', 'cy');
+  edge_start = new_node();
+  svg_pick_up(edge_start, 'cx', 'cy');
+};
