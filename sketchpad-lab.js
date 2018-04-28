@@ -176,7 +176,7 @@ svg_drop = (elem, attr_x, attr_y) => {
 // However, it should also be able to see the exact nature of this change, since
 // it is linked to a svg x attribute anyway.
 
-tool = "draw";
+tool = 'draw';
 edge_start = new_node();
 svg_pick_up(edge_start, 'cx', 'cy');
 
@@ -190,20 +190,43 @@ svg.onmouseout = e => {
     e.target.setAttribute('stroke', 'black');
 }
 
+moving = undefined;
 svg.onmousedown = e => {
-  if (e.target.tagName === 'circle') {
-    edge_end = edge_start;
-    edge_start = e.target.userData;
-  } else {
-    svg_drop(edge_start, 'cx', 'cy');
-    edge_end = new_node();
-    svg_pick_up(edge_end, 'cx', 'cy');
+  if (tool === 'draw') {
+    if (e.target.tagName === 'circle') {
+      edge_end = edge_start;
+      edge_start = e.target.userData;
+    } else {
+      svg_drop(edge_start, 'cx', 'cy');
+      edge_end = new_node();
+      svg_pick_up(edge_end, 'cx', 'cy');
+    }
+    line = new_edge(edge_start, edge_end);
+  } else if (tool === 'move') {
+    if (e.target.tagName === 'circle') {
+      let elem = e.target.userData;
+      svg_pick_up(elem, 'cx', 'cy');
+      moving = elem;
+    }
   }
-  line = new_edge(edge_start, edge_end);
 };
 
 svg.onmouseup = e => {
-  svg_drop(edge_end, 'cx', 'cy');
-  edge_start = new_node();
-  svg_pick_up(edge_start, 'cx', 'cy');
+  if (tool === 'draw') {
+    svg_drop(edge_end, 'cx', 'cy');
+    edge_start = new_node();
+    svg_pick_up(edge_start, 'cx', 'cy');
+  } else if (tool === 'move') {
+    if (moving !== undefined)
+      svg_drop(moving, 'cx', 'cy');
+  }
 };
+
+/* To begin moving stuff do:
+svg_drop(edge_start, 'cx', 'cy');
+tool = 'move';
+*/
+/* To draw stuff again to:
+svg_pick_up(edge_start, 'cx', 'cy');
+tool = 'draw';
+*/
