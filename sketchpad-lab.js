@@ -8,7 +8,7 @@ body.style.minHeight = '100%';
 // e.g. attribs(rect, {stroke_width: 5, stroke: 'red'})
 attribs = (elem, attrs) => {
   for (let [k,v] of Object.entries(attrs)) {
-    let value = v.value === undefined? v : v.value;
+    let value = v;//.value === undefined? v : v.value;
     elem.setAttribute(k.replace('_','-'), value);
   }
 };
@@ -51,6 +51,7 @@ class Variable {
       this.dependents.set(obj, names);
     }
     names.add(k);
+    obj.changed(k, this); // Provide initial value
     return this;
   }
   
@@ -79,7 +80,7 @@ class Variable {
   
   // allow a Variable to be a dependent
   changed(k, v) {
-    this.change(v);
+    this.change(v.value);
   }
 }
 
@@ -112,7 +113,9 @@ class SvgElement {
   }
   
   changed(key, v) {
-    attribs(this.svgel, {[key]: v.value});
+    v = v.value;
+    if (v !== undefined)
+      attribs(this.svgel, {[key]: v});
   }
 }
 
@@ -124,7 +127,7 @@ class SvgCircle extends SvgElement {
 
 class SvgLine extends SvgElement {
   constructor() {
-    super('line', svg, ['x1', 'y1', 'x2', 'y2']);
+    super('line', svg, ['x1', 'y1', 'x2', 'y2', 'stroke', 'stroke-width']);
   }
 }
 
@@ -143,6 +146,17 @@ new_node = () => {
   c.attrs['fill'].change('white');
   return c;
 };
+
+new_edge = (start, end) => {
+  let l = new SvgLine();
+  l.attrs['stroke-width'].change(2);
+  l.attrs['stroke'].change('black');
+  start.attrs['cx'].subscribe('x1', l.attrs['x1']);
+  start.attrs['cy'].subscribe('y1', l.attrs['y1']);
+  end.attrs['cx'].subscribe('x2', l.attrs['x2']);
+  end.attrs['cy'].subscribe('y2', l.attrs['y2']);
+  return l;
+}
 
 svg_pick_up = (elem, attr_x, attr_y) => {
   pointer.x.subscribe('', elem.attrs[attr_x]);
@@ -167,6 +181,7 @@ svg.onmousedown = e => {
   svg_drop(edge_start, 'cx', 'cy');
   edge_end = new_node();
   svg_pick_up(edge_end, 'cx', 'cy');
+  line = new_edge(edge_start, edge_end);
 };
 
 svg.onmouseup = e => {
