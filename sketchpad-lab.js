@@ -149,6 +149,7 @@ new_node = () => {
 
 new_edge = (start, end) => {
   let l = new SvgLine();
+  l.svgel.style.pointerEvents = 'none';
   l.attrs['stroke-width'].change(2);
   l.attrs['stroke'].change('black');
   start.attrs['cx'].subscribe('x1', l.attrs['x1']);
@@ -159,11 +160,13 @@ new_edge = (start, end) => {
 }
 
 svg_pick_up = (elem, attr_x, attr_y) => {
+  elem.svgel.style.pointerEvents = 'none';
   pointer.x.subscribe('', elem.attrs[attr_x]);
   pointer.y.subscribe('', elem.attrs[attr_y]);
 };
 
 svg_drop = (elem, attr_x, attr_y) => {
+  elem.svgel.style.pointerEvents = 'all';
   pointer.x.unsubscribe(elem.attrs[attr_x]);
   pointer.y.unsubscribe(elem.attrs[attr_y]);
 };
@@ -177,10 +180,25 @@ tool = "draw";
 edge_start = new_node();
 svg_pick_up(edge_start, 'cx', 'cy');
 
+svg.onmouseover = e => {
+  if (e.target !== svg)
+    e.target.setAttribute('stroke', 'red');
+}
+
+svg.onmouseout = e => {
+  if (e.target !== svg)
+    e.target.setAttribute('stroke', 'black');
+}
+
 svg.onmousedown = e => {
-  svg_drop(edge_start, 'cx', 'cy');
-  edge_end = new_node();
-  svg_pick_up(edge_end, 'cx', 'cy');
+  if (e.target.tagName === 'circle') {
+    edge_end = edge_start;
+    edge_start = e.target.userData;
+  } else {
+    svg_drop(edge_start, 'cx', 'cy');
+    edge_end = new_node();
+    svg_pick_up(edge_end, 'cx', 'cy');
+  }
   line = new_edge(edge_start, edge_end);
 };
 
