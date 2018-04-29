@@ -7,7 +7,7 @@ body.style.minHeight = '100%';
 // e.g. attribs(rect, {stroke_width: 5, stroke: 'red'})
 attribs = (elem, attrs) => {
   for (let [k,v] of Object.entries(attrs)) {
-    let value = v;//.value === undefined? v : v.value;
+    let value = v;
     elem.setAttribute(k.replace('_','-'), value);
   }
 };
@@ -75,29 +75,34 @@ class Variable {
 
   // Override to do something other than update value...?
   changeSelf(value) {
-    this.value = value;
+    this._value = value;
+  }
+  
+  value() {
+    return this._value;
   }
   
   // allow a Variable to be a dependent
   changed(k, v) {
-    this.change(v.value);
+    this.change(v.value());
   }
 }
 
-// Intended use: setting variable relationships.
-// variable(o, k, l, v) sets o[k] to v and subscribes l to v under the name k.
-// If there was already a variable under o[k], it first unsubscribes k from this.
-// e.g. variable(line.attrs, 'x1', line, pointer.x)
-// makes line's start x-coordinate follow the mouse
-// and a subsequent variable(line.attrs, 'x1', line, pointer.y)
-// will make it follow y **instead**.
-function variable(o, k, l, v) {
-  let old = o[k];
-  if (old !== undefined && old.unsubscribe !== undefined)
-    old.unsubscribe(l, k);
-    
-  o[k] = v;
-  v.subscribe(k, l);
+class VarList extends Variable {
+  constructor(...vars) {
+    super();
+    this.vars = vars;
+  }
+  
+  changeSelf(values) {
+    for (let i=0; i<this.vars.length; i++) {
+      this.vars[i].change(values[i])
+    }
+  }
+  
+  value() {
+    return this.vars.map(v => v.value())
+  }
 }
 
 //DOM node objects should be called DUMB node objects.
@@ -108,12 +113,12 @@ class SvgElement {
     this.svgel.userData = this;
     this.attrs = {};
     for (let k of attrs) {
-      variable(this.attrs, k, this, new Variable());
+      this.attrs[k] = new Variable().subscribe(k, this);
     }
   }
   
   changed(key, v) {
-    v = v.value;
+    v = v.value();
     if (v !== undefined)
       attribs(this.svgel, {[key]: v});
   }
@@ -122,21 +127,23 @@ class SvgElement {
 class SvgCircle extends SvgElement {
   constructor() {
     super('circle', svg, ['cx', 'cy', 'r', 'stroke', 'fill']);
+    this.center = new VarList(this.attrs['cx'], this.attrs['cy']);
   }
 }
 
 class SvgLine extends SvgElement {
   constructor() {
     super('line', svg, ['x1', 'y1', 'x2', 'y2', 'stroke', 'stroke-width']);
+    this.start = new VarList(this.attrs['x1'], this.attrs['y1']);
+    this.end = new VarList(this.attrs['x2'], this.attrs['y2']);
   }
 }
 
-pointer = { x: new Variable(), y: new Variable() };
+pointer = new VarList(new Variable(), new Variable());
 
 svg.onmousemove = e => {
-  let [x,y] = [e.offsetX, e.offsetY];
-  pointer.x.change(x);
-  pointer.y.change(y);
+  let coords = [e.offsetX, e.offsetY];
+  pointer.change(coords);
 };
 
 new_node = () => {
@@ -152,33 +159,24 @@ new_edge = (start, end) => {
   l.svgel.style.pointerEvents = 'none';
   l.attrs['stroke-width'].change(2);
   l.attrs['stroke'].change('black');
-  start.attrs['cx'].subscribe('x1', l.attrs['x1']);
-  start.attrs['cy'].subscribe('y1', l.attrs['y1']);
-  end.attrs['cx'].subscribe('x2', l.attrs['x2']);
-  end.attrs['cy'].subscribe('y2', l.attrs['y2']);
+  start.center.subscribe('start', l.start);
+  end.center.subscribe('end', l.end);
   return l;
 }
 
-svg_pick_up = (elem, attr_x, attr_y) => {
+svg_pick_up = (elem) => {
   elem.svgel.style.pointerEvents = 'none';
-  pointer.x.subscribe('', elem.attrs[attr_x]);
-  pointer.y.subscribe('', elem.attrs[attr_y]);
+  pointer.subscribe('center', elem.center);
 };
 
-svg_drop = (elem, attr_x, attr_y) => {
+svg_drop = (elem) => {
   elem.svgel.style.pointerEvents = 'all';
-  pointer.x.unsubscribe(elem.attrs[attr_x]);
-  pointer.y.unsubscribe(elem.attrs[attr_y]);
+  pointer.unsubscribe(elem.center);
 };
-
-// TODO: When point.x changes, the point as a whole changes.
-// A dependent line should be told: one of your points has changed.
-// However, it should also be able to see the exact nature of this change, since
-// it is linked to a svg x attribute anyway.
 
 tool = 'draw';
 edge_start = new_node();
-svg_pick_up(edge_start, 'cx', 'cy');
+svg_pick_up(edge_start);
 
 current_edge = undefined;
 
@@ -199,15 +197,15 @@ svg.onmousedown = e => {
       edge_end = edge_start;
       edge_start = e.target.userData;
     } else {
-      svg_drop(edge_start, 'cx', 'cy');
+      svg_drop(edge_start);
       edge_end = new_node();
-      svg_pick_up(edge_end, 'cx', 'cy');
+      svg_pick_up(edge_end);
     }
     current_edge = new_edge(edge_start, edge_end);
   } else if (tool === 'move') {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
-      svg_pick_up(elem, 'cx', 'cy');
+      svg_pick_up(elem);
       moving = elem;
     }
   }
@@ -217,29 +215,25 @@ svg.onmouseup = e => {
   if (tool === 'draw') {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
-        edge_end.attrs['cx'].unsubscribe(current_edge.attrs['x2']);
-        edge_end.attrs['cy'].unsubscribe(current_edge.attrs['y2']);
-        elem.attrs['cx'].subscribe('x2', current_edge.attrs['x2']);
-        elem.attrs['cy'].subscribe('y2', current_edge.attrs['y2']);
-        edge_start = edge_end;
+      edge_end.center.unsubscribe(current_edge.end);
+      elem.center.subscribe('end', current_edge.end);
+      edge_start = edge_end;
     } else {
-      svg_drop(edge_end, 'cx', 'cy');
+      svg_drop(edge_end);
       edge_start = new_node();
-      svg_pick_up(edge_start, 'cx', 'cy');
+      svg_pick_up(edge_start);
     }
     edge_end = undefined;
     current_edge = undefined;
   } else if (tool === 'move') {
     if (moving !== undefined)
-      svg_drop(moving, 'cx', 'cy');
+      svg_drop(moving);
   }
 };
 
 /* To begin moving stuff do:
-svg_drop(edge_start, 'cx', 'cy');
 tool = 'move';
 */
 /* To draw stuff again to:
-svg_pick_up(edge_start, 'cx', 'cy');
 tool = 'draw';
 */
