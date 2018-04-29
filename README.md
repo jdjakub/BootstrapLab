@@ -19,5 +19,5 @@ Current thoughts:
 * Arithmetical operations -- both vector and scalar -- can be done graphically (the ancient Greeks knew this.) However, *spatial* "quantity" requires some unit *ruler* to measure against, and may or may not end up violating the "topological principle".
 * Zeroth step: code a system in JS that lets one *draw* topologically connected SVG elements, and let each SVG element be as smart or dumb as required. Then we can treat SVG elements and their attributes as both "data" and "instructions" for modifying data (other SVG elements)
 * Camera controls: panning, zooming.
-* At some mature point, provide spatial abstraction: collapse groups of objects down to a single object, making infinite use of finite space.
+* At some mature point, provide *spatial abstraction*: collapse groups of objects down to a single object, making infinite use of finite space.
 

@@ -1,7 +1,6 @@
 document.documentElement.style.height = '99%';
 
 body = document.body;
-body.style.border = '2px dashed red';
 body.style.margin = '0px';
 body.style.minHeight = '100%';
 
@@ -30,7 +29,8 @@ state = function(o, k, v) {
   return old;
 }
 
-svg = svgel('svg', body, {width: body.offsetWidth*.99, height: body.offsetHeight*.99});
+svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
+svg.style.border = '2px dashed red';
 
 // Variable: smallest unit of change.
 // Observer pattern. Holds a registry of "dependents", i.e. subscribers.
@@ -180,6 +180,8 @@ tool = 'draw';
 edge_start = new_node();
 svg_pick_up(edge_start, 'cx', 'cy');
 
+current_edge = undefined;
+
 svg.onmouseover = e => {
   if (e.target !== svg)
     e.target.setAttribute('stroke', 'red');
@@ -201,7 +203,7 @@ svg.onmousedown = e => {
       edge_end = new_node();
       svg_pick_up(edge_end, 'cx', 'cy');
     }
-    line = new_edge(edge_start, edge_end);
+    current_edge = new_edge(edge_start, edge_end);
   } else if (tool === 'move') {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
@@ -213,9 +215,20 @@ svg.onmousedown = e => {
 
 svg.onmouseup = e => {
   if (tool === 'draw') {
-    svg_drop(edge_end, 'cx', 'cy');
-    edge_start = new_node();
-    svg_pick_up(edge_start, 'cx', 'cy');
+    if (e.target.tagName === 'circle') {
+      let elem = e.target.userData;
+        edge_end.attrs['cx'].unsubscribe(current_edge.attrs['x2']);
+        edge_end.attrs['cy'].unsubscribe(current_edge.attrs['y2']);
+        elem.attrs['cx'].subscribe('x2', current_edge.attrs['x2']);
+        elem.attrs['cy'].subscribe('y2', current_edge.attrs['y2']);
+        edge_start = edge_end;
+    } else {
+      svg_drop(edge_end, 'cx', 'cy');
+      edge_start = new_node();
+      svg_pick_up(edge_start, 'cx', 'cy');
+    }
+    edge_end = undefined;
+    current_edge = undefined;
   } else if (tool === 'move') {
     if (moving !== undefined)
       svg_drop(moving, 'cx', 'cy');
