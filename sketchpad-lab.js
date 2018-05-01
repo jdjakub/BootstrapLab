@@ -109,7 +109,7 @@ class VarList extends Variable {
   }
 }
 
-//DOM node objects should be called DUMB node objects.
+// DOM node objects should be called DUMB node objects.
 // Their attributes must be reified into Variables:
 class SvgElement {
   constructor(type, parent) {
@@ -159,13 +159,39 @@ class SvgElement {
   }
 }
 
+class SvgRect extends SvgElement {
+  constructor() {
+    super('rect', svg);
+    this.top_left = new VarList(this.attr('x'), this.attr('y'));
+    this.width = this.attr('width');
+    this.height = this.attr('height');
+  }
+}
+
+backg_rect = new SvgRect();
+backg_rect.svgel.style.pointerEvents = 'none';
+backg_rect.top_left.change(0, 0);
+backg_rect.width.change(svg.getAttribute('width'));
+backg_rect.height.change(svg.getAttribute('height'));
+backg_rect.attr('fill').change('#dddddd');
+
 class SvgCircle extends SvgElement {
   constructor() {
     super('circle', svg);
     this.center = new VarList(this.attr('cx'), this.attr('cy'));
     this.radius = this.attr('r');
   }
+  
+  activated() {
+    this.center.subscribe(activated_token.center);
+    this.radius.subscribe(activated_token.radius);
+  }
 }
+
+activated_token = new SvgCircle();
+activated_token.svgel.style.pointerEvents = 'none';
+activated_token.attr('stroke').change('gold');
+activated_token.attr('stroke-width').change(10);
 
 class SvgLine extends SvgElement {
   constructor() {
@@ -231,6 +257,7 @@ body.onkeydown = e => {
   if (e.key === 'd') tool.change('draw');
   else if (e.key === 'm') tool.change('move');
   else if (e.key === 'x') tool.change('delete');
+  else if (e.key === 'a' && moving !== undefined) moving.activated();
 };
 
 svg.onmouseover = e => {
