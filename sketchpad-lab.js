@@ -174,11 +174,20 @@ svg_drop = (elem) => {
   pointer.unsubscribe(elem.center);
 };
 
-tool = 'draw';
+tool = new Variable();
+tool.subscribe('tool', { changed: (k, v) => console.log('Tool: '+v.value()) });
+tool.change('draw');
+
 edge_start = new_node();
 svg_pick_up(edge_start);
 
 current_edge = undefined;
+
+body.onkeydown = e => {
+  if (e.key === 'd') tool.change('draw');
+  else if (e.key === 'm') tool.change('move');
+  else if (e.key === 'x') tool.change('delete');
+};
 
 svg.onmouseover = e => {
   if (e.target !== svg)
@@ -192,7 +201,7 @@ svg.onmouseout = e => {
 
 moving = undefined;
 svg.onmousedown = e => {
-  if (tool === 'draw') {
+  if (tool.value() === 'draw') {
     if (e.target.tagName === 'circle') {
       edge_end = edge_start;
       edge_start = e.target.userData;
@@ -202,17 +211,22 @@ svg.onmousedown = e => {
       svg_pick_up(edge_end);
     }
     current_edge = new_edge(edge_start, edge_end);
-  } else if (tool === 'move') {
+  } else if (tool.value() === 'move') {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
       svg_pick_up(elem);
       moving = elem;
     }
+  } else if (tool.value() === 'delete') {
+    if (e.target.tagName === 'circle') {
+      let elem = e.target.userData;
+      svg_delete(elem);
+    }
   }
 };
 
 svg.onmouseup = e => {
-  if (tool === 'draw') {
+  if (tool.value() === 'draw') {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
       edge_end.center.unsubscribe(current_edge.end);
@@ -225,15 +239,13 @@ svg.onmouseup = e => {
     }
     edge_end = undefined;
     current_edge = undefined;
-  } else if (tool === 'move') {
+  } else if (tool.value() === 'move') {
     if (moving !== undefined)
       svg_drop(moving);
   }
 };
 
-/* To begin moving stuff do:
-tool = 'move';
+/* To begin moving stuff press m
 */
-/* To draw stuff again to:
-tool = 'draw';
+/* To draw stuff again press d
 */
