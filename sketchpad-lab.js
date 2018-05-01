@@ -40,41 +40,31 @@ svg.style.border = '2px dashed red';
 // Calls circle.changed('r', radius_variable) when changed.
 class Variable {
   constructor() {
-    this.dependents = new Map(); // obj --> names registered by obj
+    this.targets = new Set();
+    this.sources = new Set();
   }
   
-  // x.subscribe('x', point)
-  subscribe(k, obj) {
-    let names = this.dependents.get(obj); // Get names registered for obj
-    if (names === undefined) { // If obj is not already subscribed
-      names = new Set();
-      this.dependents.set(obj, names);
-    }
-    names.add(k);
-    obj.changed(k, this); // Provide initial value
+  subscribe(obj, id) {
+    this.targets.add(obj);
+    obj.subscribed_to(this, id); // Confirm
+    obj.changed(this); // Provide initial value
     return this;
   }
   
-  unsubscribe(obj, k) {
-    let names = this.dependents.get(obj); // Get names registered for obj
-    if (names !== undefined) { // If there is a subscription
-      if (k !== undefined) names.delete(k); // Unsubscribe specific name
-      else names.clear(); // Or unsubscribe all names by default
-      if (names.size === 0) // If there is effectively no subscription
-        this.dependents.delete(obj); // Then make this officially true
-    }
+  unsubscribe(obj) {
+    this.targets.delete(obj);
+    obj.unsubscribed_from(this);
     return this;
   }
 
   change(...args) {
-    this.changeSelf(...args);
-    for (let [dep, names] of this.dependents)
-      for (let k of names)
-        dep.changed(k, this);
+    this.change_self(...args);
+    for (let t of this.targets)
+        t.changed(this);
   }
 
   // Override to do something other than update value...?
-  changeSelf(value) {
+  change_self(value) {
     this._value = value;
   }
   
@@ -83,7 +73,15 @@ class Variable {
   }
   
   // allow a Variable to be a dependent
-  changed(k, v) {
+  subscribed_to(v) {
+    this.sources.add(v);
+  }
+  
+  unsubscribed_from(v) {
+    this.sources.delete(v);
+  }
+  
+  changed(v) {
     this.change(v.value());
   }
 }
@@ -94,7 +92,7 @@ class VarList extends Variable {
     this.vars = vars;
   }
   
-  changeSelf(values) {
+  change_self(values) {
     for (let i=0; i<this.vars.length; i++) {
       this.vars[i].change(values[i])
     }
@@ -108,34 +106,61 @@ class VarList extends Variable {
 //DOM node objects should be called DUMB node objects.
 // Their attributes must be reified into Variables:
 class SvgElement {
-  constructor(type, parent, attrs) {
+  constructor(type, parent) {
     this.svgel = svgel(type, parent);
     this.svgel.userData = this;
-    this.attrs = {};
-    for (let k of attrs) {
-      this.attrs[k] = new Variable().subscribe(k, this);
-    }
+    this.var_to_attr_map = new Map();
+    this.attr_to_var_map = new Map();
   }
   
-  changed(key, v) {
-    v = v.value();
-    if (v !== undefined)
-      attribs(this.svgel, {[key]: v});
+  attr(k) {
+    let v = this.attr_to_var_map.get(k);
+    // Lazy initialise
+    if (v === undefined) {
+      v = new Variable();
+      v.subscribe(this, k);
+    }
+    return v;
+  }
+  
+  _key_of(v) {
+    return this.var_to_attr_map.get(v);
+  }
+  
+  subscribed_to(v, key) {
+    if (this.var_to_attr_map.has(v))
+      throw "Multiple subscription to attr "+key;
+    this.var_to_attr_map.set(v, key);
+    this.attr_to_var_map.set(key, v);
+  }
+  
+  unsubscribed_from(v) {
+    let k = this._key_of(v);
+    this.var_to_attr_map.delete(v);
+    this.attr_to_var_map.delete(k);
+  }
+  
+  changed(v) {
+    let val = v.value();
+    let key = this._key_of(v);
+    if (val !== undefined && key !== undefined)
+        attribs(this.svgel, {[key]: val});
   }
 }
 
 class SvgCircle extends SvgElement {
   constructor() {
-    super('circle', svg, ['cx', 'cy', 'r', 'stroke', 'fill']);
-    this.center = new VarList(this.attrs['cx'], this.attrs['cy']);
+    super('circle', svg);
+    this.center = new VarList(this.attr('cx'), this.attr('cy'));
+    this.radius = this.attr('r');
   }
 }
 
 class SvgLine extends SvgElement {
   constructor() {
-    super('line', svg, ['x1', 'y1', 'x2', 'y2', 'stroke', 'stroke-width']);
-    this.start = new VarList(this.attrs['x1'], this.attrs['y1']);
-    this.end = new VarList(this.attrs['x2'], this.attrs['y2']);
+    super('line', svg);
+    this.start = new VarList(this.attr('x1'), this.attr('y1'));
+    this.end = new VarList(this.attr('x2'), this.attr('y2'));
   }
 }
 
@@ -148,25 +173,25 @@ svg.onmousemove = e => {
 
 new_node = () => {
   let c = new SvgCircle();
-  c.attrs['r'].change(15);
-  c.attrs['stroke'].change('black');
-  c.attrs['fill'].change('white');
+  c.radius.change(15);
+  c.attr('stroke').change('black');
+  c.attr('fill').change('white');
   return c;
 };
 
 new_edge = (start, end) => {
   let l = new SvgLine();
   l.svgel.style.pointerEvents = 'none';
-  l.attrs['stroke-width'].change(2);
-  l.attrs['stroke'].change('black');
-  start.center.subscribe('start', l.start);
-  end.center.subscribe('end', l.end);
+  l.attr('stroke-width').change(2);
+  l.attr('stroke').change('black');
+  start.center.subscribe(l.start);
+  end.center.subscribe(l.end);
   return l;
 }
 
 svg_pick_up = (elem) => {
   elem.svgel.style.pointerEvents = 'none';
-  pointer.subscribe('center', elem.center);
+  pointer.subscribe(elem.center);
 };
 
 svg_drop = (elem) => {
@@ -175,7 +200,11 @@ svg_drop = (elem) => {
 };
 
 tool = new Variable();
-tool.subscribe('tool', { changed: (k, v) => console.log('Tool: '+v.value()) });
+tool.subscribe({
+  changed: v => console.log('Tool: '+v.value()),
+  subscribed_to: v => v,
+  unsubscribed_from: v => v
+});
 tool.change('draw');
 
 edge_start = new_node();
@@ -230,7 +259,7 @@ svg.onmouseup = e => {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
       edge_end.center.unsubscribe(current_edge.end);
-      elem.center.subscribe('end', current_edge.end);
+      elem.center.subscribe(current_edge.end);
       edge_start = edge_end;
     } else {
       svg_drop(edge_end);
