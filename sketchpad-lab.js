@@ -81,6 +81,12 @@ class Variable {
     this.sources.delete(v);
   }
   
+  unsubscribe_all() {
+    for (let s of this.sources) {
+      s.unsubscribe(this);
+    }
+  }
+  
   changed(v) {
     this.change(v.value());
   }
@@ -121,6 +127,11 @@ class SvgElement {
       v.subscribe(this, k);
     }
     return v;
+  }
+  
+  disconnect() {
+    for (let v of this.attr_to_var_map.values())
+      v.unsubscribe_all();
   }
   
   _key_of(v) {
@@ -181,7 +192,6 @@ new_node = () => {
 
 new_edge = (start, end) => {
   let l = new SvgLine();
-  l.svgel.style.pointerEvents = 'none';
   l.attr('stroke-width').change(2);
   l.attr('stroke').change('black');
   start.center.subscribe(l.start);
@@ -189,15 +199,20 @@ new_edge = (start, end) => {
   return l;
 }
 
-svg_pick_up = (elem) => {
+svg_pick_up = elem => {
   elem.svgel.style.pointerEvents = 'none';
   pointer.subscribe(elem.center);
 };
 
-svg_drop = (elem) => {
+svg_drop = elem => {
   elem.svgel.style.pointerEvents = 'all';
   pointer.unsubscribe(elem.center);
 };
+
+svg_delete = elem => {
+  elem.disconnect();
+  elem.svgel.remove();
+}
 
 tool = new Variable();
 tool.subscribe({
@@ -240,6 +255,7 @@ svg.onmousedown = e => {
       svg_pick_up(edge_end);
     }
     current_edge = new_edge(edge_start, edge_end);
+    current_edge.svgel.style.pointerEvents = 'none';
   } else if (tool.value() === 'move') {
     if (e.target.tagName === 'circle') {
       let elem = e.target.userData;
@@ -247,10 +263,8 @@ svg.onmousedown = e => {
       moving = elem;
     }
   } else if (tool.value() === 'delete') {
-    if (e.target.tagName === 'circle') {
-      let elem = e.target.userData;
-      svg_delete(elem);
-    }
+    let elem = e.target.userData;
+    if (elem !== undefined) svg_delete(elem);
   }
 };
 
@@ -267,6 +281,7 @@ svg.onmouseup = e => {
       svg_pick_up(edge_start);
     }
     edge_end = undefined;
+    current_edge.svgel.style.pointerEvents = 'all';
     current_edge = undefined;
   } else if (tool.value() === 'move') {
     if (moving !== undefined)
