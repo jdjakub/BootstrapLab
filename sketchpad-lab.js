@@ -183,7 +183,8 @@ class SvgCircle extends SvgElement {
   }
   
   activated() {
-    activated_token.disconnect();
+    activated_token.center.unsubscribe_all();
+    activated_token.radius.unsubscribe_all();
     this.center.subscribe(activated_token.center);
     this.radius.subscribe(activated_token.radius);
   }
