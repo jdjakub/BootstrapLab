@@ -34,10 +34,10 @@ svg.style.border = '2px dashed red';
 
 // Variable: smallest unit of change.
 // Observer pattern. Holds a registry of "dependents", i.e. subscribers.
-// An object o subscribes to variable v under name(s) k. (k need not be a string.)
-// When v changes, it calls o.changed(k, v) for each name k
-// E.g. radius_variable.subscribe(circle, 'r')
-// Calls circle.changed('r', radius_variable) when changed.
+// An object o subscribes to variable v.
+// When v changes, it calls o.changed(v)
+// E.g. radius_variable.subscribe(circle)
+// Calls circle.changed(radius_variable) when radius changes.
 class Variable {
   constructor() {
     this.targets = new Set();
@@ -166,6 +166,13 @@ class SvgRect extends SvgElement {
     this.width = this.attr('width');
     this.height = this.attr('height');
   }
+  
+  disconnect() {
+    super.disconnect()
+    this.top_left.unsubscribe_all();
+    this.width.unsubscribe_all();
+    this.height.unsubscribe_all();
+  }
 }
 
 backg_rect = new SvgRect();
@@ -182,9 +189,14 @@ class SvgCircle extends SvgElement {
     this.radius = this.attr('r');
   }
   
+  disconnect() {
+    super.disconnect();
+    this.center.unsubscribe_all();
+    this.radius.unsubscribe_all();
+  }
+  
   activated() {
-    activated_token.center.unsubscribe_all();
-    activated_token.radius.unsubscribe_all();
+    activated_token.disconnect();
     this.center.subscribe(activated_token.center);
     this.radius.subscribe(activated_token.radius);
   }
@@ -200,6 +212,12 @@ class SvgLine extends SvgElement {
     super('line', svg);
     this.start = new VarList(this.attr('x1'), this.attr('y1'));
     this.end = new VarList(this.attr('x2'), this.attr('y2'));
+  }
+  
+  disconnect() {
+    super.disconnect();
+    this.start.unsubscribe_all();
+    this.end.unsubscribe_all();
   }
 }
 
