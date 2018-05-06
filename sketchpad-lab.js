@@ -260,6 +260,23 @@ svg_delete = elem => {
   elem.svgel.remove();
 }
 
+svg_draw_attribs = (elem, pos) => {
+  elem = elem.svgel;
+  let attr_nodes = elem.attributes;
+  let attrs = new Map();
+  for (let i=0; i<attr_nodes.length; i++) {
+    attrs.set(attr_nodes[i].name, attr_nodes[i].value);
+  }
+  console.log(attrs);
+  
+  let tag = elem.tagName;
+  let tag_text = svgel('text', svg, {x: pos[0], y: pos[1], font_family: 'Arial', font_size: 20, fill: 'blue'});
+  tag_text.textContent = tag;
+  let b = tag_text.getBBox();
+  let c = [b.x + b.width/2, b.y + b.height/2];
+  attribs(tag_text, {x: 2*pos[0]-c[0], y: 2*pos[1]-c[1]});
+}
+
 tool = new Variable();
 tool.subscribe({
   changed: v => console.log('Tool: '+v.value()),
@@ -278,15 +295,16 @@ body.onkeydown = e => {
   else if (e.key === 'm') tool.change('move');
   else if (e.key === 'x') tool.change('delete');
   else if (e.key === 'a' && moving !== undefined) moving.activated();
+  else if (e.key === 'v') tool.change('meta');
 };
 
 svg.onmouseover = e => {
-  if (e.target !== svg)
+  if (e.target.tagName === 'circle')
     e.target.setAttribute('stroke', 'red');
 }
 
 svg.onmouseout = e => {
-  if (e.target !== svg)
+  if (e.target.tagName === 'circle')
     e.target.setAttribute('stroke', 'black');
 }
 
@@ -312,6 +330,10 @@ svg.onmousedown = e => {
   } else if (tool.value() === 'delete') {
     let elem = e.target.userData;
     if (elem !== undefined) svg_delete(elem);
+  } else if (tool.value() === 'meta') {
+    if (moving !== undefined) {
+      svg_draw_attribs(moving, [e.offsetX, e.offsetY]);
+    }
   }
 };
 
