@@ -86,7 +86,9 @@ body.onkeydown = e => {
     }
     if (e.key === 'Backspace')
       keyboard_focus.str.textContent = keyboard_focus.str.textContent.slice(0,-1);
-    else if (e.key.length === 1)
+    else if (e.key === 'Enter') {
+      eval(keyboard_focus.str.textContent);
+    } else if (e.key.length === 1)
       keyboard_focus.str.textContent += e.key;
   }
 };
