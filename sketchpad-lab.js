@@ -49,11 +49,13 @@ svg.onmousedown = e => {
   if (e.target === svg) {
     let circ = svgel('circle', svg, {r: 20, fill: 'red'});
     attribs(circ, {cx: e.offsetX, cy: e.offsetY});
+    keyboard_focus = circ;
   } else {
     let circ = e.target;
     center_0 = [+circ.getAttribute('cx'), +circ.getAttribute('cy')];
     pointer_0 = offset(e);
     moving = circ;
+    keyboard_focus = circ;
   }
 };
 
@@ -77,7 +79,16 @@ svg.onmouseup = e => {
 keyboard_focus = svg;
 
 body.onkeydown = e => {
-
+  if (keyboard_focus.tagName !== 'svg') {
+    if (keyboard_focus.str === undefined) {
+      let [cx,cy] = [keyboard_focus.getAttribute('cx'), keyboard_focus.getAttribute('cy')];
+      keyboard_focus.str = svgel('text', svg, {x: cx, y: cy, font_size: 30, fill: 'black'});
+    }
+    if (e.key === 'Backspace')
+      keyboard_focus.str.textContent = keyboard_focus.str.textContent.slice(0,-1);
+    else if (e.key.length === 1)
+      keyboard_focus.str.textContent += e.key;
+  }
 };
 
 body.onkeyup = e => {
