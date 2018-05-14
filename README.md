@@ -13,7 +13,7 @@ Goal: build a visual and "pliable" model of arbitrary computation that is capabl
 
 Inspiration drawn from Ivan Sutherland's [1963 Sketchpad thesis](https://programmingmadecomplicated.wordpress.com/2018/04/15/reading-the-sketchpad-thesis/).
 
-Current thoughts:
+(NOT-SO-) Current thoughts:
 * Topology, i.e. "connectedness", rather than specific shape or size or position or arrangement, is *key*.
 * First step: build a "graph" Turing machine where memory is simply the vertices of a graph.
 * Arithmetical operations -- both vector and scalar -- can be done graphically (the ancient Greeks knew this.) However, *spatial* "quantity" requires some unit *ruler* to measure against, and may or may not end up violating the "topological principle".
@@ -21,3 +21,7 @@ Current thoughts:
 * Camera controls: panning, zooming.
 * At some mature point, provide *spatial abstraction*: collapse groups of objects down to a single object, making infinite use of finite space.
 
+# Gallery
+(Disclaimer: may or may not reflect the system in its current state)
+![Topological drawing of the complete graph K-8.](img/k-8.png?raw=true "Topological drawing of the complete graph K-8.")
+![Simple fun with introspection.](img/text.png?raw=true "Simple fun with introspection.")
