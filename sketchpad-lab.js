@@ -50,6 +50,27 @@ svg_userData = (elem, obj) => state(elem, 'userData', obj);
 
 svg_userData(svg, {
   receive: ({ recv, selector }, context) => {
+    // Q: can any of this behaviour be changed in-system?
+    // A: no, except by completely re-writing receive() in a single line
+    // This is because, in JS, one cannot go INSIDE functions and make
+    // piece-meal changes to their code.
+    // The function is an atomic black-box.
+    // Solution: at least break it up into separate functions.
+    // Eventually, break up into atomic JS state operations:
+    // STATE-COPY o1 [ k1 ] <-- o2 [ k2 ] where o1,k1,o2,k2 are names
+    // METHOD INVOCATION: o.f(a1 ... aN)
+    // (CONDITIONAL) SEQUENCE: to be decided, but seems to consist
+    // of an extensional function to new instruction
+    // i.e.      if (a < 0) goto L
+    //      else if (a = 0) goto E
+    //      else if (a > 0) goto G
+    // is just an extensional function from the 3 possible values of sign(a):
+    // let s = sign(a)
+    // goto ( put s through the function:
+    //       -1 |--> L
+    //        0 |--> E
+    //        1 |--> G )
+    // In summary: EXPOSE THE SUBSTRATE, part of which is JS itself.
     if (selector === 'clicked') {
       // Create SVG circle and route keyboard input "to it"
       let e = context.dom_event;
