@@ -39,6 +39,64 @@ sub = (as,bs) => {
   return as.map((a,k) => a - bs[k]);
 }
 
+// extensional function
+efunc = (spec) => {
+  let f = { map: new Map(), inverse: new Map() };
+  for (let [input,output] of spec) {
+    efunc.set(f, input, output);
+  }
+  return f;
+}
+
+efunc.inverse = (f) => {
+  let a = Array.from; // ffs...
+  // JavaScript: where typing atob() and btoa() is acceptable
+  // but being able to call map() on a Map is one step too far...
+  let spec = a(f.inverse.entries()).map(([inp,outp]) => {
+    // OK. If we have a one-element set, unwrap it (**)
+    if (outp.size === 1) return [inp, a(outp.values())[0]]; // {i} --> i
+    // Otherwise, MUST return a (shallow) copy
+    else return [inp, new Set(outp)]; // {i1, i2, i3} --> {i1, i2, i3}
+  });
+  return efunc(spec);
+};
+
+efunc.get = (f, input) => {
+  return f.map.get(input);
+};
+
+efunc.set = (f, input, output) => {
+    // Currently, but not for long, f(input) = "old" output.
+    // When we make this no longer the case, input will no longer be in
+    // the set of things that map to old-output, i.e. its preimage.
+    let old_output = f.map.get(input);
+    if (old_output !== undefined) {
+      let preimage = f.inverse.get(old_output);
+      preimage.delete(input);
+    }
+    if (output === undefined)
+      f.map.delete(input);
+    else {
+      f.map.set(input, output);
+      // Now input is in the preimage of output.
+      let preimage = f.inverse.get(output);
+      if (preimage === undefined) {
+        preimage = new Set(); // Lazy initialise
+        f.inverse.set(output, preimage);
+      }
+      preimage.add(input);
+    }
+};
+
+{
+  some_pi_digits = efunc(Object.entries({one: 3, two: 1, three: 4, four: 1}));
+  inv = efunc.inverse(some_pi_digits);
+  efunc.get(inv, 1); // --> { "two", "four" }
+  efunc.get(inv, 4); // --> "three"
+  // Not recommended to have Sets as genuine outputs ... erk!
+  // (**) Might be better to not have un-wrapping functionality.
+}
+
 svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
 svg.style.border = '2px dashed red';
 
@@ -47,6 +105,7 @@ send = ({ to, selector }, context) => {
 }
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
+
 
 svg_userData(svg, {
   receive: ({ recv, selector }, context) => {
@@ -61,7 +120,7 @@ svg_userData(svg, {
     // METHOD INVOCATION: o.f(a1 ... aN)
     // (CONDITIONAL) SEQUENCE: to be decided, but seems to consist
     // of an extensional function to new instruction
-    // i.e.      if (a < 0) goto L
+    // e.g.      if (a < 0) goto L
     //      else if (a = 0) goto E
     //      else if (a > 0) goto G
     // is just an extensional function from the 3 possible values of sign(a):
@@ -70,6 +129,9 @@ svg_userData(svg, {
     //       -1 |--> L
     //        0 |--> E
     //        1 |--> G )
+    // We have gone from INFINITE SET (values of a)
+    // to FINITE SET (values of sign(a))
+    // to NEXT STATE-CHANGE (infinite set?)
     // In summary: EXPOSE THE SUBSTRATE, part of which is JS itself.
     if (selector === 'clicked') {
       // Create SVG circle and route keyboard input "to it"
