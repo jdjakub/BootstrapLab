@@ -152,7 +152,7 @@ svg_userData(backg, {
       // Route keyboard input "to" the circle
       keyboard_focus = obj;
     } else if (selector === 'being-considered') {
-    } else throw "No comprende "+selector;
+    } else throw "Backg no comprende "+selector;
   }
 });
 
@@ -192,10 +192,28 @@ create_circle = (c) => {
           } else { // ... POP!
             attr(recv.svgel, 'fill-opacity', recv.old_opacity);
           }
-      } else throw "No comprende "+selector;
+      } else throw "Circle no comprende "+selector;
     }
   };
 };
+
+create_boxed_text = () => {
+  let o = {
+    receive: ({ recv, selector }, context) => {
+      if (selector === 'created') {
+        recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
+        recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
+        send({ to: recv, selector: 'set-string' }, { string: 'Lorem ipsum' });
+      } else if (selector === 'set-string') {
+        recv.text.textContent = context.string;
+        let bbox = recv.text.getBBox();
+        attribs(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
+      } else throw "Text no comprende "+selector;
+    }
+  };
+  send({ to: o, selector: 'created' }, {});
+  return o;
+}
 
 svg.onmousedown = e => {
   // Two things have happened.
@@ -215,8 +233,8 @@ svg.onmousemove = e => {
     let pointer_delta = sub(pointer_curr, pointer_0);
     let center_curr = add(center_0, pointer_delta);
     // Update the SVG dumb-state
-    moving.setAttribute('cx', center_curr[0]);
-    moving.setAttribute('cy', center_curr[1]);
+    attr(moving, 'cx', center_curr[0]);
+    attr(moving, 'cy', center_curr[1]);
   }
 };
 
