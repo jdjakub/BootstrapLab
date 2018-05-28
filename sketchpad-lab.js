@@ -42,7 +42,9 @@ backg = svgel('rect', svg, {x: 0, y: 0,
                             fill: 'black'});
 
 send = ({ to, selector }, context) => {
-  return to.receive({ recv: to, selector }, context);
+  if (typeof(to.receive) === 'function')
+    return to.receive({ recv: to, selector }, context);
+  else throw "No comprende "+selector;
 }
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
@@ -161,15 +163,26 @@ create_circle = (c) => {
     svgel: c,
     receive: ({ recv, selector }, context) => {
       let e = context.dom_event;
+      let circ = recv.svgel;
       if (selector === 'clicked') {
-        let circ = recv.svgel;
+        send({ to: recv, selector: 'start-moving' }, {});
+      } else if (selector === 'start-moving') {
         // Implement the initial conditions of the difference equation
         // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
-        center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
-        pointer_0 = offset(e);
+        recv.center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
         // Enable the maintenance of this equality
-        moving = circ;
+        moving = recv;
         keyboard_focus = recv;
+      } else if (selector === 'being-moved') {
+        // Maintain center @ t+1 = center @ t + (pointer @ t+1 - pointer @ t)
+        let center_curr = add(recv.center_0, context.vector);
+        // Update the SVG dumb-state
+        attr(circ, 'cx', center_curr[0]);
+        attr(circ, 'cy', center_curr[1]);
+      } else if (selector === 'finish-moving') {
+        // Halt maintenance of difference equation
+        moving = undefined;
+        recv.center_0 = undefined;
       } else if (selector === 'key-down') {
         if (recv.str === undefined) { // Lazy initialise text line on key input
           let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
@@ -219,28 +232,24 @@ svg.onmousedown = e => {
   // Two things have happened.
   // First, an external event has occurred.
   // Second, SVG has performed a spatial index and identified a shape at x,y.
+  pointer_0 = offset(e);
   let obj = svg_userData(e.target);
   if (obj !== undefined) send({ to: obj, selector: 'clicked'}, {dom_event: e});
 };
 
 moving = undefined;
 pointer_0 = undefined;
-center_0 = undefined;
 svg.onmousemove = e => {
    if (moving !== undefined) {
     let pointer_curr = offset(e);
-    // Maintain center @ t+1 = center @ t + (pointer @ t+1 - pointer @ t)
     let pointer_delta = sub(pointer_curr, pointer_0);
-    let center_curr = add(center_0, pointer_delta);
-    // Update the SVG dumb-state
-    attr(moving, 'cx', center_curr[0]);
-    attr(moving, 'cy', center_curr[1]);
+    send({ to: moving, selector: 'being-moved' }, { vector: pointer_delta });
   }
 };
 
 svg.onmouseup = e => {
-  // Halt maintenance of difference equation
-  moving = undefined;
+  let obj = svg_userData(e.target);
+  if (obj !== undefined) send({ to: obj, selector: 'finish-moving'}, {truth: true, dom_event: e});
 };
 
 dump = "";
