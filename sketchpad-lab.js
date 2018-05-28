@@ -29,6 +29,22 @@ state = function(o, k, v) {
   return old;
 }
 
+attr = (elem, str) => elem.getAttribute(str);
+
+svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
+svg.style.border = '2px dashed red';
+
+backg = svgel('rect', svg, {x: 0, y: 0,
+                            width: attr(svg, 'width'),
+                            height: attr(svg, 'height'),
+                            fill: 'black'});
+
+send = ({ to, selector }, context) => {
+  return to.receive({ recv: to, selector }, context);
+}
+
+svg_userData = (elem, obj) => state(elem, 'userData', obj);
+
 offset = e => [e.offsetX, e.offsetY]
 
 add = (as,bs) => {
@@ -97,17 +113,8 @@ efunc.set = (f, input, output) => {
   // (**) Might be better to not have un-wrapping functionality.
 }
 
-svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
-svg.style.border = '2px dashed red';
 
-send = ({ to, selector }, context) => {
-  return to.receive({ recv: to, selector }, context);
-}
-
-svg_userData = (elem, obj) => state(elem, 'userData', obj);
-
-
-svg_userData(svg, {
+svg_userData(backg, {
   receive: ({ recv, selector }, context) => {
     // Q: can any of this behaviour be changed in-system?
     // A: no, except by completely re-writing receive() in a single line
@@ -155,16 +162,16 @@ create_circle = (c) => {
         let circ = recv.svgel;
         // Implement the initial conditions of the difference equation
         // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
-        center_0 = [+circ.getAttribute('cx'), +circ.getAttribute('cy')];
+        center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
         pointer_0 = offset(e);
         // Enable the maintenance of this equality
         moving = circ;
         keyboard_focus = recv;
       } else if (selector === 'key-down') {
         if (recv.str === undefined) { // Lazy initialise text line on key input
-          let [cx,cy] = [recv.svgel.getAttribute('cx'), recv.svgel.getAttribute('cy')];
+          let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
           // Place text baseline and start point at circle center
-          recv.str = svgel('text', svg, {x: cx, y: cy, font_size: 15, fill: 'black'});
+          recv.str = svgel('text', svg, {x: cx, y: cy, font_size: 15, fill: 'white'});
         }
         if (e.key === 'Backspace') // Modify the SVG dumb-state
           recv.str.textContent = recv.str.textContent.slice(0,-1);
