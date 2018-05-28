@@ -23,13 +23,15 @@ svgel = (tag, parent, attrs) => {
 
 state = function(o, k, v) {
   let old = o[k];
-  if (v !== undefined) {
-    o[k] = v;
-  }
+  if (v !== undefined) o[k] = v;
   return old;
 }
 
-attr = (elem, str) => elem.getAttribute(str);
+attr = (elem, key, val) => {
+  let old = elem.getAttribute(key);
+  if (val !== undefined) elem.setAttribute(key, val);
+  return old;
+}
 
 svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
 svg.style.border = '2px dashed red';
@@ -149,6 +151,7 @@ svg_userData(backg, {
       svg_userData(circ, obj);
       // Route keyboard input "to" the circle
       keyboard_focus = obj;
+    } else if (selector === 'being-considered') {
     } else throw "No comprende "+selector;
   }
 });
@@ -181,6 +184,14 @@ create_circle = (c) => {
           recv.str.textContent = typeof(dump) === 'string' ? dump : "";
         } else if (e.key.length === 1) // Modify the SVG dumb-state
           recv.str.textContent += e.key;
+      } else if (selector === 'being-considered') {
+          // Early-bound one-element stack, lol
+          if (context.truth === true) { // PUSH...
+            recv.old_opacity = attr(recv.svgel, 'fill-opacity');
+            attr(recv.svgel, 'fill-opacity', 0.5);
+          } else { // ... POP!
+            attr(recv.svgel, 'fill-opacity', recv.old_opacity);
+          }
       } else throw "No comprende "+selector;
     }
   };
@@ -219,3 +230,12 @@ keyboard_focus = svg_userData(svg);
 
 body.onkeydown = e => send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
 
+svg.onmouseover = e => {
+  let obj = svg_userData(e.target);
+  if (obj !== undefined) send({ to: obj, selector: 'being-considered'}, {truth: true, dom_event: e});
+};
+
+svg.onmouseout = e => {
+  let obj = svg_userData(e.target);
+  if (obj !== undefined) send({ to: obj, selector: 'being-considered'}, {truth: false, dom_event: e});
+};
