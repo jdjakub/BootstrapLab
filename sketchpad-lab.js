@@ -162,11 +162,10 @@ create_circle = (c) => {
   return {
     svgel: c,
     receive: ({ recv, selector }, context) => {
-      let e = context.dom_event;
-      let circ = recv.svgel;
       if (selector === 'clicked') {
         send({ to: recv, selector: 'start-moving' });
       } else if (selector === 'start-moving') {
+        let circ = recv.svgel;
         // Implement the initial conditions of the difference equation
         // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
         recv.center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
@@ -174,6 +173,7 @@ create_circle = (c) => {
         moving = recv;
         keyboard_focus = recv;
       } else if (selector === 'being-moved') {
+        let circ = recv.svgel;
         // Maintain center @ t+1 = center @ t + (pointer @ t+1 - pointer @ t)
         let center_curr = add(recv.center_0, context.vector);
         // Update the SVG dumb-state
@@ -184,21 +184,22 @@ create_circle = (c) => {
         moving = undefined;
         recv.center_0 = undefined;
       } else if (selector === 'key-down') {
+        let e = context.dom_event;
         if (recv.str === undefined) { // Lazy initialise text line on key input
           let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
           // Place text baseline and start point at circle center
           recv.str = create_boxed_text();
           send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
         }
-        if (e.key === 'Backspace') // Modify the SVG dumb-state
+        if (e.key === 'Backspace')
           send({ to: recv.str, selector: 'string-content' }, {string: s => s.slice(0,-1)});
-        else if (e.key === 'Enter') { // Use SVG dumb-state as JS source code
+        else if (e.key === 'Enter') {
           eval(send({ to: recv.str, selector: 'string-content' }));
         } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
           send({ to: recv.str, selector: 'string-content' }, {
             string: typeof(dump) === 'string' ? dump : ""
           });
-        } else if (e.key.length === 1) // Modify the SVG dumb-state
+        } else if (e.key.length === 1)
           send({ to: recv.str, selector: 'string-content' }, {string: s => s + e.key});
       } else if (selector === 'being-considered') {
           // Early-bound one-element stack, lol
@@ -219,7 +220,6 @@ create_boxed_text = () => {
       if (selector === 'created') {
         recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
         recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
-        send({ to: recv, selector: 'string-content' }, { string: 'Lorem ipsum' });
       } else if (selector === 'string-content') {
         let str = context.string;
         if (typeof(str) === 'undefined') str = recv.text.textContent;
@@ -254,7 +254,7 @@ create_signal = () => {
       }
     },
   };
-  send({ to: o; selector: 'created' });
+  send({ to: o, selector: 'created' });
   return o;
 };
 
