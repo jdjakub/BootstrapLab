@@ -43,7 +43,7 @@ backg = svgel('rect', svg, {x: 0, y: 0,
 
 send = ({ to, selector }, context) => {
   if (typeof(to.receive) === 'function')
-    return to.receive({ recv: to, selector }, context);
+    return to.receive({ recv: to, selector }, context || {});
   else throw "No comprende "+selector;
 }
 
@@ -187,16 +187,19 @@ create_circle = (c) => {
         if (recv.str === undefined) { // Lazy initialise text line on key input
           let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
           // Place text baseline and start point at circle center
-          recv.str = svgel('text', svg, {x: cx, y: cy, font_size: 15, fill: 'white'});
+          recv.str = create_boxed_text();
+          send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
         }
         if (e.key === 'Backspace') // Modify the SVG dumb-state
-          recv.str.textContent = recv.str.textContent.slice(0,-1);
+          send({ to: recv.str, selector: 'string-content' }, {string: s => s.slice(0,-1)});
         else if (e.key === 'Enter') { // Use SVG dumb-state as JS source code
-          eval(recv.str.textContent);
+          eval(send({ to: recv.str, selector: 'string-content' }));
         } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
-          recv.str.textContent = typeof(dump) === 'string' ? dump : "";
+          send({ to: recv.str, selector: 'string-content' }, {
+            string: typeof(dump) === 'string' ? dump : ""
+          });
         } else if (e.key.length === 1) // Modify the SVG dumb-state
-          recv.str.textContent += e.key;
+          send({ to: recv.str, selector: 'string-content' }, {string: s => s + e.key});
       } else if (selector === 'being-considered') {
           // Early-bound one-element stack, lol
           if (context.truth === true) { // PUSH...
@@ -216,11 +219,21 @@ create_boxed_text = () => {
       if (selector === 'created') {
         recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
         recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
-        send({ to: recv, selector: 'set-string' }, { string: 'Lorem ipsum' });
-      } else if (selector === 'set-string') {
-        recv.text.textContent = context.string;
+        send({ to: recv, selector: 'string-content' }, { string: 'Lorem ipsum' });
+      } else if (selector === 'string-content') {
+        let str = context.string;
+        if (typeof(str) === 'undefined') str = recv.text.textContent;
+        if (typeof(str) === 'function') str = str(recv.text.textContent);
+        recv.text.textContent = str;
+        send({ to: recv, selector: 'update-box' });
+        return str;
+      } else if (selector === 'update-box') {
         let bbox = recv.text.getBBox();
         attribs(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
+      } else if (selector === 'set-baseline-start') {
+        let [x,y] = context.coords;
+        attribs(recv.text, {x, y});
+        send({ to: recv, selector: 'update-box' });
       } else throw "Text no comprende "+selector;
     }
   };
