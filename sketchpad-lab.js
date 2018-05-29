@@ -165,7 +165,7 @@ create_circle = (c) => {
       let e = context.dom_event;
       let circ = recv.svgel;
       if (selector === 'clicked') {
-        send({ to: recv, selector: 'start-moving' }, {});
+        send({ to: recv, selector: 'start-moving' });
       } else if (selector === 'start-moving') {
         // Implement the initial conditions of the difference equation
         // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
@@ -237,9 +237,26 @@ create_boxed_text = () => {
       } else throw "Text no comprende "+selector;
     }
   };
-  send({ to: o, selector: 'created' }, {});
+  send({ to: o, selector: 'created' });
   return o;
 }
+
+create_signal = () => {
+  let o = {
+    receive: ({ recv, selector }, context) => {
+      if (selector === 'created') {
+      } else if (selector === 'current-value') {
+        let v = context.set_to;
+        if (typeof(v) === 'function') v = v(recv.value);
+        // changed from recv.value to v 
+        recv.value = v;
+        return v;
+      }
+    },
+  };
+  send({ to: o; selector: 'created' });
+  return o;
+};
 
 svg.onmousedown = e => {
   // Two things have happened.
