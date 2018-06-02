@@ -25,4 +25,4 @@ Inspiration drawn from Ivan Sutherland's [1963 Sketchpad thesis](https://program
 (Disclaimer: may or may not reflect the system in its current state)
 ![Topological drawing of the complete graph K-8.](img/k-8.png?raw=true "Topological drawing of the complete graph K-8.")
 ![Simple fun with introspection.](img/text.png?raw=true "Simple fun with introspection.")
-![Boxed lines of text with "self" i.e. receiver access](img/boxed-text.png?raw=true "Boxed lines of text with "self" i.e. receiver access")
+![Boxed lines of text with "self" i.e. receiver access](img/boxed-text.png?raw=true "Boxed lines of text with 'self' i.e. receiver access")
