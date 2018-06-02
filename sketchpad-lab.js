@@ -46,10 +46,17 @@ send = ({ to, selector }, context) => {
   return next_code_path({ recv: to, selector }, context || {});
 };
 
+default_vtable = {
+  ['being-considered']: () => {},
+};
+
 default_dyn_single_dispatch = ({ recv, selector }, context) => {
   let selector_to_next_code_path = recv.vtable || default_vtable;
   let next_code_path = selector_to_next_code_path[selector];
-  if (next_code_path === undefined) throw "No comprende "+selector;
+  if (next_code_path === undefined) {
+    next_code_path = default_vtable[selector];
+    if (next_code_path === undefined) throw "No comprende "+selector;
+  }
   
   return next_code_path({ recv, selector }, context);
 };
@@ -93,21 +100,22 @@ svg_userData(backg, {
     ['clicked']: ({recv}, {dom_event}) => {
       // Create SVG circle and route keyboard input "to it"
       let e = dom_event;
-      let circ = svgel('circle', svg, {r: 15, fill: 'red'});
-      attribs(circ, {cx: e.offsetX, cy: e.offsetY});
-      let obj = create_circle(circ);
-      svg_userData(circ, obj);
+      let obj = create_circle(offset(e));
+      
       // Route keyboard input "to" the circle
       keyboard_focus = obj;
     },
-    ['being-considered']: () => {},
   }
 });
 
 create_circle = (c) => {
-  return {
-    svgel: c,
+  let o = {
     vtable: {
+      ['created']: ({recv}, {center}) => {
+        recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
+        attribs(recv.svgel, {cx: center[0], cy: center[1]});
+        svg_userData(recv.svgel, recv);
+      },
       ['clicked']: ({recv}) => {
         send({ to: recv, selector: 'start-moving' });
       },
@@ -118,7 +126,6 @@ create_circle = (c) => {
         recv.center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
         // Enable the maintenance of this equality
         moving = recv;
-        keyboard_focus = recv;
       },
       ['being-moved']: ({recv}, {vector}) => {
         let circ = recv.svgel;
@@ -140,17 +147,8 @@ create_circle = (c) => {
           // Place text baseline and start point at circle center
           recv.str = create_boxed_text();
           send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
+          send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
         }
-        if (e.key === 'Backspace')
-          send({ to: recv.str, selector: 'string-content' }, {string: s => s.slice(0,-1)});
-        else if (e.key === 'Enter') {
-          eval(send({ to: recv.str, selector: 'string-content' }));
-        } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
-          send({ to: recv.str, selector: 'string-content' }, {
-            string: typeof(dump) === 'string' ? dump : ""
-          });
-        } else if (e.key.length === 1)
-          send({ to: recv.str, selector: 'string-content' }, {string: s => s + e.key});
       },
       ['being-considered']: ({recv}, {truth}) => {
           // Early-bound one-element stack, lol
@@ -163,6 +161,8 @@ create_circle = (c) => {
       },
     }
   };
+  send({ to: o, selector: 'created' }, { center: c });
+  return o;
 };
 
 create_boxed_text = () => {
@@ -171,6 +171,8 @@ create_boxed_text = () => {
       ['created']: ({recv}) => {
         recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
         recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
+        svg_userData(recv.text, recv);
+        svg_userData(recv.rect, recv);
       },
       ['string-content']: ({recv}, {string}) => {
         let str = string;
@@ -188,7 +190,36 @@ create_boxed_text = () => {
         let [x,y] = coords;
         attribs(recv.text, {x, y});
         send({ to: recv, selector: 'update-box' });
-      }
+      },
+      ['clicked']: ({recv}) => {
+        send({ to: recv, selector: 'start-moving' });
+        keyboard_focus = recv;
+      },
+      ['start-moving']: ({recv}) => {
+        recv.baseline_0 = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
+        moving = recv;
+      },
+      ['being-moved']: ({recv}, {vector}) => {
+        let baseline_curr = add(recv.baseline_0, vector);
+        send({ to: recv, selector: 'set-baseline-start' }, { coords: baseline_curr });
+      },
+      ['finish-moving']: ({recv}) => {
+        moving = undefined;
+        recv.baseline_0 = undefined;
+      },
+      ['key-down']: ({recv}, {dom_event}) => {
+        let e = dom_event;
+        if (e.key === 'Backspace')
+          send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
+        else if (e.key === 'Enter') {
+          eval(send({ to: recv, selector: 'string-content' }));
+        } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
+          send({ to: recv, selector: 'string-content' }, {
+            string: typeof(dump) === 'string' ? dump : ""
+          });
+        } else if (e.key.length === 1)
+          send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
+      },
     }
   };
   send({ to: o, selector: 'created' });
@@ -240,7 +271,10 @@ svg.onmouseup = e => {
 dump = "";
 keyboard_focus = svg_userData(svg);
 
-body.onkeydown = e => send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
+body.onkeydown = e => {
+  if (keyboard_focus !== undefined)
+    send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
+};
 
 svg.onmouseover = e => {
   let obj = svg_userData(e.target);
