@@ -140,12 +140,11 @@ create_circle = (c) => {
         moving = undefined;
         recv.center_0 = undefined;
       },
-      ['key-down']: ({recv}, {dom_event}) => {
-        let e = dom_event;
+      ['key-down']: ({recv}) => {
         if (recv.str === undefined) { // Lazy initialise text line on key input
           let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
           // Place text baseline and start point at circle center
-          recv.str = create_boxed_text();
+          recv.str = create_boxed_text({ creator: recv });
           send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
           send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
         }
@@ -165,14 +164,15 @@ create_circle = (c) => {
   return o;
 };
 
-create_boxed_text = () => {
+create_boxed_text = (ctx) => {
   let o = {
     vtable: {
-      ['created']: ({recv}) => {
+      ['created']: ({recv}, {creator}) => {
         recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
         recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
         svg_userData(recv.text, recv);
         svg_userData(recv.rect, recv);
+        recv.creator = creator;
       },
       ['string-content']: ({recv}, {string}) => {
         let str = string;
@@ -212,7 +212,9 @@ create_boxed_text = () => {
         if (e.key === 'Backspace')
           send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
         else if (e.key === 'Enter') {
-          eval(send({ to: recv, selector: 'string-content' }));
+          window.recv = recv;
+            eval(send({ to: recv, selector: 'string-content' }));
+          window.recv = undefined;
         } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
           send({ to: recv, selector: 'string-content' }, {
             string: typeof(dump) === 'string' ? dump : ""
@@ -222,7 +224,7 @@ create_boxed_text = () => {
       },
     }
   };
-  send({ to: o, selector: 'created' });
+  send({ to: o, selector: 'created' }, ctx);
   return o;
 }
 
