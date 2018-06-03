@@ -43,13 +43,18 @@ sub = (as,bs) => {
   return as.map((a,k) => a - bs[k]);
 };
 
-svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
+svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
-backg = svgel('rect', svg, {x: 0, y: 0,
-                            width: attr(svg, 'width'),
-                            height: attr(svg, 'height'),
-                            fill: 'black'});
+backg = svgel('rect', svg, {x: 0, y: 0, fill: 'black'});
+                            
+resize = () => {
+  let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
+  attribs(svg, dims);
+  attribs(backg, dims);  
+};
+
+resize();
 
 send = ({ to, selector }, context) => {
   let next_code_path = to.receive || default_dyn_single_dispatch;
