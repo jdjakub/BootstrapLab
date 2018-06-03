@@ -211,6 +211,25 @@ boxed_text_vtable = {
     }
     return recv.next_line;
   },
+  ['from-strings']: ({recv},ctx) => {
+    let strs = ctx.strings || ctx.string.split('\n');
+    let line = recv;
+    while (strs.length > 0) {
+      let str = strs.shift();
+      send({to: line, selector: 'string-content'}, {string: str});
+      line = send({to: line, selector: 'next-line'});
+    }
+  },
+  ['to-strings']: ({recv}) => {
+    let strs = [];
+    let line = recv;
+    while (line !== undefined) {
+      let str = send({ to: line, selector: 'string-content' });
+      strs.push(str);
+      line = line.next_line;
+    }
+    return strs;
+  },
   ['clicked']: ({recv}) => {
     send({ to: recv, selector: 'start-moving' });
     keyboard_focus = recv;
@@ -233,13 +252,7 @@ boxed_text_vtable = {
       send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
     else if (e.key === 'Enter') {
       if (e.ctrlKey) {
-        let code = [];
-        let line = recv;
-        while (line !== undefined) {
-          let str = send({ to: line, selector: 'string-content' });
-          code.push(str);
-          line = line.next_line;
-        }
+        let code = send({to: recv, selector: 'to-strings'});
         window.recv = recv;
           eval(code.join('\n'));
         window.recv = undefined;
@@ -247,13 +260,8 @@ boxed_text_vtable = {
         keyboard_focus = send({to: recv, selector: 'next-line'});
       }
     } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P
-      let strs = typeof(dump) === 'string' ? dump.split('\n') : [];
-      let line = recv;
-      while (strs.length > 0) {
-        let str = strs.shift();
-        send({to: line, selector: 'string-content'}, {string: str});
-        line = send({to: line, selector: 'next-line'});
-      }
+      let strs = typeof(dump) === 'string' ? dump : "";
+      send({to: recv, selector: 'from-strings'}, {strings: strs});
     } else if (e.key.length === 1)
       send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
   },
