@@ -4,18 +4,28 @@ body = document.body;
 body.style.margin = '0px';
 body.style.minHeight = '100%';
 
-// e.g. attribs(rect, {stroke_width: 5, stroke: 'red'})
-attribs = (elem, attrs) => {
-  for (let [k,v] of Object.entries(attrs)) {
-    let value = v;
-    elem.setAttribute(k.replace('_','-'), value);
+// e.g. attr(rect, {stroke_width: 5, stroke: 'red'})
+//      attr(rect, 'stroke', 'red')
+attr = (elem, key_or_dict, val_or_nothing) => {
+  if (typeof(key_or_dict) === 'string') {
+    let key = key_or_dict;
+    let val = val_or_nothing;
+    let old = elem.getAttribute(key);
+    if (val !== undefined) elem.setAttribute(key, val);
+    return old;
+  } else {
+    let dict = key_or_dict;
+    for (let [k,v] of Object.entries(dict)) {
+      let value = v;
+      elem.setAttribute(k.replace('_','-'), value);
+    }
   }
-};
+}
 
 // e.g. rect = svgel('rect', svg, {x: 5, y: 5, width: 5, height: 5})
 svgel = (tag, parent, attrs) => {
   let elem = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  if (attrs !== undefined) attribs(elem, attrs);
+  if (attrs !== undefined) attr(elem, attrs);
   if (parent !== undefined)
     parent.appendChild(elem);
   return elem;
@@ -24,12 +34,6 @@ svgel = (tag, parent, attrs) => {
 state = function(o, k, v) {
   let old = o[k];
   if (v !== undefined) o[k] = v;
-  return old;
-}
-
-attr = (elem, key, val) => {
-  let old = elem.getAttribute(key);
-  if (val !== undefined) elem.setAttribute(key, val);
   return old;
 }
 
@@ -50,8 +54,8 @@ backg = svgel('rect', svg, {x: 0, y: 0, fill: 'black'});
                             
 resize = () => {
   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
-  attribs(svg, dims);
-  attribs(backg, dims);  
+  attr(svg, dims);
+  attr(backg, dims);  
 };
 
 resize();
@@ -116,7 +120,7 @@ svg_userData(backg, {
 circle_vtable = {
   ['created']: ({recv}, {center}) => {
     recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
-    attribs(recv.svgel, {cx: center[0], cy: center[1]});
+    attr(recv.svgel, {cx: center[0], cy: center[1]});
     svg_userData(recv.svgel, recv);
   },
   ['clicked']: ({recv}) => {
@@ -173,7 +177,7 @@ create_circle = (c) => {
 
 boxed_text_vtable = {
   ['created']: ({recv}, {creator}) => {
-    recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
+    recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 20, fill: 'white'});
     recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
     svg_userData(recv.text, recv);
     svg_userData(recv.rect, recv);
@@ -189,11 +193,11 @@ boxed_text_vtable = {
   },
   ['update-box']: ({recv}) => {
     let bbox = recv.text.getBBox();
-    attribs(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
+    attr(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
   },
   ['set-baseline-start']: ({recv}, {coords}) => {
     let [x,y] = coords;
-    attribs(recv.text, {x, y});
+    attr(recv.text, {x, y});
     send({ to: recv, selector: 'update-box' });
   },
   ['next-line']: ({recv}) => {
