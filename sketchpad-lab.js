@@ -33,6 +33,16 @@ attr = (elem, key, val) => {
   return old;
 }
 
+offset = e => [e.offsetX, e.offsetY]
+
+add = (as,bs) => {
+  return as.map((a,k) => a + bs[k]);
+};
+
+sub = (as,bs) => {
+  return as.map((a,k) => a - bs[k]);
+};
+
 svg = svgel('svg', body, {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99});
 svg.style.border = '2px dashed red';
 
@@ -62,16 +72,6 @@ default_dyn_single_dispatch = ({ recv, selector }, context) => {
 };
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
-
-offset = e => [e.offsetX, e.offsetY]
-
-add = (as,bs) => {
-  return as.map((a,k) => a + bs[k]);
-};
-
-sub = (as,bs) => {
-  return as.map((a,k) => a - bs[k]);
-};
 
 svg_userData(backg, {
   // In JS, one cannot go INSIDE functions and make
@@ -108,121 +108,125 @@ svg_userData(backg, {
   }
 });
 
+circle_vtable = {
+  ['created']: ({recv}, {center}) => {
+    recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
+    attribs(recv.svgel, {cx: center[0], cy: center[1]});
+    svg_userData(recv.svgel, recv);
+  },
+  ['clicked']: ({recv}) => {
+    send({ to: recv, selector: 'start-moving' });
+  },
+  ['start-moving']: ({recv}) => {
+    let circ = recv.svgel;
+    // Implement the initial conditions of the difference equation
+    // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
+    recv.center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
+    // Enable the maintenance of this equality
+    moving = recv;
+  },
+  ['being-moved']: ({recv}, {vector}) => {
+    let circ = recv.svgel;
+    // Maintain center @ t+1 = center @ t + (pointer @ t+1 - pointer @ t)
+    let center_curr = add(recv.center_0, vector);
+    // Update the SVG dumb-state
+    attr(circ, 'cx', center_curr[0]);
+    attr(circ, 'cy', center_curr[1]);
+  },
+  ['finish-moving']: ({recv}) => {
+    // Halt maintenance of difference equation
+    moving = undefined;
+    recv.center_0 = undefined;
+  },
+  ['key-down']: ({recv}) => {
+    if (recv.str === undefined) { // Lazy initialise text line on key input
+      let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
+      // Place text baseline and start point at circle center
+      recv.str = create_boxed_text({ creator: recv });
+      send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
+      send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
+    }
+  },
+  ['being-considered']: ({recv}, {truth}) => {
+      // Early-bound one-element stack, lol
+      if (truth === true) { // PUSH...
+        recv.old_opacity = attr(recv.svgel, 'fill-opacity');
+        attr(recv.svgel, 'fill-opacity', 0.5);
+      } else { // ... POP!
+        attr(recv.svgel, 'fill-opacity', recv.old_opacity);
+      }
+  },
+};
+
 create_circle = (c) => {
   let o = {
-    vtable: {
-      ['created']: ({recv}, {center}) => {
-        recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
-        attribs(recv.svgel, {cx: center[0], cy: center[1]});
-        svg_userData(recv.svgel, recv);
-      },
-      ['clicked']: ({recv}) => {
-        send({ to: recv, selector: 'start-moving' });
-      },
-      ['start-moving']: ({recv}) => {
-        let circ = recv.svgel;
-        // Implement the initial conditions of the difference equation
-        // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
-        recv.center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
-        // Enable the maintenance of this equality
-        moving = recv;
-      },
-      ['being-moved']: ({recv}, {vector}) => {
-        let circ = recv.svgel;
-        // Maintain center @ t+1 = center @ t + (pointer @ t+1 - pointer @ t)
-        let center_curr = add(recv.center_0, vector);
-        // Update the SVG dumb-state
-        attr(circ, 'cx', center_curr[0]);
-        attr(circ, 'cy', center_curr[1]);
-      },
-      ['finish-moving']: ({recv}) => {
-        // Halt maintenance of difference equation
-        moving = undefined;
-        recv.center_0 = undefined;
-      },
-      ['key-down']: ({recv}) => {
-        if (recv.str === undefined) { // Lazy initialise text line on key input
-          let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
-          // Place text baseline and start point at circle center
-          recv.str = create_boxed_text({ creator: recv });
-          send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
-          send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
-        }
-      },
-      ['being-considered']: ({recv}, {truth}) => {
-          // Early-bound one-element stack, lol
-          if (truth === true) { // PUSH...
-            recv.old_opacity = attr(recv.svgel, 'fill-opacity');
-            attr(recv.svgel, 'fill-opacity', 0.5);
-          } else { // ... POP!
-            attr(recv.svgel, 'fill-opacity', recv.old_opacity);
-          }
-      },
-    }
+    vtable: circle_vtable
   };
   send({ to: o, selector: 'created' }, { center: c });
   return o;
 };
 
+boxed_text_vtable = {
+  ['created']: ({recv}, {creator}) => {
+    recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
+    recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
+    svg_userData(recv.text, recv);
+    svg_userData(recv.rect, recv);
+    recv.creator = creator;
+  },
+  ['string-content']: ({recv}, {string}) => {
+    let str = string;
+    if (typeof(str) === 'undefined') str = recv.text.textContent;
+    if (typeof(str) === 'function') str = str(recv.text.textContent);
+    recv.text.textContent = str;
+    send({ to: recv, selector: 'update-box' });
+    return str;
+  },
+  ['update-box']: ({recv}) => {
+    let bbox = recv.text.getBBox();
+    attribs(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
+  },
+  ['set-baseline-start']: ({recv}, {coords}) => {
+    let [x,y] = coords;
+    attribs(recv.text, {x, y});
+    send({ to: recv, selector: 'update-box' });
+  },
+  ['clicked']: ({recv}) => {
+    send({ to: recv, selector: 'start-moving' });
+    keyboard_focus = recv;
+  },
+  ['start-moving']: ({recv}) => {
+    recv.baseline_0 = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
+    moving = recv;
+  },
+  ['being-moved']: ({recv}, {vector}) => {
+    let baseline_curr = add(recv.baseline_0, vector);
+    send({ to: recv, selector: 'set-baseline-start' }, { coords: baseline_curr });
+  },
+  ['finish-moving']: ({recv}) => {
+    moving = undefined;
+    recv.baseline_0 = undefined;
+  },
+  ['key-down']: ({recv}, {dom_event}) => {
+    let e = dom_event;
+    if (e.key === 'Backspace')
+      send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
+    else if (e.key === 'Enter') {
+      window.recv = recv;
+        eval(send({ to: recv, selector: 'string-content' }));
+      window.recv = undefined;
+    } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
+      send({ to: recv, selector: 'string-content' }, {
+        string: typeof(dump) === 'string' ? dump : ""
+      });
+    } else if (e.key.length === 1)
+      send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
+  },
+};
+
 create_boxed_text = (ctx) => {
   let o = {
-    vtable: {
-      ['created']: ({recv}, {creator}) => {
-        recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 17, fill: 'white'});
-        recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
-        svg_userData(recv.text, recv);
-        svg_userData(recv.rect, recv);
-        recv.creator = creator;
-      },
-      ['string-content']: ({recv}, {string}) => {
-        let str = string;
-        if (typeof(str) === 'undefined') str = recv.text.textContent;
-        if (typeof(str) === 'function') str = str(recv.text.textContent);
-        recv.text.textContent = str;
-        send({ to: recv, selector: 'update-box' });
-        return str;
-      },
-      ['update-box']: ({recv}) => {
-        let bbox = recv.text.getBBox();
-        attribs(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
-      },
-      ['set-baseline-start']: ({recv}, {coords}) => {
-        let [x,y] = coords;
-        attribs(recv.text, {x, y});
-        send({ to: recv, selector: 'update-box' });
-      },
-      ['clicked']: ({recv}) => {
-        send({ to: recv, selector: 'start-moving' });
-        keyboard_focus = recv;
-      },
-      ['start-moving']: ({recv}) => {
-        recv.baseline_0 = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
-        moving = recv;
-      },
-      ['being-moved']: ({recv}, {vector}) => {
-        let baseline_curr = add(recv.baseline_0, vector);
-        send({ to: recv, selector: 'set-baseline-start' }, { coords: baseline_curr });
-      },
-      ['finish-moving']: ({recv}) => {
-        moving = undefined;
-        recv.baseline_0 = undefined;
-      },
-      ['key-down']: ({recv}, {dom_event}) => {
-        let e = dom_event;
-        if (e.key === 'Backspace')
-          send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
-        else if (e.key === 'Enter') {
-          window.recv = recv;
-            eval(send({ to: recv, selector: 'string-content' }));
-          window.recv = undefined;
-        } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
-          send({ to: recv, selector: 'string-content' }, {
-            string: typeof(dump) === 'string' ? dump : ""
-          });
-        } else if (e.key.length === 1)
-          send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
-      },
-    }
+    vtable: boxed_text_vtable
   };
   send({ to: o, selector: 'created' }, ctx);
   return o;
