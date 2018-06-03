@@ -217,9 +217,20 @@ boxed_text_vtable = {
     if (e.key === 'Backspace')
       send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
     else if (e.key === 'Enter') {
-      window.recv = recv;
-        eval(send({ to: recv, selector: 'string-content' }));
-      window.recv = undefined;
+      if (e.ctrlKey) {
+        window.recv = recv;
+          eval(send({ to: recv, selector: 'string-content' }));
+        window.recv = undefined;
+      } else {
+        if (recv.next_line === undefined) {
+          recv.next_line = create_boxed_text({ creator: recv });
+          let my_coords = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
+          let my_height = +attr(recv.text, 'font-size');
+          send({to: recv.next_line, selector: 'set-baseline-start'},
+               {coords: add(my_coords, [0, my_height*1.3])});
+        }
+        keyboard_focus = recv.next_line;
+      }
     } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
       send({ to: recv, selector: 'string-content' }, {
         string: typeof(dump) === 'string' ? dump : ""
