@@ -196,6 +196,17 @@ boxed_text_vtable = {
     attribs(recv.text, {x, y});
     send({ to: recv, selector: 'update-box' });
   },
+  ['next-line']: ({recv}) => {
+    if (recv.next_line === undefined) {
+      let new_line = create_boxed_text({ creator: recv });
+      let my_coords = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
+      let my_height = +attr(recv.text, 'font-size');
+      send({to: new_line, selector: 'set-baseline-start'},
+           {coords: add(my_coords, [0, my_height*1.3])});
+      recv.next_line = new_line;
+    }
+    return recv.next_line;
+  },
   ['clicked']: ({recv}) => {
     send({ to: recv, selector: 'start-moving' });
     keyboard_focus = recv;
@@ -218,23 +229,27 @@ boxed_text_vtable = {
       send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
     else if (e.key === 'Enter') {
       if (e.ctrlKey) {
+        let code = [];
+        let line = recv;
+        while (line !== undefined) {
+          let str = send({ to: line, selector: 'string-content' });
+          code.push(str);
+          line = line.next_line;
+        }
         window.recv = recv;
-          eval(send({ to: recv, selector: 'string-content' }));
+          eval(code.join('\n'));
         window.recv = undefined;
       } else {
-        if (recv.next_line === undefined) {
-          recv.next_line = create_boxed_text({ creator: recv });
-          let my_coords = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
-          let my_height = +attr(recv.text, 'font-size');
-          send({to: recv.next_line, selector: 'set-baseline-start'},
-               {coords: add(my_coords, [0, my_height*1.3])});
-        }
-        keyboard_focus = recv.next_line;
+        keyboard_focus = send({to: recv, selector: 'next-line'});
       }
-    } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P, but no display newline
-      send({ to: recv, selector: 'string-content' }, {
-        string: typeof(dump) === 'string' ? dump : ""
-      });
+    } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P
+      let strs = typeof(dump) === 'string' ? dump.split('\n') : [];
+      let line = recv;
+      while (strs.length > 0) {
+        let str = strs.shift();
+        send({to: line, selector: 'string-content'}, {string: str});
+        line = send({to: line, selector: 'next-line'});
+      }
     } else if (e.key.length === 1)
       send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
   },
