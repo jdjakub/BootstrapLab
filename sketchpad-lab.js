@@ -275,23 +275,31 @@ create_boxed_text = (ctx) => {
   return o;
 }
 
-create_signal = () => {
-  let o = {
-    vtable: {
-      ['created']: ({recv}) => {
-      },
-      ['current-value']: ({recv}, {set_to}) => {
-        let v = set_to;
-        if (typeof(v) === 'function') v = v(recv.value);
-        // changed from recv.value to v 
-        recv.value = v;
-        return v;
-      },
-    },
-  };
-  send({ to: o, selector: 'created' });
-  return o;
+pointer_vtable = {
+  ['created']: ({recv}) => {
+    recv.value = () => recv._value;
+    recv.update = v => recv._value = v;
+    recv._subs = new Set();
+    recv.subscribers_copy = () => new Set(recv._subs);
+    recv.add = sub => recv._subs.add(sub);
+    recv.remove = sub => recv._subs.remove(sub);
+  },
+  ['changed']: ({recv}, {to}) => {
+    let old_value = recv.value();
+    let new_value = to;
+    if (typeof(new_value) === 'function') new_value = new_value(old_value);
+    recv.update(new_value);
+    console.log(`(${to[0]}, ${to[1]})`);
+    for (let s of recv.subscribers_copy()) {
+      send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
+    }
+  },
 };
+
+pointer = {
+  vtable: pointer_vtable,
+};
+send({to: pointer, selector: 'created'});
 
 svg.onmousedown = e => {
   // Two things have happened.
@@ -305,7 +313,8 @@ svg.onmousedown = e => {
 moving = undefined;
 pointer_0 = undefined;
 svg.onmousemove = e => {
-   if (moving !== undefined) {
+  send({to: pointer, selector: 'changed'}, {to: offset(e)});
+  if (moving !== undefined) {
     let pointer_curr = offset(e);
     let pointer_delta = sub(pointer_curr, pointer_0);
     send({ to: moving, selector: 'being-moved' }, { vector: pointer_delta });
