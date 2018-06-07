@@ -61,23 +61,32 @@ resize = () => {
 resize();
 
 send = ({ to, selector }, context) => {
-  let next_code_path = to.receive || default_dyn_single_dispatch;
+  let next_code_path = to.receive || defaults.dyn_single_dispatch;
   return next_code_path({ recv: to, selector }, context || {});
 };
 
-default_vtable = {
+defaults = {}
+
+defaults.vtable = {
   ['being-considered']: () => {},
 };
 
-default_dyn_single_dispatch = ({ recv, selector }, context) => {
-  let selector_to_next_code_path = recv.vtable || default_vtable;
+defaults.dyn_single_dispatch = ({ recv, selector }, context) => {
+  let selector_to_next_code_path = recv.vtable || defaults.vtable;
   let next_code_path = selector_to_next_code_path[selector];
   if (next_code_path === undefined) {
-    next_code_path = default_vtable[selector];
-    if (next_code_path === undefined) throw "No comprende "+selector;
+    let not_in_vtable = recv.not_in_vtable || defaults.not_in_vtable;
+    return not_in_vtable({ recv, selector }, context);
   }
-  
-  return next_code_path({ recv, selector }, context);
+  else return next_code_path({ recv, selector }, context);
+};
+
+defaults.not_in_vtable = ({ recv, selector }, context) => {
+  next_code_path = defaults.vtable[selector]
+  if (next_code_path === undefined)
+    throw [`${recv} does not understand ${selector}`, recv, selector, context];
+  else
+    return next_code_path({ recv, selector }, context);
 };
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
@@ -260,8 +269,8 @@ boxed_text_vtable = {
         keyboard_focus = send({to: recv, selector: 'next-line'});
       }
     } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P
-      let strs = typeof(dump) === 'string' ? dump : "";
-      send({to: recv, selector: 'from-strings'}, {strings: strs});
+      let str = typeof(dump) === 'string' ? dump : "";
+      send({to: recv, selector: 'from-strings'}, {string: str});
     } else if (e.key.length === 1)
       send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
   },
@@ -275,7 +284,7 @@ create_boxed_text = (ctx) => {
   return o;
 }
 
-pointer_vtable = {
+observable_vtable = {
   ['created']: ({recv}) => {
     recv.value = () => recv._value;
     recv.update = v => recv._value = v;
@@ -289,7 +298,6 @@ pointer_vtable = {
     let new_value = to;
     if (typeof(new_value) === 'function') new_value = new_value(old_value);
     recv.update(new_value);
-    console.log(`(${to[0]}, ${to[1]})`);
     for (let s of recv.subscribers_copy()) {
       send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
     }
@@ -297,7 +305,7 @@ pointer_vtable = {
 };
 
 pointer = {
-  vtable: pointer_vtable,
+  vtable: observable_vtable,
 };
 send({to: pointer, selector: 'created'});
 
