@@ -51,6 +51,11 @@ svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
 backg = svgel('rect', svg, {x: 0, y: 0, fill: 'black'});
+
+clear = () => {
+  let ch = Array.from(svg.children);
+  ch.forEach(c => { if (c !== backg) c.remove() });
+}
                             
 resize = () => {
   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
@@ -60,33 +65,34 @@ resize = () => {
 
 resize();
 
-send = ({ to, selector }, context) => {
+send = ({ from, to, selector }, context) => {
   let next_code_path = to.receive || defaults.dyn_single_dispatch;
-  return next_code_path({ recv: to, selector }, context || {});
+  return next_code_path({ sender: from, recv: to, selector }, context || {});
 };
 
 defaults = {}
 
 defaults.vtable = {
   ['being-considered']: () => {},
+  ['un-clicked']: () => {},
 };
 
-defaults.dyn_single_dispatch = ({ recv, selector }, context) => {
+defaults.dyn_single_dispatch = ({ sender, recv, selector }, context) => {
   let selector_to_next_code_path = recv.vtable || defaults.vtable;
   let next_code_path = selector_to_next_code_path[selector];
   if (next_code_path === undefined) {
     let not_in_vtable = recv.not_in_vtable || defaults.not_in_vtable;
-    return not_in_vtable({ recv, selector }, context);
+    return not_in_vtable({ sender, recv, selector }, context);
   }
-  else return next_code_path({ recv, selector }, context);
+  else return next_code_path({ sender, recv, selector }, context);
 };
 
-defaults.not_in_vtable = ({ recv, selector }, context) => {
+defaults.not_in_vtable = ({ sender, recv, selector }, context) => {
   next_code_path = defaults.vtable[selector]
   if (next_code_path === undefined)
     throw [`${recv} does not understand ${selector}`, recv, selector, context];
   else
-    return next_code_path({ recv, selector }, context);
+    return next_code_path({ sender, recv, selector }, context);
 };
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
@@ -129,32 +135,25 @@ svg_userData(backg, {
 circle_vtable = {
   ['created']: ({recv}, {center}) => {
     recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
-    attr(recv.svgel, {cx: center[0], cy: center[1]});
     svg_userData(recv.svgel, recv);
+    recv.position = create_observable();
+    send({from: recv, to: recv.position, selector: 'subscribe'});
+    send({to: recv.position, selector: 'changed'}, {to: center});
+  },
+  ['changed']: ({recv,sender}, context) => {
+    if (sender === recv.position) {
+      let p = context.to;
+      attr(recv.svgel, {cx: p[0], cy: p[1]});
+    }
   },
   ['clicked']: ({recv}) => {
-    send({ to: recv, selector: 'start-moving' });
-  },
-  ['start-moving']: ({recv}) => {
-    let circ = recv.svgel;
-    // Implement the initial conditions of the difference equation
-    // center @ t+1 - center @ t = pointer @ t+1 - pointer @ t
-    recv.center_0 = [+attr(circ, 'cx'), +attr(circ, 'cy')];
-    // Enable the maintenance of this equality
+    keyboard_focus = recv;
     moving = recv;
+    send({from: recv.position, to: pointer, selector: 'subscribe'});
   },
-  ['being-moved']: ({recv}, {vector}) => {
-    let circ = recv.svgel;
-    // Maintain center @ t+1 = center @ t + (pointer @ t+1 - pointer @ t)
-    let center_curr = add(recv.center_0, vector);
-    // Update the SVG dumb-state
-    attr(circ, 'cx', center_curr[0]);
-    attr(circ, 'cy', center_curr[1]);
-  },
-  ['finish-moving']: ({recv}) => {
-    // Halt maintenance of difference equation
+  ['un-clicked']: ({recv}) => {
     moving = undefined;
-    recv.center_0 = undefined;
+    send({from: recv.position, to: pointer, selector: 'unsubscribe'});
   },
   ['key-down']: ({recv}) => {
     if (recv.str === undefined) { // Lazy initialise text line on key input
@@ -186,11 +185,30 @@ create_circle = (c) => {
 
 boxed_text_vtable = {
   ['created']: ({recv}, {creator}) => {
-    recv.text = svgel('text', svg, {x: 500, y: 500, font_size: 20, fill: 'white'});
+    recv.text = svgel('text', svg, {font_size: 20, fill: 'white'});
     recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
     svg_userData(recv.text, recv);
     svg_userData(recv.rect, recv);
+    recv.position = create_observable();
+    send({from: recv, to: recv.position, selector: 'subscribe'});
+    send({to: recv.position, selector: 'changed'}, {to: [500,500]});
     recv.creator = creator;
+  },
+  ['changed']: ({sender, recv}, context) => {
+    if (sender === recv.position) {
+      let [x,y] = context.to;
+      attr(recv.text, {x, y});
+      send({ to: recv, selector: 'update-box' });
+    }
+  },
+  ['clicked']: ({recv}) => {
+    keyboard_focus = recv;
+    moving = recv;
+    send({from: recv.position, to: pointer, selector: 'subscribe'});
+  },
+  ['un-clicked']: ({recv}) => {
+    moving = undefined;
+    send({from: recv.position, to: pointer, selector: 'unsubscribe'});
   },
   ['string-content']: ({recv}, {string}) => {
     let str = string;
@@ -205,9 +223,7 @@ boxed_text_vtable = {
     attr(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
   },
   ['set-baseline-start']: ({recv}, {coords}) => {
-    let [x,y] = coords;
-    attr(recv.text, {x, y});
-    send({ to: recv, selector: 'update-box' });
+    send({to: recv.position, selector: 'changed'}, {to: coords});
   },
   ['next-line']: ({recv}) => {
     if (recv.next_line === undefined) {
@@ -238,22 +254,6 @@ boxed_text_vtable = {
       line = line.next_line;
     }
     return strs;
-  },
-  ['clicked']: ({recv}) => {
-    send({ to: recv, selector: 'start-moving' });
-    keyboard_focus = recv;
-  },
-  ['start-moving']: ({recv}) => {
-    recv.baseline_0 = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
-    moving = recv;
-  },
-  ['being-moved']: ({recv}, {vector}) => {
-    let baseline_curr = add(recv.baseline_0, vector);
-    send({ to: recv, selector: 'set-baseline-start' }, { coords: baseline_curr });
-  },
-  ['finish-moving']: ({recv}) => {
-    moving = undefined;
-    recv.baseline_0 = undefined;
   },
   ['key-down']: ({recv}, {dom_event}) => {
     let e = dom_event;
@@ -291,7 +291,7 @@ observable_vtable = {
     recv._subs = new Set();
     recv.subscribers_copy = () => new Set(recv._subs);
     recv.add = sub => recv._subs.add(sub);
-    recv.remove = sub => recv._subs.remove(sub);
+    recv.remove = sub => recv._subs.delete(sub);
   },
   ['changed']: ({recv}, {to}) => {
     let old_value = recv.value();
@@ -302,36 +302,40 @@ observable_vtable = {
       send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
     }
   },
+  ['subscribe']: ({sender, recv}) => {
+    recv.add(sender);
+  },
+  ['unsubscribe']: ({sender, recv}) => {
+    recv.remove(sender);
+  },
 };
 
-pointer = {
-  vtable: observable_vtable,
+create_observable = () => {
+  let o = {
+    vtable: observable_vtable,
+  };
+  send({to: o, selector: 'created'});
+  return o;
 };
-send({to: pointer, selector: 'created'});
+
+
+
+pointer = create_observable();
 
 svg.onmousedown = e => {
   // Two things have happened.
   // First, an external event has occurred.
   // Second, SVG has performed a spatial index and identified a shape at x,y.
-  pointer_0 = offset(e);
   let obj = svg_userData(e.target);
   if (obj !== undefined) send({ to: obj, selector: 'clicked'}, {dom_event: e});
 };
 
 moving = undefined;
-pointer_0 = undefined;
-svg.onmousemove = e => {
-  send({to: pointer, selector: 'changed'}, {to: offset(e)});
-  if (moving !== undefined) {
-    let pointer_curr = offset(e);
-    let pointer_delta = sub(pointer_curr, pointer_0);
-    send({ to: moving, selector: 'being-moved' }, { vector: pointer_delta });
-  }
-};
+svg.onmousemove = e => send({to: pointer, selector: 'changed'}, {to: offset(e)});
 
 svg.onmouseup = e => {
   let obj = svg_userData(e.target);
-  if (obj !== undefined) send({ to: obj, selector: 'finish-moving'}, {truth: true, dom_event: e});
+  if (obj !== undefined) send({ to: obj, selector: 'un-clicked'}, {dom_event: e});
 };
 
 dump = "";
