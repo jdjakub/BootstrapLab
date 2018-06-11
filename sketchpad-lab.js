@@ -127,12 +127,62 @@ svg_userData(backg, {
   }]
 });
 
+observable_vtable = {
+  ['created']: ({recv}) => {
+    recv.value = () => recv._value;
+    recv.update = v => recv._value = v;
+    recv._subs = new Set();
+    recv.subscribers_copy = () => new Set(recv._subs);
+    recv.add = sub => recv._subs.add(sub);
+    recv.remove = sub => recv._subs.delete(sub);
+  },
+  ['changed']: ({recv}, {to}) => {
+    let old_value = recv.value();
+    let new_value = to;
+    if (typeof(new_value) === 'function') new_value = new_value(old_value);
+    recv.update(new_value);
+    for (let s of recv.subscribers_copy()) {
+      send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
+    }
+  },
+  // Feels like setting and un-setting an "is-subscribed" observable...
+  ['subscribe-me']: ({sender, recv}) => {
+    recv.add(sender);
+  },
+  ['unsubscribe-me']: ({sender, recv}) => {
+    recv.remove(sender);
+  },
+};
+
+create_observable = () => {
+  let o = {
+    vtables: [observable_vtable],
+  };
+  send({to: o, selector: 'created'});
+  return o;
+};
+
+
+has_position_vtable = {
+  // Obviously listening for changes to the "left mouse button" observable
+  ['clicked']: ({recv}) => {
+    keyboard_focus = recv;
+    moving = recv;
+    send({from: recv.position, to: pointer, selector: 'subscribe-me'});
+  },
+  ['un-clicked']: ({recv}) => {
+    moving = undefined;
+    send({from: recv.position, to: pointer, selector: 'unsubscribe-me'});
+  },
+};
+
 circle_vtable = {
   ['created']: ({recv}, {center}) => {
     recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
     svg_userData(recv.svgel, recv);
-    recv.position = create_observable();
-    send({from: recv, to: recv.position, selector: 'subscribe'});
+    recv.vtables.push(has_position_vtable);  // Hack in another vtable...
+    recv.position = create_observable(); // And perform its initialisation for it... erk!
+    send({from: recv, to: recv.position, selector: 'subscribe-me'});
     send({to: recv.position, selector: 'changed'}, {to: center});
   },
   ['changed']: ({recv,sender}, context) => {
@@ -140,15 +190,6 @@ circle_vtable = {
       let p = context.to;
       attr(recv.svgel, {cx: p[0], cy: p[1]});
     }
-  },
-  ['clicked']: ({recv}) => {
-    keyboard_focus = recv;
-    moving = recv;
-    send({from: recv.position, to: pointer, selector: 'subscribe'});
-  },
-  ['un-clicked']: ({recv}) => {
-    moving = undefined;
-    send({from: recv.position, to: pointer, selector: 'unsubscribe'});
   },
   ['key-down']: ({recv}) => {
     if (recv.str === undefined) { // Lazy initialise text line on key input
@@ -184,8 +225,9 @@ boxed_text_vtable = {
     recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
     svg_userData(recv.text, recv);
     svg_userData(recv.rect, recv);
-    recv.position = create_observable();
-    send({from: recv, to: recv.position, selector: 'subscribe'});
+    recv.vtables.push(has_position_vtable);  // Hack in another vtable...
+    recv.position = create_observable(); // And perform its initialisation for it... erk!
+    send({from: recv, to: recv.position, selector: 'subscribe-me'});
     send({to: recv.position, selector: 'changed'}, {to: [500,500]});
     recv.creator = creator;
   },
@@ -195,15 +237,6 @@ boxed_text_vtable = {
       attr(recv.text, {x, y});
       send({ to: recv, selector: 'update-box' });
     }
-  },
-  ['clicked']: ({recv}) => {
-    keyboard_focus = recv;
-    moving = recv;
-    send({from: recv.position, to: pointer, selector: 'subscribe'});
-  },
-  ['un-clicked']: ({recv}) => {
-    moving = undefined;
-    send({from: recv.position, to: pointer, selector: 'unsubscribe'});
   },
   ['string-content']: ({recv}, {string}) => {
     let str = string;
@@ -278,42 +311,6 @@ create_boxed_text = (ctx) => {
   send({ to: o, selector: 'created' }, ctx);
   return o;
 }
-
-observable_vtable = {
-  ['created']: ({recv}) => {
-    recv.value = () => recv._value;
-    recv.update = v => recv._value = v;
-    recv._subs = new Set();
-    recv.subscribers_copy = () => new Set(recv._subs);
-    recv.add = sub => recv._subs.add(sub);
-    recv.remove = sub => recv._subs.delete(sub);
-  },
-  ['changed']: ({recv}, {to}) => {
-    let old_value = recv.value();
-    let new_value = to;
-    if (typeof(new_value) === 'function') new_value = new_value(old_value);
-    recv.update(new_value);
-    for (let s of recv.subscribers_copy()) {
-      send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
-    }
-  },
-  ['subscribe']: ({sender, recv}) => {
-    recv.add(sender);
-  },
-  ['unsubscribe']: ({sender, recv}) => {
-    recv.remove(sender);
-  },
-};
-
-create_observable = () => {
-  let o = {
-    vtables: [observable_vtable],
-  };
-  send({to: o, selector: 'created'});
-  return o;
-};
-
-
 
 pointer = create_observable();
 
