@@ -66,6 +66,8 @@ resize = () => {
 resize();
 
 send = ({ from, to, selector }, context) => {
+  // Allow objects to receive messages however they wish
+  // Treat absence of 'receive' as presence of 99%-case default
   let next_code_path = to.receive || defaults.dyn_single_dispatch;
   return next_code_path({ sender: from, recv: to, selector }, context || {});
 };
@@ -78,21 +80,14 @@ defaults.vtable = {
 };
 
 defaults.dyn_single_dispatch = ({ sender, recv, selector }, context) => {
-  let selector_to_next_code_path = recv.vtable || defaults.vtable;
-  let next_code_path = selector_to_next_code_path[selector];
-  if (next_code_path === undefined) {
-    let not_in_vtable = recv.not_in_vtable || defaults.not_in_vtable;
-    return not_in_vtable({ sender, recv, selector }, context);
+  let vtables = recv.vtables.concat([ defaults.vtable ]);
+  for (let selector_to_next_code_path of vtables) {
+    let next_code_path = selector_to_next_code_path[selector];
+    if (next_code_path !== undefined)
+      return next_code_path({ sender, recv, selector }, context);
   }
-  else return next_code_path({ sender, recv, selector }, context);
-};
-
-defaults.not_in_vtable = ({ sender, recv, selector }, context) => {
-  next_code_path = defaults.vtable[selector]
-  if (next_code_path === undefined)
-    throw [`${recv} does not understand ${selector}`, recv, selector, context];
-  else
-    return next_code_path({ sender, recv, selector }, context);
+  
+  throw [`${recv} does not understand ${selector}`, recv, selector, context];
 };
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
@@ -120,7 +115,7 @@ svg_userData(backg, {
   // to FINITE SET (values of sign(a))
   // to NEXT STATE-CHANGE (infinite set?)
   // In summary: EXPOSE THE SUBSTRATE, part of which is JS itself.
-  vtable: {
+  vtables: [{
     ['clicked']: ({recv}, {dom_event}) => {
       // Create SVG circle and route keyboard input "to it"
       let e = dom_event;
@@ -129,7 +124,7 @@ svg_userData(backg, {
       // Route keyboard input "to" the circle
       keyboard_focus = obj;
     },
-  }
+  }]
 });
 
 circle_vtable = {
@@ -177,7 +172,7 @@ circle_vtable = {
 
 create_circle = (c) => {
   let o = {
-    vtable: circle_vtable
+    vtables: [circle_vtable]
   };
   send({ to: o, selector: 'created' }, { center: c });
   return o;
@@ -278,7 +273,7 @@ boxed_text_vtable = {
 
 create_boxed_text = (ctx) => {
   let o = {
-    vtable: boxed_text_vtable
+    vtables: [boxed_text_vtable]
   };
   send({ to: o, selector: 'created' }, ctx);
   return o;
@@ -312,7 +307,7 @@ observable_vtable = {
 
 create_observable = () => {
   let o = {
-    vtable: observable_vtable,
+    vtables: [observable_vtable],
   };
   send({to: o, selector: 'created'});
   return o;
