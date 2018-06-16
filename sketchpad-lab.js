@@ -65,6 +65,8 @@ resize = () => {
 
 resize();
 
+window.onresize = resize;
+
 send = ({ from, to, selector }, context) => {
   // Allow objects to receive messages however they wish
   // Treat absence of 'receive' as presence of 99%-case default
@@ -164,7 +166,11 @@ create_observable = () => {
 
 
 has_position_vtable = {
-  // Obviously listening for changes to the "left mouse button" observable
+  ['position']: ({recv}) => {
+    if (recv.position === undefined) recv.position = create_observable();
+    return recv.position;
+  },
+  // Should be replaced by these impls at send-site
   ['clicked']: ({recv}) => {
     keyboard_focus = recv;
     moving = recv;
@@ -178,22 +184,26 @@ has_position_vtable = {
 
 circle_vtable = {
   ['created']: ({recv}, {center}) => {
-    recv.svgel = svgel('circle', svg, {r: 15, fill: 'red'});
-    svg_userData(recv.svgel, recv);
+    recv.circ = svgel('circle', svg, {r: 15, fill: 'red'});
+    svg_userData(recv.circ, recv);
+    recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: '#42a1f4', stroke_opacity: 0});
+    svg_userData(recv.bbox, recv);
     recv.vtables.push(has_position_vtable);  // Hack in another vtable...
-    recv.position = create_observable(); // And perform its initialisation for it... erk!
-    send({from: recv, to: recv.position, selector: 'subscribe-me'});
-    send({to: recv.position, selector: 'changed'}, {to: center});
+    let pos = send({to: recv, selector: 'position'});
+    send({from: recv, to: pos, selector: 'subscribe-me'});
+    send({to: pos, selector: 'changed'}, {to: center});
   },
   ['changed']: ({recv,sender}, context) => {
-    if (sender === recv.position) {
+    if (sender === recv.position) { // accessing impl detail...!
       let p = context.to;
-      attr(recv.svgel, {cx: p[0], cy: p[1]});
+      attr(recv.circ, {cx: p[0], cy: p[1]});
+      let r = +attr(recv.circ, 'r');
+      attr(recv.bbox, {x: p[0]-r, y: p[1]-r, width: 2*r, height: 2*r});
     }
   },
   ['key-down']: ({recv}) => {
     if (recv.str === undefined) { // Lazy initialise text line on key input
-      let [cx,cy] = [attr(recv.svgel, 'cx'), attr(recv.svgel, 'cy')];
+      let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
       // Place text baseline and start point at circle center
       recv.str = create_boxed_text({ creator: recv });
       send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
@@ -201,12 +211,10 @@ circle_vtable = {
     }
   },
   ['being-considered']: ({recv}, {truth}) => {
-      // Early-bound one-element stack, lol
       if (truth === true) { // PUSH...
-        recv.old_opacity = attr(recv.svgel, 'fill-opacity');
-        attr(recv.svgel, 'fill-opacity', 0.5);
+        attr(recv.bbox, 'stroke-opacity', 1);
       } else { // ... POP!
-        attr(recv.svgel, 'fill-opacity', recv.old_opacity);
+        attr(recv.bbox, 'stroke-opacity', 0);
       }
   },
 };
@@ -222,20 +230,29 @@ create_circle = (c) => {
 boxed_text_vtable = {
   ['created']: ({recv}, {creator}) => {
     recv.text = svgel('text', svg, {font_size: 20, fill: 'white'});
-    recv.rect = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
+    recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
     svg_userData(recv.text, recv);
-    svg_userData(recv.rect, recv);
+    svg_userData(recv.bbox, recv);
     recv.vtables.push(has_position_vtable);  // Hack in another vtable...
-    recv.position = create_observable(); // And perform its initialisation for it... erk!
-    send({from: recv, to: recv.position, selector: 'subscribe-me'});
-    send({to: recv.position, selector: 'changed'}, {to: [500,500]});
+    let pos = send({to: recv, selector: 'position'});
+    send({from: recv, to: pos, selector: 'subscribe-me'});
+    send({to: pos, selector: 'changed'}, {to: [500,500]});
     recv.creator = creator;
   },
   ['changed']: ({sender, recv}, context) => {
-    if (sender === recv.position) {
+    if (sender === recv.position) { // accessing impl detail...!
       let [x,y] = context.to;
       attr(recv.text, {x, y});
       send({ to: recv, selector: 'update-box' });
+    }
+  },
+  ['being-considered']: ({recv}, {truth}) => {
+    // Early-bound one-element stack, lol
+    if (truth === true) { // PUSH...
+      recv.old_look = attr(recv.bbox, 'stroke');
+      attr(recv.bbox, 'stroke', '#42a1f4');
+    } else { // ... POP!
+      attr(recv.bbox, 'stroke', recv.old_look);
     }
   },
   ['string-content']: ({recv}, {string}) => {
@@ -248,7 +265,7 @@ boxed_text_vtable = {
   },
   ['update-box']: ({recv}) => {
     let bbox = recv.text.getBBox();
-    attr(recv.rect, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
+    attr(recv.bbox, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
   },
   ['set-baseline-start']: ({recv}, {coords}) => {
     send({to: recv.position, selector: 'changed'}, {to: coords});
@@ -313,6 +330,8 @@ create_boxed_text = (ctx) => {
 }
 
 pointer = create_observable();
+left_mouse_button = create_observable();
+right_mouse_button = create_observable();
 
 svg.onmousedown = e => {
   // Two things have happened.
