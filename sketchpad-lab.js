@@ -180,6 +180,14 @@ has_position_vtable = {
     moving = undefined;
     send({from: recv.position, to: pointer, selector: 'unsubscribe-me'});
   },
+  ['being-considered']: ({recv}, {truth}) => {
+    // Early bound one-element stack, lol
+    if (truth === true) { // PUSH...
+      attr(recv.bbox, 'stroke-opacity', 1);
+    } else { // ... POP!
+      attr(recv.bbox, 'stroke-opacity', 0);
+    }
+  },
 };
 
 circle_vtable = {
@@ -210,13 +218,6 @@ circle_vtable = {
       send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
     }
   },
-  ['being-considered']: ({recv}, {truth}) => {
-      if (truth === true) { // PUSH...
-        attr(recv.bbox, 'stroke-opacity', 1);
-      } else { // ... POP!
-        attr(recv.bbox, 'stroke-opacity', 0);
-      }
-  },
 };
 
 create_circle = (c) => {
@@ -230,7 +231,7 @@ create_circle = (c) => {
 boxed_text_vtable = {
   ['created']: ({recv}, {creator}) => {
     recv.text = svgel('text', svg, {font_size: 20, fill: 'white'});
-    recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: 'gray'});
+    recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: '#42a1f4', stroke_opacity: 0});
     svg_userData(recv.text, recv);
     svg_userData(recv.bbox, recv);
     recv.vtables.push(has_position_vtable);  // Hack in another vtable...
@@ -244,15 +245,6 @@ boxed_text_vtable = {
       let [x,y] = context.to;
       attr(recv.text, {x, y});
       send({ to: recv, selector: 'update-box' });
-    }
-  },
-  ['being-considered']: ({recv}, {truth}) => {
-    // Early-bound one-element stack, lol
-    if (truth === true) { // PUSH...
-      recv.old_look = attr(recv.bbox, 'stroke');
-      attr(recv.bbox, 'stroke', '#42a1f4');
-    } else { // ... POP!
-      attr(recv.bbox, 'stroke', recv.old_look);
     }
   },
   ['string-content']: ({recv}, {string}) => {
