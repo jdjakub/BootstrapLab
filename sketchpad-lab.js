@@ -77,8 +77,6 @@ send = ({ from, to, selector }, context) => {
 defaults = {}
 
 defaults.vtable = {
-  ['clicked']: () => {},
-  ['un-clicked']: () => {},
 };
 
 defaults.dyn_single_dispatch = ({ sender, recv, selector }, context) => {
@@ -118,13 +116,29 @@ svg_userData(backg, {
   // to NEXT STATE-CHANGE (infinite set?)
   // In summary: EXPOSE THE SUBSTRATE, part of which is JS itself.
   vtables: [{
-    ['clicked']: ({recv}, {dom_event}) => {
-      // Create SVG circle and route keyboard input "to it"
-      let e = dom_event;
-      let obj = create_circle(offset(e));
-      
-      // Route keyboard input "to" the circle
-      keyboard_focus = obj;
+    ['created']: ({recv}) => {
+      recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+      send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    },
+    ['changed']: ({sender, recv}, {to}) => {
+      // Further dispatch occurring here, on sender
+      if (sender === recv.being_considered) {
+        if (to === true) // PUSH...
+          send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
+        else // ... POP!
+          send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+      } else if (sender === left_mouse_button_is_down) {
+        if (to === true) {
+          // Create SVG circle and route keyboard input "to it"
+          
+          let pos = send({to: send({to: pointer, selector: 'position'}),
+                          selector: 'poll'});
+          let obj = create_circle(pos);
+          
+          // Route keyboard input "to" the circle
+          keyboard_focus = obj;
+        }
+      }
     },
   }]
 });
@@ -147,6 +161,7 @@ observable_vtable = {
       send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
     }
   },
+  ['poll']: ({recv}) => recv.value(), // returns mutable original...!
   // Feels like setting and un-setting an "is-subscribed" observable...
   ['subscribe-me']: ({sender, recv}) => {
     recv.add(sender);
@@ -170,19 +185,6 @@ has_position_vtable = {
     recv.position = create_observable();
   },
   ['position']: ({recv}) => recv.position,
-  ['clicked']: ({sender, recv}) => {
-    keyboard_focus = recv;
-    moving = recv;
-    send({from: recv.position,
-          to: send({from: recv, to: sender, selector: 'position'}),
-          selector: 'subscribe-me'});
-  },
-  ['un-clicked']: ({sender, recv}) => {
-    moving = undefined;
-    send({from: recv.position,
-          to: send({from: recv, to: sender, selector: 'position'}),
-          selector: 'unsubscribe-me'});
-  },
 };
 
 circle_vtable = {
@@ -212,12 +214,27 @@ circle_vtable = {
       attr(recv.circ, {cx: p[0], cy: p[1]});
       let r = +attr(recv.circ, 'r');
       attr(recv.bbox, {x: p[0]-r, y: p[1]-r, width: 2*r, height: 2*r});
-    } else if (sender === recv.being_considered) {
+      
+    } else if (sender === recv.being_considered) { // Same as in boxed_text
       // Early bound one-element stack, lol
       if (context.to === true) { // PUSH...
         attr(recv.bbox, 'stroke-opacity', 1);
+        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
       } else { // ... POP!
         attr(recv.bbox, 'stroke-opacity', 0);
+        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+      }
+      
+    } else if (sender === left_mouse_button_is_down) { // Same as in boxed_text
+      if (context.to === true) {
+        keyboard_focus = recv;
+        send({from: recv.position,
+              to: send({from: recv, to: pointer, selector: 'position'}),
+              selector: 'subscribe-me'});
+      } else {
+        send({from: recv.position,
+              to: send({from: recv, to: pointer, selector: 'position'}),
+              selector: 'unsubscribe-me'});
       }
     }
   },
@@ -266,12 +283,26 @@ boxed_text_vtable = {
       let [x,y] = context.to;
       attr(recv.text, {x, y});
       send({ to: recv, selector: 'update-box' });
-    } else if (sender === recv.being_considered) { // Same as in circle...
+    } else if (sender === recv.being_considered) { // Same as in circle
       // Early bound one-element stack, lol
       if (context.to === true) { // PUSH...
         attr(recv.bbox, 'stroke-opacity', 1);
+        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
       } else { // ... POP!
         attr(recv.bbox, 'stroke-opacity', 0);
+        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+      }
+      
+    } else if (sender === left_mouse_button_is_down) { // Same as in circle
+      if (context.to === true) {
+        keyboard_focus = recv;
+        send({from: recv.position,
+              to: send({from: recv, to: pointer, selector: 'position'}),
+              selector: 'subscribe-me'});
+      } else {
+        send({from: recv.position,
+              to: send({from: recv, to: pointer, selector: 'position'}),
+              selector: 'unsubscribe-me'});
       }
     }
   },
@@ -346,7 +377,33 @@ create_boxed_text = (ctx) => {
   return o;
 }
 
-// Extension of the human hand into the simulated world.
+/*
+ *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT ***
+ */
+
+left_mouse_button_is_down = create_observable();
+
+// Forget about coords; they are not part of the left button, or the keyboard, or the power button...
+svg.onmousedown = e =>
+  send({to: left_mouse_button_is_down, selector: 'changed'}, {to: true});
+
+svg.onmouseup = e =>
+  send({to: left_mouse_button_is_down, selector: 'changed'}, {to: false});
+
+// TODO: do the same for the keyboard
+dump = "";
+keyboard_focus = svg_userData(svg);
+
+body.onkeydown = e => {
+  if (keyboard_focus !== undefined)
+    send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
+};
+
+/*
+ *  *** "DEVICE DRIVER" FOR POSITIONAL INPUT ***
+ */
+
+// Extension of a human finger into the simulated world.
 pointer = {
   vtables: [{},{
     ['created']: ({recv}) => {
@@ -395,11 +452,12 @@ pointer = {
 };
 send({to: pointer, selector: 'created'});
 
-moving = undefined;
+// mousemove => pointer position changed
 svg.onmousemove = e =>
   send({to: send({to: pointer, selector: 'position'}),
         selector: 'changed'}, {to: offset(e)});
 
+// mouseover => considering a new object
 svg.onmouseover = e => {
   let obj = svg_userData(e.target);
   if (obj !== undefined)
@@ -407,6 +465,7 @@ svg.onmouseover = e => {
            selector: 'changed' }, { to: obj });
 };
 
+// mouseout => no longer considering the object
 svg.onmouseout = e => {
   let obj = svg_userData(e.target);
   if (obj !== undefined)
@@ -414,23 +473,10 @@ svg.onmouseout = e => {
        selector: 'changed' }, { to: undefined });
 };
 
-svg.onmousedown = e => {
-  // Two things have happened.
-  // First, an external event has occurred.
-  // Second, SVG has performed a spatial index and identified a shape at x,y.
-  let obj = svg_userData(e.target);
-  if (obj !== undefined) send({from: pointer, to: obj, selector: 'clicked'}, {dom_event: e});
-};
-
-svg.onmouseup = e => {
-  let obj = svg_userData(e.target);
-  if (obj !== undefined) send({from: pointer, to: obj, selector: 'un-clicked'}, {dom_event: e});
-};
-
-dump = "";
-keyboard_focus = svg_userData(svg);
-
-body.onkeydown = e => {
-  if (keyboard_focus !== undefined)
-    send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
-};
+/*   ^
+ *  /|\   Requires that mouseout occurs before mouseover.
+ * /_·_\  If not, will immediately stop considering new object.
+ *
+ */
+ 
+send({to: svg_userData(backg), selector: 'created'});
