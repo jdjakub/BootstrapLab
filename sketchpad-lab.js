@@ -77,7 +77,7 @@ send = ({ from, to, selector }, context) => {
 defaults = {}
 
 defaults.vtable = {
-  ['being-considered']: () => {},
+  ['clicked']: () => {},
   ['un-clicked']: () => {},
 };
 
@@ -166,12 +166,10 @@ create_observable = () => {
 
 
 has_position_vtable = {
-  ['position']: ({recv}) => {
-    if (recv.position === undefined) {
-      recv.position = create_observable();
-    }
-    return recv.position;
+  ['created']: ({recv}) => {
+    recv.position = create_observable();
   },
+  ['position']: ({recv}) => recv.position,
   ['clicked']: ({sender, recv}) => {
     keyboard_focus = recv;
     moving = recv;
@@ -194,7 +192,9 @@ circle_vtable = {
     recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: '#42a1f4', stroke_opacity: 0});
     svg_userData(recv.bbox, recv);
     
-    recv.vtables.push(has_position_vtable);  // Hack in another vtable...
+    recv.vtables.push(has_position_vtable); // Hack in another vtable...
+    has_position_vtable['created']({recv}); // Hack in its initialisation...
+    
     let pos = send({from: recv, to: recv, selector: 'position'});
     send({from: recv, to: pos, selector: 'subscribe-me'});
     send({from: recv, to: pos, selector: 'changed'}, {to: center});
@@ -202,13 +202,17 @@ circle_vtable = {
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
   },
+  // "one of your pieces of knowledge regarding the universe has changed"
+  // -- more specific than a fully general "message send", and repeated pattern
+  // that I call the "observable"
   ['changed']: ({recv,sender}, context) => {
-    if (sender === recv.position) { // accessing impl detail...!
+    // Further dispatch occurring here, on sender
+    if (sender === recv.position) {
       let p = context.to;
       attr(recv.circ, {cx: p[0], cy: p[1]});
       let r = +attr(recv.circ, 'r');
       attr(recv.bbox, {x: p[0]-r, y: p[1]-r, width: 2*r, height: 2*r});
-    } else if (sender === recv.being_considered) { // and again...!
+    } else if (sender === recv.being_considered) {
       // Early bound one-element stack, lol
       if (context.to === true) { // PUSH...
         attr(recv.bbox, 'stroke-opacity', 1);
@@ -222,7 +226,8 @@ circle_vtable = {
       let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
       // Place text baseline and start point at circle center
       recv.str = create_boxed_text({ creator: recv });
-      send({ to: recv.str, selector: 'set-baseline-start' }, {coords: [cx,cy]});
+      send({ to: send({to: recv.str, selector: 'position'}),
+             selector: 'changed' }, {to: [cx,cy]});
       send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
     }
   },
@@ -243,8 +248,10 @@ boxed_text_vtable = {
     svg_userData(recv.text, recv);
     svg_userData(recv.bbox, recv);
     
-    recv.vtables.push(has_position_vtable);  // Hack in another vtable...
-    let pos = send({to: recv, selector: 'position'});
+    recv.vtables.push(has_position_vtable); // Hack in another vtable...
+    has_position_vtable['created']({recv}); // Hack in its initialisation...
+    
+    let pos = send({from: recv, to: recv, selector: 'position'});
     send({from: recv, to: pos, selector: 'subscribe-me'});
     send({to: pos, selector: 'changed'}, {to: [500,500]});
     
@@ -254,11 +261,12 @@ boxed_text_vtable = {
     recv.creator = creator;
   },
   ['changed']: ({sender, recv}, context) => {
-    if (sender === recv.position) { // accessing impl detail...!
+    // Further dispatch occurring here, on sender
+    if (sender === recv.position) {
       let [x,y] = context.to;
       attr(recv.text, {x, y});
       send({ to: recv, selector: 'update-box' });
-    } else if (sender === recv.being_considered) { // and again...!
+    } else if (sender === recv.being_considered) { // Same as in circle...
       // Early bound one-element stack, lol
       if (context.to === true) { // PUSH...
         attr(recv.bbox, 'stroke-opacity', 1);
@@ -279,16 +287,13 @@ boxed_text_vtable = {
     let bbox = recv.text.getBBox();
     attr(recv.bbox, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
   },
-  ['set-baseline-start']: ({recv}, {coords}) => {
-    send({to: recv.position, selector: 'changed'}, {to: coords});
-  },
   ['next-line']: ({recv}) => {
     if (recv.next_line === undefined) {
       let new_line = create_boxed_text({ creator: recv });
       let my_coords = [+attr(recv.text, 'x'), +attr(recv.text, 'y')];
       let my_height = +attr(recv.text, 'font-size');
-      send({to: new_line, selector: 'set-baseline-start'},
-           {coords: add(my_coords, [0, my_height*1.3])});
+      send({from: recv, to: new_line.position, selector: 'changed'},
+           {to: add(my_coords, [0, my_height*1.3])});
       recv.next_line = new_line;
     }
     return recv.next_line;
@@ -341,10 +346,13 @@ create_boxed_text = (ctx) => {
   return o;
 }
 
+// Extension of the human hand into the simulated world.
 pointer = {
   vtables: [{},{
     ['created']: ({recv}) => {
-      recv.vtables.push(has_position_vtable);  // Hack in another vtable...
+      recv.vtables.push(has_position_vtable); // Hack in another vtable...
+      has_position_vtable['created']({recv}); // Hack in its initialisation...
+      
       let pos = send({to: recv, selector: 'position'});
       send({from: recv, to: pos, selector: 'subscribe-me'});
       
