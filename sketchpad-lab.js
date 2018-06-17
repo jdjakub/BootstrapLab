@@ -167,26 +167,23 @@ create_observable = () => {
 
 has_position_vtable = {
   ['position']: ({recv}) => {
-    if (recv.position === undefined) recv.position = create_observable();
+    if (recv.position === undefined) {
+      recv.position = create_observable();
+    }
     return recv.position;
   },
-  // Should be replaced by these impls at send-site
-  ['clicked']: ({recv}) => {
+  ['clicked']: ({sender, recv}) => {
     keyboard_focus = recv;
     moving = recv;
-    send({from: recv.position, to: pointer, selector: 'subscribe-me'});
+    send({from: recv.position,
+          to: send({from: recv, to: sender, selector: 'position'}),
+          selector: 'subscribe-me'});
   },
-  ['un-clicked']: ({recv}) => {
+  ['un-clicked']: ({sender, recv}) => {
     moving = undefined;
-    send({from: recv.position, to: pointer, selector: 'unsubscribe-me'});
-  },
-  ['being-considered']: ({recv}, {truth}) => {
-    // Early bound one-element stack, lol
-    if (truth === true) { // PUSH...
-      attr(recv.bbox, 'stroke-opacity', 1);
-    } else { // ... POP!
-      attr(recv.bbox, 'stroke-opacity', 0);
-    }
+    send({from: recv.position,
+          to: send({from: recv, to: sender, selector: 'position'}),
+          selector: 'unsubscribe-me'});
   },
 };
 
@@ -196,10 +193,14 @@ circle_vtable = {
     svg_userData(recv.circ, recv);
     recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: '#42a1f4', stroke_opacity: 0});
     svg_userData(recv.bbox, recv);
+    
     recv.vtables.push(has_position_vtable);  // Hack in another vtable...
-    let pos = send({to: recv, selector: 'position'});
+    let pos = send({from: recv, to: recv, selector: 'position'});
     send({from: recv, to: pos, selector: 'subscribe-me'});
-    send({to: pos, selector: 'changed'}, {to: center});
+    send({from: recv, to: pos, selector: 'changed'}, {to: center});
+    
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
   },
   ['changed']: ({recv,sender}, context) => {
     if (sender === recv.position) { // accessing impl detail...!
@@ -207,6 +208,13 @@ circle_vtable = {
       attr(recv.circ, {cx: p[0], cy: p[1]});
       let r = +attr(recv.circ, 'r');
       attr(recv.bbox, {x: p[0]-r, y: p[1]-r, width: 2*r, height: 2*r});
+    } else if (sender === recv.being_considered) { // and again...!
+      // Early bound one-element stack, lol
+      if (context.to === true) { // PUSH...
+        attr(recv.bbox, 'stroke-opacity', 1);
+      } else { // ... POP!
+        attr(recv.bbox, 'stroke-opacity', 0);
+      }
     }
   },
   ['key-down']: ({recv}) => {
@@ -234,10 +242,15 @@ boxed_text_vtable = {
     recv.bbox = svgel('rect', svg, {fill_opacity: 0, stroke: '#42a1f4', stroke_opacity: 0});
     svg_userData(recv.text, recv);
     svg_userData(recv.bbox, recv);
+    
     recv.vtables.push(has_position_vtable);  // Hack in another vtable...
     let pos = send({to: recv, selector: 'position'});
     send({from: recv, to: pos, selector: 'subscribe-me'});
     send({to: pos, selector: 'changed'}, {to: [500,500]});
+    
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    
     recv.creator = creator;
   },
   ['changed']: ({sender, recv}, context) => {
@@ -245,6 +258,13 @@ boxed_text_vtable = {
       let [x,y] = context.to;
       attr(recv.text, {x, y});
       send({ to: recv, selector: 'update-box' });
+    } else if (sender === recv.being_considered) { // and again...!
+      // Early bound one-element stack, lol
+      if (context.to === true) { // PUSH...
+        attr(recv.bbox, 'stroke-opacity', 1);
+      } else { // ... POP!
+        attr(recv.bbox, 'stroke-opacity', 0);
+      }
     }
   },
   ['string-content']: ({recv}, {string}) => {
@@ -321,24 +341,82 @@ create_boxed_text = (ctx) => {
   return o;
 }
 
-pointer = create_observable();
-left_mouse_button = create_observable();
-right_mouse_button = create_observable();
+pointer = {
+  vtables: [{},{
+    ['created']: ({recv}) => {
+      recv.vtables.push(has_position_vtable);  // Hack in another vtable...
+      let pos = send({to: recv, selector: 'position'});
+      send({from: recv, to: pos, selector: 'subscribe-me'});
+      
+      recv.currently_considering = create_observable();
+      send({from: recv, to: recv.currently_considering, selector: 'subscribe-me'});
+      
+      recv.consider_proxy = {
+        subs: new Set(),
+        vtables: [{
+          ['subscribe-me']: ({sender, recv}) => recv.subs.add(sender),
+          ['unsubsribe-me']: ({sender, recv}) => recv.subs.delete(sender),
+        }],
+      };
+    },
+    ['is-considering-me?']: ({sender, recv}) => {
+      // Because I know that only one object can be "considered" i.e. pointed to
+      // at once, I can optimise by presenting the same observable to all who ask
+      // for their specific "is considering me?" observable, transparently.
+      return recv.consider_proxy;
+    },
+    ['is-considering']: ({recv}) => recv.currently_considering,
+    ['changed']: ({sender, recv}, context) => {
+      if (sender === recv.currently_considering) {
+        let c = recv.consider_proxy; // To whom they will be subscribed
+        let old = context.from;
+        if (recv.consider_proxy.subs.has(old)) {
+          // simulate / spoof message on behalf of the observable
+          send({from: c, to: old, selector: 'changed'},
+               {to: false}); // "no longer considering you"
+        }
+        
+        let target = context.to;
+        if (recv.consider_proxy.subs.has(target)) {
+          // spoof "now, the belief 'I am considering you' is true"
+          send({from: c, to: target, selector: 'changed'}, {to: true});
+        }
+      }
+    }
+  }]
+};
+send({to: pointer, selector: 'created'});
+
+moving = undefined;
+svg.onmousemove = e =>
+  send({to: send({to: pointer, selector: 'position'}),
+        selector: 'changed'}, {to: offset(e)});
+
+svg.onmouseover = e => {
+  let obj = svg_userData(e.target);
+  if (obj !== undefined)
+    send({ to: send({to: pointer, selector: 'is-considering'}),
+           selector: 'changed' }, { to: obj });
+};
+
+svg.onmouseout = e => {
+  let obj = svg_userData(e.target);
+  if (obj !== undefined)
+    send({ to: send({to: pointer, selector: 'is-considering'}),
+       selector: 'changed' }, { to: undefined });
+};
 
 svg.onmousedown = e => {
   // Two things have happened.
   // First, an external event has occurred.
   // Second, SVG has performed a spatial index and identified a shape at x,y.
   let obj = svg_userData(e.target);
-  if (obj !== undefined) send({ to: obj, selector: 'clicked'}, {dom_event: e});
+  if (obj !== undefined) send({from: pointer, to: obj, selector: 'clicked'}, {dom_event: e});
 };
-
-moving = undefined;
-svg.onmousemove = e => send({to: pointer, selector: 'changed'}, {to: offset(e)});
 
 svg.onmouseup = e => {
   let obj = svg_userData(e.target);
-  if (obj !== undefined) send({ to: obj, selector: 'un-clicked'}, {dom_event: e});
+  if (obj !== undefined) send({from: pointer, to: obj, selector: 'un-clicked'}, {dom_event: e});
 };
 
 dump = "";
@@ -347,14 +425,4 @@ keyboard_focus = svg_userData(svg);
 body.onkeydown = e => {
   if (keyboard_focus !== undefined)
     send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
-};
-
-svg.onmouseover = e => {
-  let obj = svg_userData(e.target);
-  if (obj !== undefined) send({ to: obj, selector: 'being-considered'}, {truth: true, dom_event: e});
-};
-
-svg.onmouseout = e => {
-  let obj = svg_userData(e.target);
-  if (obj !== undefined) send({ to: obj, selector: 'being-considered'}, {truth: false, dom_event: e});
 };
