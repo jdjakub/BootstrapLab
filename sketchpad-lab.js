@@ -392,18 +392,72 @@ svg.onmouseup = e =>
 
 // TODO: do the same for the keyboard
 dump = "";
-keyboard_focus = svg_userData(svg);
 
-body.onkeydown = e => {
-  if (keyboard_focus !== undefined)
-    send({ to: keyboard_focus, selector: 'key-down' }, {dom_event: e});
+keyboard = {
+  vtables: [{
+    ['created']: ({recv}) => {
+      recv.focus = create_observable();
+      send({from: recv, to: recv.focus, selector: 'subscribe-me'});
+      
+      // Another premature compression (optimisation) of keys-as-observables
+      // ... if I can admit that it is premature, why can I not resist??
+      // probably because I want to experiment.
+      recv.keys_to_subs = new Map();
+    },
+    ['focus']: ({recv}) => recv.focus,
+    ['key-is-pressed']: ({recv}, {name}) => {
+      // At least here we see the benefit of permitting per-object receive() impls
+      return {
+        receive: (routing, context) => {
+          routing.to = name;
+          return send({to: recv, selector: 'key-msg'}, {routing, context});
+        }
+      };
+    },
+    ['key-msg']: ({recv}, {routing, context}) => {
+      let {from, to, selector} = routing;
+      // Here we go, "oven-baked dispatch" once again
+      if (selector === 'subscribe-me') {
+        let subs = recv.keys_to_subs.get(to);
+        if (subs === undefined) {
+          subs = new Set(); // Because who doesn't enjoy reinventing multisets
+          recv.keys_to_subs.set(to, subs);
+        }
+        subs.add(from);
+      } else if (selector === 'unsubscribe-me') {
+        let subs = recv.keys_to_subs.get(to);
+        if (subs !== undefined) {
+          subs.delete(from);
+          if (subs.size === 0) recv.keys_to_subs.delete(to);
+        }
+      } else if (selector === 'poll') {
+        throw "I haven't got round to that yet, silly!";
+      } else if (selector === 'changed') {
+      // God, this is so complicated XD
+        let subs = recv.keys_to_subs.get(to);
+        if (subs !== undefined)
+          for (let sub of new Set(subs))
+            send({from: send({to: recv, selector: 'key-is-pressed'}, {name: from}),
+                  to: sub, selector: 'changed'}, context);
+      }
+    },
+  }],
 };
+send({to: keyboard, selector: 'created'});
+
+body.onkeydown = e =>
+  send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: e.key}),
+        selector: 'changed'}, {from: false, to: true});
+        
+body.onkeyup = e =>
+  send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: e.key}),
+        selector: 'changed'}, {from: true, to: false});
 
 /*
  *  *** "DEVICE DRIVER" FOR POSITIONAL INPUT ***
  */
 
-// Extension of a human finger into the simulated world.
+// Simulated presence of the human finger (or gaze).
 pointer = {
   vtables: [{},{
     ['created']: ({recv}) => {
@@ -428,6 +482,18 @@ pointer = {
       // Because I know that only one object can be "considered" i.e. pointed to
       // at once, I can optimise by presenting the same observable to all who ask
       // for their specific "is considering me?" observable, transparently.
+      // EDIT: not so transparent. X cannot subscribe to whether Y is being considered,
+      // and if it tries then X will end up subscribed to its OWN 'considered' observable...
+      // TODO: un-optimise. It was premature to begin with. lol
+      // Also: the computer should be able to accept new facts like "only one object
+      // will be considered at once" and AUTOMATICALLY optimise...
+      // ... and un-optimise when the fact is withdrawn.
+      // It's all Knowledge Rep, people!
+      // Type systems are logical systems!
+      // Logical systems are reasoning and inference systems!
+      // Reasoning and inference is intelligence!
+      // If we get sick of routine tasks, we make them automated!
+      // For intelligence this is known as ***A.I***!
       return recv.consider_proxy;
     },
     ['is-considering']: ({recv}) => recv.currently_considering,
