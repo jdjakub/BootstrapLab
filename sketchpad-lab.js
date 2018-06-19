@@ -70,7 +70,7 @@ window.onresize = resize;
 send = ({ from, to, selector }, context) => {
   // Allow objects to receive messages however they wish
   // Treat absence of 'receive' as presence of 99%-case default
-  let next_code_path = to.receive || defaults.dyn_single_dispatch;
+  let next_code_path = to.receive || defaults.dyn_double_dispatch;
   return next_code_path({ sender: from, recv: to, selector }, context || {});
 };
 
@@ -79,12 +79,20 @@ defaults = {}
 defaults.vtable = {
 };
 
-defaults.dyn_single_dispatch = ({ sender, recv, selector }, context) => {
+defaults.dyn_double_dispatch = ({ sender, recv, selector }, context) => {
   let vtables = recv.vtables.concat([ defaults.vtable ]);
-  for (let selector_to_next_code_path of vtables) {
-    let next_code_path = selector_to_next_code_path[selector];
-    if (next_code_path !== undefined)
+  for (let selector_to_next_code_path_or_vtable of vtables) {
+    let next_code_path_or_vtable = selector_to_next_code_path_or_vtable[selector];
+    if (next_code_path_or_vtable === undefined) continue;
+    else if (typeof(next_code_path_or_vtable) === 'function') {
+      let next_code_path = next_code_path_or_vtable;
       return next_code_path({ sender, recv, selector }, context);
+    } else { // Ugly repeti-ti-ti-titon, I know
+      let sender_to_next_code_path = next_code_path_or_vtable;
+      let next_code_path = sender_to_next_code_path.get(sender);
+      if (next_code_path === undefined) continue;
+      else return next_code_path({ sender, recv, selector }, context);
+    }
   }
   
   throw [`${recv} does not understand ${selector}`, recv, selector, context];
@@ -119,15 +127,29 @@ svg_userData(backg, {
     ['created']: ({recv}) => {
       recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
       send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-    },
-    ['changed']: ({sender, recv}, {to}) => {
-      // Further dispatch occurring here, on sender
-      if (sender === recv.being_considered) {
+      
+      // Initialise object's own specific 'changed' behaviour, which depends on 
+      // the Observable it just created.
+      // It is fascinating that this cannot be a shared implementation for all instances.
+      // The previous, immutable if/else-based dispatch *polled* properties like being_considered
+      // *on every message receipt*.
+      // Here, I poll *once* at the creation of the object and assume recv.being_considered
+      // and left_mouse_button_is_down will retain their identities throughout (it should, imo)
+      // My first solution will be duplicated and ugly.
+      
+      // First: lazy init the Map.
+      recv.vtables[0]['changed'] = recv.vtables[0]['changed'] || new Map();
+      let m = recv.vtables[0]['changed'];
+      // Next: add the entries.
+      
+      m.set(recv.being_considered, ({recv}, {to}) => {
         if (to === true) // PUSH...
           send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
         else // ... POP!
           send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
-      } else if (sender === left_mouse_button_is_down) {
+      });
+      
+      m.set(left_mouse_button_is_down, ({recv}, {to}) => {
         if (to === true) {
           // Create SVG circle and route keyboard input "to it"
           
@@ -138,7 +160,7 @@ svg_userData(backg, {
           // Route keyboard input "to" the circle
           send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: obj});
         }
-      }
+     });
     },
   }]
 });
