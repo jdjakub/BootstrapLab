@@ -258,6 +258,8 @@ create_circle = (c) => {
   return o;
 };
 
+dump = "";
+
 boxed_text_vtable = {
   ['created']: ({recv}, {creator}) => {
     recv.text = svgel('text', svg, {font_size: 20, fill: 'white'});
@@ -390,21 +392,24 @@ svg.onmousedown = e =>
 svg.onmouseup = e =>
   send({to: left_mouse_button_is_down, selector: 'changed'}, {to: false});
 
-// TODO: do the same for the keyboard
-dump = "";
-
 keyboard = {
   vtables: [{
     ['created']: ({recv}) => {
       recv.focus = create_observable();
       send({from: recv, to: recv.focus, selector: 'subscribe-me'});
       
+      // Should this be here? idk. Tbh, is a layer on top of the keyboard...
+      recv.text_input = create_observable();
+      
       // Another premature compression (optimisation) of keys-as-observables
       // ... if I can admit that it is premature, why can I not resist??
       // probably because I want to experiment.
       recv.keys_to_subs = new Map();
+      
+      recv.are_they_focused = new Map();
     },
     ['focus']: ({recv}) => recv.focus,
+    ['text-input']: ({recv}) => recv.text_input,
     ['key-is-pressed']: ({recv}, {name}) => {
       // At least here we see the benefit of permitting per-object receive() impls
       return {
@@ -415,30 +420,56 @@ keyboard = {
       };
     },
     ['key-msg']: ({recv}, {routing, context}) => {
-      let {from, to, selector} = routing;
+      let [sender, key, selector] = [routing.from, routing.to, routing.selector];
       // Here we go, "oven-baked dispatch" once again
       if (selector === 'subscribe-me') {
-        let subs = recv.keys_to_subs.get(to);
+        let subs = recv.keys_to_subs.get(key);
         if (subs === undefined) {
           subs = new Set(); // Because who doesn't enjoy reinventing multisets
-          recv.keys_to_subs.set(to, subs);
+          recv.keys_to_subs.set(key, subs);
         }
-        subs.add(from);
+        subs.add(sender);
       } else if (selector === 'unsubscribe-me') {
-        let subs = recv.keys_to_subs.get(to);
+        let subs = recv.keys_to_subs.get(key);
         if (subs !== undefined) {
-          subs.delete(from);
-          if (subs.size === 0) recv.keys_to_subs.delete(to);
+          subs.delete(sender);
+          if (subs.size === 0) recv.keys_to_subs.delete(key);
         }
       } else if (selector === 'poll') {
         throw "I haven't got round to that yet, silly!";
       } else if (selector === 'changed') {
-      // God, this is so complicated XD
-        let subs = recv.keys_to_subs.get(to);
+        // God, this is so complicated XD
+        let subs = recv.keys_to_subs.get(key);
         if (subs !== undefined)
           for (let sub of new Set(subs))
-            send({from: send({to: recv, selector: 'key-is-pressed'}, {name: from}),
+            // Grrrr - not gonna work; new object !== old object >_<
+            send({from: send({to: recv, selector: 'key-is-pressed'}, {name: key}),
                   to: sub, selector: 'changed'}, context);
+                  
+        if (context.to === true) {
+          send({to: recv.text_input, selector: 'changed'}, {to: key});
+        }
+      }
+    },
+    ['am-I-focused?']: ({sender, recv}) => {
+      let obs = recv.are_they_focused.get(sender);
+      if (obs === undefined) {
+        obs = create_observable();
+        recv.are_they_focused.set(sender, obs);
+      }
+      return obs;
+    },
+    ['changed']: ({sender, recv}, {from, to}) => {
+      if (sender === recv.focus) {
+        let old = recv.are_they_focused.get(from);
+        if (old !== undefined)
+          send({to: old, selector: 'changed'}, {from: true, to: false});
+        
+        // srsly screw flat text  
+        let ______________new________________ = recv.are_they_focused.get(to);
+        if (______________new________________ !== undefined)
+          send({to: ______________new________________, selector: 'changed'},
+               {from: false, to: true});
       }
     },
   }],
