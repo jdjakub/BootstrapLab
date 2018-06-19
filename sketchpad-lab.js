@@ -203,6 +203,9 @@ circle_vtable = {
     
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    
+    recv.is_focused = send({from: recv, to: keyboard, selector: 'am-I-focused?'});
+    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
   },
   // "one of your pieces of knowledge regarding the universe has changed"
   // -- more specific than a fully general "message send", and repeated pattern
@@ -236,16 +239,15 @@ circle_vtable = {
               to: send({from: recv, to: pointer, selector: 'position'}),
               selector: 'unsubscribe-me'});
       }
-    }
-  },
-  ['key-down']: ({recv}) => {
-    if (recv.str === undefined) { // Lazy initialise text line on key input
-      let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
-      // Place text baseline and start point at circle center
-      recv.str = create_boxed_text({ creator: recv });
-      send({ to: send({to: recv.str, selector: 'position'}),
-             selector: 'changed' }, {to: [cx,cy]});
-      send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
+    } else if (sender === send({to: keyboard, selector: 'text-input'})) {
+      if (recv.str === undefined) { // Lazy initialise text line on key input
+        let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
+        // Place text baseline and start point at circle center
+        recv.str = create_boxed_text({ creator: recv });
+        send({ to: send({to: recv.str, selector: 'position'}),
+               selector: 'changed' }, {to: [cx,cy]});
+        send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
+      }
     }
   },
 };
