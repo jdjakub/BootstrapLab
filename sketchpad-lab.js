@@ -219,40 +219,33 @@ circle_vtable = {
     recv.vtables.push(has_position_vtable); // Hack in another vtable...
     has_position_vtable['created']({recv}); // Hack in its initialisation...
     
-    let pos = send({from: recv, to: recv, selector: 'position'});
-    send({from: recv, to: pos, selector: 'subscribe-me'});
-    send({from: recv, to: pos, selector: 'changed'}, {to: center});
-    
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-    
     recv.is_focused = send({from: recv, to: keyboard, selector: 'am-I-focused?'});
-    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
-  },
-  // "one of your pieces of knowledge regarding the universe has changed"
-  // -- more specific than a fully general "message send", and repeated pattern
-  // that I call the "observable"
-  ['changed']: ({recv,sender}, context) => {
-    // Further dispatch occurring here, on sender
-    // MASSIVE duplication here and in boxed_text. Will be improved by mutable dispatch...
-    if (sender === recv.position) {
-      let p = context.to;
+    
+    // "one of your pieces of knowledge regarding the universe has changed"
+    // -- more specific than a fully general "message send", and repeated pattern
+    // that I call the "observable"
+    // MASSIVE duplication here and in boxed_text.
+    recv.vtables[0]['changed'] = recv.vtables[0]['changed'] || new Map();
+    let m = recv.vtables[0]['changed'];
+    m.set(recv.position, ({recv}, {to}) => {
+      let p = to;
       attr(recv.circ, {cx: p[0], cy: p[1]});
       let r = +attr(recv.circ, 'r');
       attr(recv.bbox, {x: p[0]-r, y: p[1]-r, width: 2*r, height: 2*r});
-      
-    } else if (sender === recv.being_considered) { // Same as in boxed_text
+    });
+    m.set(recv.being_considered, ({recv}, {to}) => { // Same as in boxed_text
       // Early bound one-element stack, lol
-      if (context.to === true) { // PUSH...
+      if (to === true) { // PUSH...
         attr(recv.bbox, 'stroke-opacity', 1);
         send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
       } else { // ... POP!
         attr(recv.bbox, 'stroke-opacity', 0);
         send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
       }
-      
-    } else if (sender === left_mouse_button_is_down) { // Same as in boxed_text
-      if (context.to === true) {
+    });
+    m.set(left_mouse_button_is_down, ({recv}, {to}) => { // Same as in boxed_text
+      if (to === true) {
         send({from: recv.position,
               to: send({from: recv, to: pointer, selector: 'position'}),
               selector: 'subscribe-me'});
@@ -262,15 +255,17 @@ circle_vtable = {
               to: send({from: recv, to: pointer, selector: 'position'}),
               selector: 'unsubscribe-me'});
       }
-    } else if (sender === recv.is_focused) { // Same as in boxed_text
-      if (context.to === true) {
+    });
+    m.set(recv.is_focused, ({recv}, {to}) => { // Same as in boxed_text
+      if (to === true) {
         send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
               selector: 'subscribe-me'});
       } else {
         send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
               selector: 'unsubscribe-me'});
       }
-    } else if (sender === send({to: keyboard, selector: 'text-input'})) {
+    });
+    m.set(send({to: keyboard, selector: 'text-input'}), ({recv}) => {
       if (recv.str === undefined) { // Lazy initialise text line on key input
         let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
         // Place text baseline and start point at circle center
@@ -279,7 +274,13 @@ circle_vtable = {
                selector: 'changed' }, {to: [cx,cy]});
         send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
       }
-    }
+    });
+    
+    send({from: recv, to: recv.position, selector: 'subscribe-me'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
+    
+    send({from: recv, to: recv.position, selector: 'changed'}, {to: center});
   },
 };
 
@@ -355,7 +356,8 @@ boxed_text_vtable = {
       if (e.key === 'Backspace')
         send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
       else if (e.key === 'Enter') {
-        if (e.ctrlKey) { // TODO: won't work; change to use 'poll' msg
+        if (send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
+                  selector: 'poll'}) === true) {
           let code = send({to: recv, selector: 'to-strings'});
           window.recv = recv;
             eval(code.join('\n'));
@@ -364,7 +366,9 @@ boxed_text_vtable = {
           send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'},
                { to: send({to: recv, selector: 'next-line'}) });
         }
-      } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P
+      } else if (e.key === 'v' &&
+            send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
+                  selector: 'poll'}) === true) { // Easy C+P
         let str = typeof(dump) === 'string' ? dump : "";
         send({to: recv, selector: 'from-strings'}, {string: str});
       } else if (e.key.length === 1)
@@ -450,6 +454,10 @@ keyboard = {
       // probably because I want to experiment.
       recv.keys_to_subs = new Map();
       
+      // Compressed map key -> boolean
+      // Not pressed? Not stored! (Huffman coding, right?)
+      recv.pressed_keys = new Set(); 
+      
       recv.are_they_focused = new Map();
     },
     ['focus']: ({recv}) => recv.focus,
@@ -480,7 +488,7 @@ keyboard = {
           if (subs.size === 0) recv.keys_to_subs.delete(key);
         }
       } else if (selector === 'poll') {
-        throw "I haven't got round to that yet, silly!";
+        return recv.pressed_keys.has(key);
       } else if (selector === 'changed') {
         // God, this is so complicated XD
         let subs = recv.keys_to_subs.get(key);
@@ -492,6 +500,9 @@ keyboard = {
                   
         if (context.to === true) {
           send({to: recv.text_input, selector: 'changed'}, {to: key});
+          recv.pressed_keys.add(key);
+        } else {
+          recv.pressed_keys.delete(key);
         }
       }
     },
