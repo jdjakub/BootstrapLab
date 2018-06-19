@@ -136,7 +136,7 @@ svg_userData(backg, {
           let obj = create_circle(pos);
           
           // Route keyboard input "to" the circle
-          keyboard_focus = obj;
+          send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: obj});
         }
       }
     },
@@ -212,6 +212,7 @@ circle_vtable = {
   // that I call the "observable"
   ['changed']: ({recv,sender}, context) => {
     // Further dispatch occurring here, on sender
+    // MASSIVE duplication here and in boxed_text. Will be improved by mutable dispatch...
     if (sender === recv.position) {
       let p = context.to;
       attr(recv.circ, {cx: p[0], cy: p[1]});
@@ -230,13 +231,21 @@ circle_vtable = {
       
     } else if (sender === left_mouse_button_is_down) { // Same as in boxed_text
       if (context.to === true) {
-        keyboard_focus = recv;
         send({from: recv.position,
               to: send({from: recv, to: pointer, selector: 'position'}),
               selector: 'subscribe-me'});
+        send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: recv});
       } else {
         send({from: recv.position,
               to: send({from: recv, to: pointer, selector: 'position'}),
+              selector: 'unsubscribe-me'});
+      }
+    } else if (sender === recv.is_focused) { // Same as in boxed_text
+      if (context.to === true) {
+        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
+              selector: 'subscribe-me'});
+      } else {
+        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
               selector: 'unsubscribe-me'});
       }
     } else if (sender === send({to: keyboard, selector: 'text-input'})) {
@@ -279,6 +288,9 @@ boxed_text_vtable = {
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
     
+    recv.is_focused = send({from: recv, to: keyboard, selector: 'am-I-focused?'});
+    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
+    
     recv.creator = creator;
   },
   ['changed']: ({sender, recv}, context) => {
@@ -299,15 +311,42 @@ boxed_text_vtable = {
       
     } else if (sender === left_mouse_button_is_down) { // Same as in circle
       if (context.to === true) {
-        keyboard_focus = recv;
         send({from: recv.position,
               to: send({from: recv, to: pointer, selector: 'position'}),
               selector: 'subscribe-me'});
+        send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: recv});
       } else {
         send({from: recv.position,
               to: send({from: recv, to: pointer, selector: 'position'}),
               selector: 'unsubscribe-me'});
       }
+    } else if (sender === recv.is_focused) { // Same as in circle
+      if (context.to === true) {
+        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
+              selector: 'subscribe-me'});
+      } else {
+        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
+              selector: 'unsubscribe-me'});
+      }
+    } else if (sender === send({to: keyboard, selector: 'text-input'})) {
+      let e = {key: context.to};
+      if (e.key === 'Backspace')
+        send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
+      else if (e.key === 'Enter') {
+        if (e.ctrlKey) { // TODO: won't work; change to use 'poll' msg
+          let code = send({to: recv, selector: 'to-strings'});
+          window.recv = recv;
+            eval(code.join('\n'));
+          window.recv = undefined;
+        } else {
+          send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'},
+               { to: send({to: recv, selector: 'next-line'}) });
+        }
+      } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P
+        let str = typeof(dump) === 'string' ? dump : "";
+        send({to: recv, selector: 'from-strings'}, {string: str});
+      } else if (e.key.length === 1)
+        send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
     }
   },
   ['string-content']: ({recv}, {string}) => {
@@ -351,25 +390,6 @@ boxed_text_vtable = {
       line = line.next_line;
     }
     return strs;
-  },
-  ['key-down']: ({recv}, {dom_event}) => {
-    let e = dom_event;
-    if (e.key === 'Backspace')
-      send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
-    else if (e.key === 'Enter') {
-      if (e.ctrlKey) {
-        let code = send({to: recv, selector: 'to-strings'});
-        window.recv = recv;
-          eval(code.join('\n'));
-        window.recv = undefined;
-      } else {
-        keyboard_focus = send({to: recv, selector: 'next-line'});
-      }
-    } else if (e.key === 'v' && e.ctrlKey) { // Easy C+P
-      let str = typeof(dump) === 'string' ? dump : "";
-      send({to: recv, selector: 'from-strings'}, {string: str});
-    } else if (e.key.length === 1)
-      send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
   },
 };
 
