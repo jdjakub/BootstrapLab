@@ -174,13 +174,18 @@ observable_vtable = {
     recv.add = sub => recv._subs.add(sub);
     recv.remove = sub => recv._subs.delete(sub);
   },
-  ['changed']: ({recv}, {to}) => {
-    let old_value = recv.value();
+  ['changed']: ({recv}, {from, to}) => {
+    let old_value = from;
     let new_value = to;
-    if (typeof(new_value) === 'function') new_value = new_value(old_value);
-    recv.update(new_value);
-    for (let s of recv.subscribers_copy()) {
-      send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
+    if (old_value === undefined) {
+      old_value = recv.value();
+      if (typeof(new_value) === 'function') new_value = new_value(old_value);
+    }
+    if (new_value !== old_value) {
+      recv.update(new_value);
+      for (let s of recv.subscribers_copy()) {
+        send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
+      }
     }
   },
   ['poll']: ({recv}) => recv.value(), // returns mutable original...!
@@ -433,6 +438,12 @@ create_boxed_text = (ctx) => {
 
 left_mouse_button_is_down = create_observable();
 
+last_focused = create_observable();
+
+that = undefined;
+
+send({from: {receive: (r,{to}) => { that = to; }}, to: last_focused, selector: 'subscribe-me'});
+
 // Forget about coords; they are not part of the left button, or the keyboard, or the power button...
 svg.onmousedown = e =>
   send({to: left_mouse_button_is_down, selector: 'changed'}, {to: true});
@@ -447,6 +458,7 @@ keyboard = {
       send({from: recv, to: recv.focus, selector: 'subscribe-me'});
       
       // Should this be here? idk. Tbh, is a layer on top of the keyboard...
+      // Tbh, shouldn't even be an "observable" as defined.
       recv.text_input = create_observable();
       
       // Another premature compression (optimisation) of keys-as-observables
@@ -499,7 +511,7 @@ keyboard = {
                   to: sub, selector: 'changed'}, context);
                   
         if (context.to === true) {
-          send({to: recv.text_input, selector: 'changed'}, {to: key});
+          send({to: recv.text_input, selector: 'changed'}, {from: null, to: key});
           recv.pressed_keys.add(key);
         } else {
           recv.pressed_keys.delete(key);
@@ -519,6 +531,8 @@ keyboard = {
         let old = recv.are_they_focused.get(from);
         if (old !== undefined)
           send({to: old, selector: 'changed'}, {from: true, to: false});
+          
+        send({to: last_focused, selector: 'changed'}, {to: from});
         
         // srsly screw flat text  
         let ______________new________________ = recv.are_they_focused.get(to);
@@ -632,3 +646,5 @@ svg.onmouseout = e => {
  */
  
 send({to: svg_userData(backg), selector: 'created'});
+
+
