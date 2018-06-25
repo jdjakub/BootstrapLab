@@ -79,6 +79,8 @@ defaults = {}
 defaults.vtable = {
 };
 
+shared_code = {}
+
 defaults.dyn_double_dispatch = ({ sender, recv, selector }, context) => {
   let vtables = recv.vtables.concat([ defaults.vtable ]);
   for (let selector_to_next_code_path_or_vtable of vtables) {
@@ -212,6 +214,40 @@ has_position_vtable = {
   ['position']: ({recv}) => recv.position,
 };
 
+shared_code.changed = {
+  bconsd: ({recv}, {to}) => {
+    // Early bound one-element stack, lol
+    if (to === true) { // PUSH...
+      attr(recv.bbox, 'stroke-opacity', 1);
+      send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
+    } else { // ... POP!
+      attr(recv.bbox, 'stroke-opacity', 0);
+      send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+    }
+  },
+  lmbdown: ({recv}, {to}) => {
+    if (to === true) {
+      send({from: recv.position,
+            to: send({from: recv, to: pointer, selector: 'position'}),
+            selector: 'subscribe-me'});
+      send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: recv});
+    } else {
+      send({from: recv.position,
+            to: send({from: recv, to: pointer, selector: 'position'}),
+            selector: 'unsubscribe-me'});
+    }
+  },
+  isfcsd: ({recv}, {to}) => {
+    if (to === true) {
+      send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
+            selector: 'subscribe-me'});
+    } else {
+      send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
+            selector: 'unsubscribe-me'});
+    }
+  }
+};
+
 circle_vtable = {
   ['created']: ({recv}, {center}) => {
     recv.circ = svgel('circle', svg, {r: 15, fill: 'red'});
@@ -237,38 +273,20 @@ circle_vtable = {
       let r = +attr(recv.circ, 'r');
       attr(recv.bbox, {x: p[0]-r, y: p[1]-r, width: 2*r, height: 2*r});
     });
-    m.set(recv.being_considered, ({recv}, {to}) => { // Same as in boxed_text
-      // Early bound one-element stack, lol
-      if (to === true) { // PUSH...
-        attr(recv.bbox, 'stroke-opacity', 1);
-        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
-      } else { // ... POP!
-        attr(recv.bbox, 'stroke-opacity', 0);
-        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
-      }
-    });
-    m.set(left_mouse_button_is_down, ({recv}, {to}) => { // Same as in boxed_text
-      if (to === true) {
-        send({from: recv.position,
-              to: send({from: recv, to: pointer, selector: 'position'}),
-              selector: 'subscribe-me'});
-        send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: recv});
-      } else {
-        send({from: recv.position,
-              to: send({from: recv, to: pointer, selector: 'position'}),
-              selector: 'unsubscribe-me'});
-      }
-    });
-    m.set(recv.is_focused, ({recv}, {to}) => { // Same as in boxed_text
-      if (to === true) {
-        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
-              selector: 'subscribe-me'});
-      } else {
-        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
-              selector: 'unsubscribe-me'});
-      }
-    });
-    m.set(send({to: keyboard, selector: 'text-input'}), ({recv}) => {
+    m.set(recv.being_considered, shared_code.changed.bconsd);
+    m.set(left_mouse_button_is_down, shared_code.changed.lmbdown);
+    m.set(recv.is_focused, shared_code.changed.isfcsd);
+    m.set(send({to: keyboard, selector: 'text-input'}), circle_vtable.code.tinp);
+    
+    send({from: recv, to: recv.position, selector: 'subscribe-me'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
+    
+    send({from: recv, to: recv.position, selector: 'changed'}, {to: center});
+  },
+  // HACK! Abuse of the system. Really the dispatch of the "code" msg selector -- will break if received
+  code: {
+    tinp: ({recv}) => {
       if (recv.str === undefined) { // Lazy initialise text line on key input
         let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
         // Place text baseline and start point at circle center
@@ -278,13 +296,7 @@ circle_vtable = {
         send({to: send({to: keyboard, selector: 'focus'}),
               selector: 'changed'}, {to: recv.str});
       }
-    });
-    
-    send({from: recv, to: recv.position, selector: 'subscribe-me'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
-    
-    send({from: recv, to: recv.position, selector: 'changed'}, {to: center});
+    },
   },
 };
 
