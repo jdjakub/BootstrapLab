@@ -177,10 +177,8 @@ observable_vtable = {
   ['changed']: ({recv}, {from, to}) => {
     let old_value = from;
     let new_value = to;
-    if (old_value === undefined) {
-      old_value = recv.value();
-      if (typeof(new_value) === 'function') new_value = new_value(old_value);
-    }
+    if (old_value === undefined) old_value = recv.value();
+    if (typeof(new_value) === 'function') new_value = new_value(old_value);
     if (new_value !== old_value) {
       recv.update(new_value);
       for (let s of recv.subscribers_copy()) {
@@ -277,7 +275,8 @@ circle_vtable = {
         recv.str = create_boxed_text({ creator: recv });
         send({ to: send({to: recv.str, selector: 'position'}),
                selector: 'changed' }, {to: [cx,cy]});
-        send({ to: recv.str, selector: 'string-content' }, {string: "Lorem Ipsum"});
+        send({to: send({to: keyboard, selector: 'focus'}),
+              selector: 'changed'}, {to: recv.str});
       }
     });
     
@@ -319,6 +318,10 @@ boxed_text_vtable = {
     recv.is_focused = send({from: recv, to: keyboard, selector: 'am-I-focused?'});
     send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
     
+    recv.string_content = create_observable();
+    send({from: recv, to: recv.string_content, selector: 'subscribe-me'});
+    send({to: recv.string_content, selector: 'changed'}, {to: "Lorem Ipsum"});
+    
     recv.creator = creator;
   },
   ['changed']: ({sender, recv}, context) => {
@@ -356,10 +359,13 @@ boxed_text_vtable = {
         send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
               selector: 'unsubscribe-me'});
       }
+    } else if (sender === recv.string_content) {
+      recv.text.textContent = context.to;
+      send({ to: recv, selector: 'update-box' });
     } else if (sender === send({to: keyboard, selector: 'text-input'})) {
       let e = {key: context.to};
       if (e.key === 'Backspace')
-        send({ to: recv, selector: 'string-content' }, {string: s => s.slice(0,-1)});
+        send({ to: recv.string_content, selector: 'changed' }, {to: s => s.slice(0,-1)});
       else if (e.key === 'Enter') {
         if (send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
                   selector: 'poll'}) === true) {
@@ -377,17 +383,10 @@ boxed_text_vtable = {
         let str = typeof(dump) === 'string' ? dump : "";
         send({to: recv, selector: 'from-strings'}, {string: str});
       } else if (e.key.length === 1)
-        send({ to: recv, selector: 'string-content' }, {string: s => s + e.key});
+        send({ to: recv.string_content, selector: 'changed' }, {to: s => s + e.key});
     }
   },
-  ['string-content']: ({recv}, {string}) => {
-    let str = string;
-    if (typeof(str) === 'undefined') str = recv.text.textContent;
-    if (typeof(str) === 'function') str = str(recv.text.textContent);
-    recv.text.textContent = str;
-    send({ to: recv, selector: 'update-box' });
-    return str;
-  },
+  ['string-content']: ({recv}) => recv.string_content,
   ['update-box']: ({recv}) => {
     let bbox = recv.text.getBBox();
     attr(recv.bbox, {x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height});
@@ -408,7 +407,7 @@ boxed_text_vtable = {
     let line = recv;
     while (strs.length > 0) {
       let str = strs.shift();
-      send({to: line, selector: 'string-content'}, {string: str});
+      send({to: line.string_content, selector: 'changed'}, {to: str});
       line = send({to: line, selector: 'next-line'});
     }
   },
@@ -416,7 +415,7 @@ boxed_text_vtable = {
     let strs = [];
     let line = recv;
     while (line !== undefined) {
-      let str = send({ to: line, selector: 'string-content' });
+      let str = send({ to: line.string_content, selector: 'poll' });
       strs.push(str);
       line = line.next_line;
     }
@@ -646,5 +645,3 @@ svg.onmouseout = e => {
  */
  
 send({to: svg_userData(backg), selector: 'created'});
-
-
