@@ -284,8 +284,7 @@ circle_vtable = {
     let text_input = send({to: keyboard, selector: 'text-input'});
     m.set(text_input, circle_vtable.code.changed.tinp);
     
-    [recv.position, recv.being_considered, left_mouse_button_is_down,
-     recv.is_focused, text_input].forEach(obs =>
+    [recv.position, recv.being_considered, recv.is_focused].forEach(obs =>
       send({from: recv, to: obs, selector: 'subscribe-me'}));
     
     send({from: recv, to: recv.position, selector: 'changed'}, {to: center});
@@ -342,8 +341,7 @@ boxed_text_vtable = {
     let text_input = send({to: keyboard, selector: 'text-input'});
     m.set(text_input, boxed_text_vtable.code.changed.tinp);
     
-    [recv.being_considered, left_mouse_button_is_down, recv.is_focused,
-     recv.position, recv.string_content, text_input].forEach(obs =>
+    [recv.being_considered, recv.is_focused, recv.position, recv.string_content].forEach(obs =>
       send({from: recv, to: obs, selector: 'subscribe-me'}));
     
     send({to: recv.position, selector: 'changed'}, {to: [500,500]});
@@ -648,3 +646,13 @@ svg.onmouseout = e => {
  
 send({to: backg, selector: 'created'});
 resize();
+
+let tmp = create_boxed_text();
+send({to: send({to: tmp, selector: 'position'}), selector: 'changed'}, {to: [100, 100]});
+send({to: tmp, selector: 'from-strings'}, {string: `Welcome to BootstrapLab.
+Move stuff around by dragging with LMB.
+Click on an empty space to create a red circle. Then press a key to create a text box.
+Type text in text boxes ordinarily. Press <enter> to start a new line.
+(Only appending, backspacing and newlines are supported at the moment.)
+Press Ctrl+V to copy the string in window.dump to the active text box and its children.
+Press Ctrl+Enter to execute the active text box and its children as lines of JavaScript.`});
