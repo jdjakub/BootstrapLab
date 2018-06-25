@@ -442,7 +442,8 @@ last_focused = create_observable();
 
 that = undefined;
 
-send({from: {receive: (r,{to}) => { that = to; }}, to: last_focused, selector: 'subscribe-me'});
+send({from: {receive: (r,{to}) => { that = to; console.log("that = ", that); }},
+      to: last_focused, selector: 'subscribe-me'});
 
 // Forget about coords; they are not part of the left button, or the keyboard, or the power button...
 svg.onmousedown = e =>
@@ -471,6 +472,11 @@ keyboard = {
       recv.pressed_keys = new Set(); 
       
       recv.are_they_focused = new Map();
+    },
+    ['reset-pressed']: ({recv}) => {
+      for (let key of recv.pressed_keys)
+        send({to: send({to: recv, selector: 'key-is-pressed'}, {name: key}),
+              selector: 'changed'}, {from: true, to: false});
     },
     ['focus']: ({recv}) => recv.focus,
     ['text-input']: ({recv}) => recv.text_input,
@@ -552,6 +558,9 @@ body.onkeydown = e =>
 body.onkeyup = e =>
   send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: e.key}),
         selector: 'changed'}, {from: true, to: false});
+        
+body.onfocus = e =>
+  send({to: keyboard, selector: 'reset-pressed'});
 
 /*
  *  *** "DEVICE DRIVER" FOR POSITIONAL INPUT ***
@@ -651,9 +660,20 @@ resize();
 let tmp = create_boxed_text();
 send({to: send({to: tmp, selector: 'position'}), selector: 'changed'}, {to: [100, 100]});
 send({to: tmp, selector: 'from-strings'}, {string: `Welcome to BootstrapLab.
+It is recommended to have the JavaScript console open.
 Move stuff around by dragging with LMB.
 Click on an empty space to create a red circle. Then press a key to create a text box.
 Type text in text boxes ordinarily. Press <enter> to start a new line.
 (Only appending, backspacing and newlines are supported at the moment.)
-Press Ctrl+V to copy the string in window.dump to the active text box and its children.
-Press Ctrl+Enter to execute the active text box and its children as lines of JavaScript.`});
+Press Ctrl+V to copy the string in [window.dump] to the active text box and its children.
+Press Ctrl+Enter to execute the active text box and its children as lines of JavaScript.
+Special variable [recv] is the text box object itself.
+Special variable [that] is the object that was active before you clicked the text box.
+---
+// See that red circle? Click it to set [that], then click me and press Ctrl+Enter.
+send({to: recv, selector: 'from-strings'}, {strings: Object.keys(that)});
+attr(that.circ, {fill: 'gold', stroke: 'orange', stroke_width: 4, r: 40});
+attr(recv.text, 'font-family', 'sans-serif');
+`});
+tmp = create_circle();
+send({to: send({to: tmp, selector: 'position'}), selector: 'changed'}, {to: [600, 600]});
