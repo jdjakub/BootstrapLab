@@ -50,22 +50,10 @@ sub = (as,bs) => {
 svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
-backg = svgel('rect', svg, {x: 0, y: 0, fill: 'black'});
-
 clear = () => {
   let ch = Array.from(svg.children);
   ch.forEach(c => { if (c !== backg) c.remove() });
-}
-                            
-resize = () => {
-  let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
-  attr(svg, dims);
-  attr(backg, dims);  
 };
-
-resize();
-
-window.onresize = resize;
 
 send = ({ from, to, selector }, context) => {
   // Allow objects to receive messages however they wish
@@ -102,7 +90,7 @@ defaults.dyn_double_dispatch = ({ sender, recv, selector }, context) => {
 
 svg_userData = (elem, obj) => state(elem, 'userData', obj);
 
-svg_userData(backg, {
+backg = {
   // In JS, one cannot go INSIDE functions and make
   // piece-meal changes to their code.
   // The function is an atomic black-box.
@@ -127,6 +115,12 @@ svg_userData(backg, {
   // In summary: EXPOSE THE SUBSTRATE, part of which is JS itself.
   vtables: [{
     ['created']: ({recv}) => {
+      recv.rect = svgel('rect', svg, {x: 0, y: 0, fill: 'black'});
+      svg_userData(recv.rect, recv);
+      
+      recv.dims = create_observable();
+      send({from: recv, to: recv.dims, selector: 'subscribe-me'});
+      
       recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
       send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
       
@@ -151,6 +145,10 @@ svg_userData(backg, {
           send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
       });
       
+      m.set(recv.dims, ({recv}, {to}) => {
+        attr(recv.rect, to);
+      });
+      
       m.set(left_mouse_button_is_down, ({recv}, {to}) => {
         if (to === true) {
           // Create SVG circle and route keyboard input "to it"
@@ -165,7 +163,15 @@ svg_userData(backg, {
      });
     },
   }]
-});
+};
+
+resize = () => {
+  let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
+  attr(svg, dims);
+  send({to: backg.dims, selector: 'changed'}, {to: dims});
+};
+
+window.onresize = resize;
 
 observable_vtable = {
   ['created']: ({recv}) => {
@@ -449,6 +455,7 @@ create_boxed_text = (ctx) => {
 
 left_mouse_button_is_down = create_observable();
 
+
 last_focused = create_observable();
 
 that = undefined;
@@ -585,7 +592,7 @@ pointer = {
         subs: new Set(),
         vtables: [{
           ['subscribe-me']: ({sender, recv}) => recv.subs.add(sender),
-          ['unsubsribe-me']: ({sender, recv}) => recv.subs.delete(sender),
+          ['unsubscribe-me']: ({sender, recv}) => recv.subs.delete(sender),
         }],
       };
     },
@@ -656,4 +663,5 @@ svg.onmouseout = e => {
  *
  */
  
-send({to: svg_userData(backg), selector: 'created'});
+send({to: backg, selector: 'created'});
+resize();
