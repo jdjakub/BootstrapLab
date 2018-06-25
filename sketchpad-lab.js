@@ -270,7 +270,6 @@ circle_vtable = {
     // "one of your pieces of knowledge regarding the universe has changed"
     // -- more specific than a fully general "message send", and repeated pattern
     // that I call the "observable"
-    // MASSIVE duplication here and in boxed_text.
     recv.vtables[0]['changed'] = recv.vtables[0]['changed'] || new Map();
     let m = recv.vtables[0]['changed'];
     m.set(recv.position, ({recv}, {to}) => {
@@ -282,26 +281,29 @@ circle_vtable = {
     m.set(recv.being_considered, shared_code.changed.bconsd);
     m.set(left_mouse_button_is_down, shared_code.changed.lmbdown);
     m.set(recv.is_focused, shared_code.changed.isfcsd);
-    m.set(send({to: keyboard, selector: 'text-input'}), circle_vtable.code.tinp);
+    let text_input = send({to: keyboard, selector: 'text-input'});
+    m.set(text_input, circle_vtable.code.changed.tinp);
     
-    send({from: recv, to: recv.position, selector: 'subscribe-me'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
+    [recv.position, recv.being_considered, left_mouse_button_is_down,
+     recv.is_focused, text_input].forEach(obs =>
+      send({from: recv, to: obs, selector: 'subscribe-me'}));
     
     send({from: recv, to: recv.position, selector: 'changed'}, {to: center});
   },
   // HACK! Abuse of the system. Really the dispatch of the "code" msg selector -- will break if received
   code: {
-    tinp: ({recv}) => {
-      if (recv.str === undefined) { // Lazy initialise text line on key input
-        let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
-        // Place text baseline and start point at circle center
-        recv.str = create_boxed_text({ creator: recv });
-        send({ to: send({to: recv.str, selector: 'position'}),
-               selector: 'changed' }, {to: [cx,cy]});
-        send({to: send({to: keyboard, selector: 'focus'}),
-              selector: 'changed'}, {to: recv.str});
-      }
+    changed: {
+      tinp: ({recv}) => {
+        if (recv.str === undefined) { // Lazy initialise text line on key input
+          let [cx,cy] = [attr(recv.circ, 'cx'), attr(recv.circ, 'cy')];
+          // Place text baseline and start point at circle center
+          recv.str = create_boxed_text({ creator: recv });
+          send({ to: send({to: recv.str, selector: 'position'}),
+                 selector: 'changed' }, {to: [cx,cy]});
+          send({to: send({to: keyboard, selector: 'focus'}),
+                selector: 'changed'}, {to: recv.str});
+        }
+      },
     },
   },
 };
@@ -326,83 +328,28 @@ boxed_text_vtable = {
     recv.vtables.push(has_position_vtable); // Hack in another vtable...
     has_position_vtable['created']({recv}); // Hack in its initialisation...
     
-    let pos = send({from: recv, to: recv, selector: 'position'});
-    send({from: recv, to: pos, selector: 'subscribe-me'});
-    send({to: pos, selector: 'changed'}, {to: [500,500]});
-    
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-    
     recv.is_focused = send({from: recv, to: keyboard, selector: 'am-I-focused?'});
-    send({from: recv, to: recv.is_focused, selector: 'subscribe-me'});
-    
     recv.string_content = create_observable();
-    send({from: recv, to: recv.string_content, selector: 'subscribe-me'});
+    
+    recv.vtables[0]['changed'] = recv.vtables[0]['changed'] || new Map();
+    let m = recv.vtables[0]['changed'];
+    m.set(recv.being_considered, shared_code.changed.bconsd);
+    m.set(left_mouse_button_is_down, shared_code.changed.lmbdown);
+    m.set(recv.is_focused, shared_code.changed.isfcsd);
+    m.set(recv.position, boxed_text_vtable.code.changed.pos);
+    m.set(recv.string_content, boxed_text_vtable.code.changed.str);
+    let text_input = send({to: keyboard, selector: 'text-input'});
+    m.set(text_input, boxed_text_vtable.code.changed.tinp);
+    
+    [recv.being_considered, left_mouse_button_is_down, recv.is_focused,
+     recv.position, recv.string_content, text_input].forEach(obs =>
+      send({from: recv, to: obs, selector: 'subscribe-me'}));
+    
+    send({to: recv.position, selector: 'changed'}, {to: [500,500]});
     send({to: recv.string_content, selector: 'changed'}, {to: "Lorem Ipsum"});
     
     recv.creator = creator;
-  },
-  ['changed']: ({sender, recv}, context) => {
-    // Further dispatch occurring here, on sender
-    if (sender === recv.position) {
-      let [x,y] = context.to;
-      attr(recv.text, {x, y});
-      send({ to: recv, selector: 'update-box' });
-    } else if (sender === recv.being_considered) { // Same as in circle
-      // Early bound one-element stack, lol
-      if (context.to === true) { // PUSH...
-        attr(recv.bbox, 'stroke-opacity', 1);
-        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
-      } else { // ... POP!
-        attr(recv.bbox, 'stroke-opacity', 0);
-        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
-      }
-      
-    } else if (sender === left_mouse_button_is_down) { // Same as in circle
-      if (context.to === true) {
-        send({from: recv.position,
-              to: send({from: recv, to: pointer, selector: 'position'}),
-              selector: 'subscribe-me'});
-        send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'}, {to: recv});
-      } else {
-        send({from: recv.position,
-              to: send({from: recv, to: pointer, selector: 'position'}),
-              selector: 'unsubscribe-me'});
-      }
-    } else if (sender === recv.is_focused) { // Same as in circle
-      if (context.to === true) {
-        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
-              selector: 'subscribe-me'});
-      } else {
-        send({from: recv, to: send({to: keyboard, selector: 'text-input'}),
-              selector: 'unsubscribe-me'});
-      }
-    } else if (sender === recv.string_content) {
-      recv.text.textContent = context.to;
-      send({ to: recv, selector: 'update-box' });
-    } else if (sender === send({to: keyboard, selector: 'text-input'})) {
-      let e = {key: context.to};
-      if (e.key === 'Backspace')
-        send({ to: recv.string_content, selector: 'changed' }, {to: s => s.slice(0,-1)});
-      else if (e.key === 'Enter') {
-        if (send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
-                  selector: 'poll'}) === true) {
-          let code = send({to: recv, selector: 'to-strings'});
-          window.recv = recv;
-            eval(code.join('\n'));
-          window.recv = undefined;
-        } else {
-          send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'},
-               { to: send({to: recv, selector: 'next-line'}) });
-        }
-      } else if (e.key === 'v' &&
-            send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
-                  selector: 'poll'}) === true) { // Easy C+P
-        let str = typeof(dump) === 'string' ? dump : "";
-        send({to: recv, selector: 'from-strings'}, {string: str});
-      } else if (e.key.length === 1)
-        send({ to: recv.string_content, selector: 'changed' }, {to: s => s + e.key});
-    }
   },
   ['string-content']: ({recv}) => recv.string_content,
   ['update-box']: ({recv}) => {
@@ -438,6 +385,42 @@ boxed_text_vtable = {
       line = line.next_line;
     }
     return strs;
+  },
+  code: {
+    changed: {
+      pos: ({recv}, {to}) => {
+        let [x,y] = to;
+        attr(recv.text, {x, y});
+        send({ to: recv, selector: 'update-box' });
+      },
+      str: ({recv}, {to}) => {
+        recv.text.textContent = to;
+        send({ to: recv, selector: 'update-box' });
+      },
+      tinp: ({recv}, {to}) => {
+        let e = {key: to};
+        if (e.key === 'Backspace')
+          send({ to: recv.string_content, selector: 'changed' }, {to: s => s.slice(0,-1)});
+        else if (e.key === 'Enter') {
+          if (send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
+                    selector: 'poll'}) === true) {
+            let code = send({to: recv, selector: 'to-strings'});
+            window.recv = recv;
+              eval(code.join('\n'));
+            window.recv = undefined;
+          } else {
+            send({to: send({to: keyboard, selector: 'focus'}), selector: 'changed'},
+                 { to: send({to: recv, selector: 'next-line'}) });
+          }
+        } else if (e.key === 'v' &&
+              send({to: send({to: keyboard, selector: 'key-is-pressed'}, {name: 'Control'}),
+                    selector: 'poll'}) === true) { // Easy C+P
+          let str = typeof(dump) === 'string' ? dump : "";
+          send({to: recv, selector: 'from-strings'}, {string: str});
+        } else if (e.key.length === 1)
+          send({ to: recv.string_content, selector: 'changed' }, {to: s => s + e.key});
+      },
+    },
   },
 };
 
