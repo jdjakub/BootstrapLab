@@ -368,10 +368,11 @@ boxed_text_vtable = {
   ['from-strings']: ({recv},ctx) => {
     let strs = ctx.strings || ctx.string.split('\n');
     let line = recv;
+    if (strs.length > 0)
+      send({to: line.string_content, selector: 'changed'}, {to: strs.shift()});
     while (strs.length > 0) {
-      let str = strs.shift();
-      send({to: line.string_content, selector: 'changed'}, {to: str});
       line = send({to: line, selector: 'next-line'});
+      send({to: line.string_content, selector: 'changed'}, {to: strs.shift()});
     }
   },
   ['to-strings']: ({recv}) => {
