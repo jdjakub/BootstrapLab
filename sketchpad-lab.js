@@ -34,6 +34,8 @@ svgel = (tag, parent, attrs) => {
 svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
+last = arr => arr[arr.length-1];
+
 resize = () => {
   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
   attr(svg, dims);
@@ -45,13 +47,19 @@ resize();
 
 svg.onmousedown = e => {
   let {offsetX, offsetY} = e
-  point([offsetX, offsetY]);
+  if (e.target === svg) {
+    point([offsetX, offsetY]);
+  } else if (e.target.tagName === 'circle') {
+    point(e.target);
+  }
 };
 
 body.onkeydown = e => {
   let { key } = e;
   if (key === 'l') {
-    line()
+    line();
+  } else if (key === 'm') {
+    move();
   }
 };
 
@@ -61,15 +69,55 @@ dom.lines  = svgel('g', svg, { id: "lines" });
 dom.points = svgel('g', svg, { id: "points" });
 
 points = [];
-point = ([x, y]) => {
-  svgel('circle', dom.points, {cx: x, cy: y, r: 10, fill: 'red'});
-  points.push([x,y]);
+point = p => {
+  if (p.tagName === undefined) {
+    let [x,y] = p;
+    let new_point = svgel('circle', dom.points, {cx: x, cy: y, r: 10, fill: 'red'});
+    new_point.start_of = new Set(); // lines starting at this point
+    new_point.end_of = new Set(); // lines ending at this point
+    points.push(new_point);
+  } else if (last(points) !== p) {
+    points.push(p);
+  }
 };
 
 line = () => {
   if (points.length >= 2) {
-    let [x1, y1] = points.pop();
-    let [x2, y2] = points.pop();
-    svgel('line', dom.lines, { x1: x1, x2: x2, y1: y1, y2: y2, stroke: 'black' });
+    let p2 = points.pop();
+    let p1 = points.pop();
+
+    if (p1 !== p2) {
+      let l = svgel('line', dom.lines, {
+        x1: attr(p1, 'cx'), y1: attr(p1, 'cy'),
+        x2: attr(p2, 'cx'), y2: attr(p2, 'cy'),
+        stroke: 'black' });
+
+      p1.start_of.add(l);
+      p2.end_of.add(l);
+    }
+  }
+};
+
+move = () => {
+  if (points.length >= 2) {
+    let p2 = points.pop();
+    let p1 = points.pop();
+
+    if (p1 !== p2) {
+      // merge outgoing lines onto p2
+      for (let l of p1.start_of) {
+        attr(l, 'x1', attr(p2, 'cx'));
+        attr(l, 'y1', attr(p2, 'cy'));
+        p2.start_of.add(l);
+      }
+      // merge incoming lines onto p2
+      for (let l of p1.end_of) {
+        attr(l, 'x2', attr(p2, 'cx'));
+        attr(l, 'y2', attr(p2, 'cy'));
+        p2.end_of.add(l);
+      }
+      // delete p1
+      p1.remove();
+    }
   }
 };
