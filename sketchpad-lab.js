@@ -42,3 +42,34 @@ resize = () => {
 window.onresize = resize;
 
 resize();
+
+svg.onmousedown = e => {
+  let {offsetX, offsetY} = e
+  point([offsetX, offsetY]);
+};
+
+body.onkeydown = e => {
+  let { key } = e;
+  if (key === 'l') {
+    line()
+  }
+};
+
+dom = {};
+
+dom.lines  = svgel('g', svg, { id: "lines" });
+dom.points = svgel('g', svg, { id: "points" });
+
+points = [];
+point = ([x, y]) => {
+  svgel('circle', dom.points, {cx: x, cy: y, r: 10, fill: 'red'});
+  points.push([x,y]);
+};
+
+line = () => {
+  if (points.length >= 2) {
+    let [x1, y1] = points.pop();
+    let [x2, y2] = points.pop();
+    svgel('line', dom.lines, { x1: x1, x2: x2, y1: y1, y2: y2, stroke: 'black' });
+  }
+};
