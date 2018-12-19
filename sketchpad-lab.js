@@ -34,7 +34,7 @@ svgel = (tag, parent, attrs) => {
 svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
-last = arr => arr[arr.length-1];
+last = (arr, n) => arr[arr.length-(n || 1)];
 
 resize = () => {
   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
@@ -60,6 +60,8 @@ body.onkeydown = e => {
     line();
   } else if (key === 'm') {
     move();
+  } else if (key === 'r') {
+    rect();
   }
 };
 
@@ -92,7 +94,9 @@ line = () => {
         x2: attr(p2, 'cx'), y2: attr(p2, 'cy'),
         stroke: 'black' });
 
+      l.start = p1;
       p1.start_of.add(l);
+      l.end = p2;
       p2.end_of.add(l);
     }
   }
@@ -121,3 +125,20 @@ move = () => {
     }
   }
 };
+
+rect = () => {
+  if (points.length >= 2) {
+    let p4 = points.pop();
+    let p1 = points.pop();
+
+    point([attr(p4, 'cx'), attr(p1, 'cy')]);
+    let p2 = points.pop();
+    point([attr(p1, 'cx'), attr(p4, 'cy')]);
+    let p3 = points.pop();
+
+    point(p1); point(p2); line();
+    point(p2); point(p4); line();
+    point(p4); point(p3); line();
+    point(p3); point(p1); line();
+  }
+}
