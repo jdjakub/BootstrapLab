@@ -45,18 +45,23 @@ resize = () => {
   attr(svg, dims);
 };
 
-start = l => [+attr(l, 'x1'), +attr(l, 'y1')];
-end   = l => [+attr(l, 'x2'), +attr(l, 'y2')];
+start  = l => [+attr(l, 'x1'), +attr(l, 'y1')];
+end    = l => [+attr(l, 'x2'), +attr(l, 'y2')];
+center = c => [+attr(c, 'cx'), +attr(c, 'cy')];
+radius = c => +attr(c, 'r');
 
 vadd = ([a, b], [c, d]) => [a+c, b+d];
 vsub = ([a, b], [c, d]) => [a-c, b-d];
 vmul = (k, [x, y]) => [k*x, k*y];
 vdot = ([a, b], [c, d]) => a*c + b*d;
 vquad = v => vdot(v,v);
+vlen = v => Math.sqrt(vquad(v));
 
 window.onresize = resize;
 
 resize();
+
+let RAD_PER_TURN = 2*Math.PI;
 
 // Click => create or select point.
 svg.onmousedown = e => {
@@ -64,9 +69,9 @@ svg.onmousedown = e => {
   let [x, y] = vsub([e.clientX, e.clientY], [r.left, r.top]);
   if (e.target === svg) {
     point('new', [x, y]);
-  } else if (e.target.tagName === 'circle') {
+  } else if (e.target.type === 'point') {
     point('exists', e.target);
-  } else if (e.target.tagName === 'line') {
+  } else if (e.target.type === 'line') {
     let l = e.target;
     /*         pt
      *         /|
@@ -81,6 +86,11 @@ svg.onmousedown = e => {
     let start_to_end = vsub(end(l), start(l)); // l
     let t = vdot(start_to_pt, start_to_end) / vquad(start_to_end);
     point('line', l, t);
+  } else if (e.target.type === 'circle') {
+    let circle = e.target;
+    let c_to_pt = vsub([x, y], center(circle));
+    let t = Math.atan2(c_to_pt[1], c_to_pt[0]) / RAD_PER_TURN;
+    point('circle', circle, t);
   }
 };
 
@@ -92,13 +102,16 @@ body.onkeydown = e => {
     move();
   } else if (key === 'r') {
     rect();
+  } else if (key === 'c') {
+    circle();
   }
 };
 
 dom = {};
 
-dom.lines  = svgel('g', svg, { id: "lines" });
-dom.points = svgel('g', svg, { id: "points" });
+dom.lines   = svgel('g', svg, { id: "lines" });
+dom.circles = svgel('g', svg, { id: "circles" });
+dom.points  = svgel('g', svg, { id: "points" });
 
 // Points stack
 points = [];
@@ -106,20 +119,36 @@ point = match({
   new: p => { // initialise new
     let [x,y] = p;
     let new_point = svgel('circle', dom.points, {cx: x, cy: y, r: 10, fill: 'purple'});
-    new_point.start_of = new Set(); // lines starting at this point
-    new_point.end_of = new Set(); // lines ending at this point
+    new_point.type = 'point';
+    new_point.start_of     = new Set(); // lines starting at this point
+    new_point.end_of       = new Set(); // lines ending at this point
+    new_point.center_of    = new Set(); // circles centered here
+    new_point.defines_r_of = new Set(); // circles whose radii it sets
     points.push(new_point);
+    return new_point;
   },
   exists: p => {
     if (last(points) !== p) // select existing ONCE
       points.push(p);
+    return p;
   },
   line: (l, t) => {
-    point('new', glomp(l, t));
-    l.glomps.set(last(points), t);
-    last(points).glomping = l;
+    let p = point('new', glomp(l, t));
+    l.glomps.set(p, t);
+    p.glomping = l;
+    attr(p, 'fill', 'blue');
+    return p;
   },
+  circle: (c, t) => {
+    let p = point('new', cglomp(c, t));
+    c.glomps.set(p, t);
+    p.glomping = c;
+    attr(p, 'fill', 'blue');
+    return p;
+  }
 });
+
+glomp = (l, t) => vadd(vmul(1-t, start(l)), vmul(t, end(l)));
 
 line = () => {
   if (points.length >= 2) {
@@ -133,6 +162,7 @@ line = () => {
         stroke: 'black',
         stroke_width: 5
       });
+      l.type = 'line';
 
       l.start = p1;
       p1.start_of.add(l);
@@ -143,7 +173,36 @@ line = () => {
   }
 };
 
-glomp = (l, t) => vadd(vmul(1-t, start(l)), vmul(t, end(l)));
+cglomp = (circle, t) => {
+  let c = center(circle);
+  let r = radius(circle);
+  let t_rad = t * RAD_PER_TURN;
+  let from_c = vmul(r, [Math.cos(t_rad), Math.sin(t_rad)]);
+  return vadd(c, from_c);
+}
+
+circle = () => {
+  if (points.length >= 2) {
+    let p_defining_r = points.pop();
+    let [px, py] = center(p_defining_r);
+    let p_center = points.pop();
+    let [cx, cy] = center(p_center);
+
+    if (p_defining_r !== p_center) {
+      let c = svgel('circle', dom.circles, {
+        cx, cy, r: vlen(vsub([px, py], [cx, cy])),
+        stroke: 'black', stroke_width: 5, fill: 'none'
+      });
+      c.type = 'circle';
+
+      c.center = p_center;
+      p_center.center_of.add(c);
+      c.sized_by = p_defining_r;
+      p_defining_r.defines_r_of.add(c);
+      c.glomps = new Map();
+    }
+  }
+};
 
 move = () => {
   if (points.length >= 2) {
@@ -151,11 +210,11 @@ move = () => {
     let p1 = points.pop();
 
     if (p1 !== p2) { // move p1 to p2
-      lines_to_reglomp = new Set();
+      to_reglomp = new Set();
 
       // merge outgoing lines out of p2
       for (let l of p1.start_of) {
-        lines_to_reglomp.add(l);
+        to_reglomp.add(l);
         attr(l, 'x1', attr(p2, 'cx'));
         attr(l, 'y1', attr(p2, 'cy'));
         l.start = p2;
@@ -163,18 +222,36 @@ move = () => {
       }
       // merge incoming lines onto p2
       for (let l of p1.end_of) {
-        lines_to_reglomp.add(l);
+        to_reglomp.add(l);
         attr(l, 'x2', attr(p2, 'cx'));
         attr(l, 'y2', attr(p2, 'cy'));
         l.end = p2;
         p2.end_of.add(l);
       }
 
-      for (let l of lines_to_reglomp) {
-        let old_glomps = Array.from(l.glomps.entries());
+      // merge circles centered at p1
+      for (let c of p1.center_of) {
+        to_reglomp.add(c);
+        attr(c, 'cx', attr(p2, 'cx'));
+        attr(c, 'cy', attr(p2, 'cy'));
+        attr(c, 'r', vlen(vsub(center(c.sized_by), center(c))));
+        c.center = p2;
+        p2.center_of.add(c);
+      }
+
+      // merge circles sized by p1
+      for (let c of p1.defines_r_of) {
+        to_reglomp.add(c);
+        attr(c, 'r', vlen(vsub(center(p2), center(c))));
+        c.sized_by = p2;
+        p2.defines_r_of.add(c);
+      }
+
+      for (let x of to_reglomp) {
+        let old_glomps = Array.from(x.glomps.entries());
         for (let [p,t] of old_glomps) {
           point('exists', p);
-          point('line', l, t);
+          point(x.type, x, t);
           move();
         }
       }
