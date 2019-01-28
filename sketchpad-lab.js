@@ -120,10 +120,8 @@ point = match({
     let [x,y] = p;
     let new_point = svgel('circle', dom.points, {cx: x, cy: y, r: 10, fill: 'purple'});
     new_point.type = 'point';
-    new_point.start_of     = new Set(); // lines starting at this point
-    new_point.end_of       = new Set(); // lines ending at this point
-    new_point.center_of    = new Set(); // circles centered here
-    new_point.defines_r_of = new Set(); // circles whose radii it sets
+    new_point.used_by = new Set(); // change affects these shapes
+    new_point.constrained_by = new Set(); // position must be compatible with these
     points.push(new_point);
     return new_point;
   },
@@ -136,6 +134,7 @@ point = match({
     let p = point('new', glomp(l, t));
     l.glomps.set(p, t);
     p.glomping = l;
+    p.constrained_by.add(l);
     attr(p, 'fill', 'blue');
     return p;
   },
@@ -143,6 +142,7 @@ point = match({
     let p = point('new', cglomp(c, t));
     c.glomps.set(p, t);
     p.glomping = c;
+    p.constrained_by.add(c);
     attr(p, 'fill', 'blue');
     return p;
   }
@@ -165,9 +165,9 @@ line = () => {
       l.type = 'line';
 
       l.start = p1;
-      p1.start_of.add(l);
+      p1.used_by.add(l);
       l.end = p2;
-      p2.end_of.add(l);
+      p2.used_by.add(l);
       l.glomps = new Map(); // points some distance along line
     }
   }
@@ -196,10 +196,38 @@ circle = () => {
       c.type = 'circle';
 
       c.center = p_center;
-      p_center.center_of.add(c);
+      p_center.used_by.add(c);
       c.sized_by = p_defining_r;
-      p_defining_r.defines_r_of.add(c);
+      p_defining_r.used_by.add(c);
       c.glomps = new Map();
+    }
+  }
+};
+
+replace_point = (shape, p1, p2) => {
+  if (shape.type === 'line') {
+    if (shape.start === p1) {
+      shape.start = p2;
+      attr(shape, 'x1', attr(p2, 'cx'));
+      attr(shape, 'y1', attr(p2, 'cy'));
+    }
+    if (shape.end === p1) {
+      shape.end = p2;
+      attr(shape, 'x2', attr(p2, 'cx'));
+      attr(shape, 'y2', attr(p2, 'cy'));
+    }
+  } else if (shape.type === 'circle') {
+    if (shape.center === p1) {
+      shape.center = p2;
+      attr(shape, 'cx', attr(p2, 'cx'));
+      attr(shape, 'cy', attr(p2, 'cy'));
+      attr(shape, 'r', vlen(
+        vsub(center(shape.sized_by), center(shape))
+      ));
+    }
+    if (shape.sized_by === p1) {
+      shape.sized_by = p2;
+      attr(shape, 'r', vlen(vsub(center(p2), center(shape))));
     }
   }
 };
@@ -212,39 +240,10 @@ move = () => {
     if (p1 !== p2) { // move p1 to p2
       to_reglomp = new Set();
 
-      // merge outgoing lines out of p2
-      for (let l of p1.start_of) {
-        to_reglomp.add(l);
-        attr(l, 'x1', attr(p2, 'cx'));
-        attr(l, 'y1', attr(p2, 'cy'));
-        l.start = p2;
-        p2.start_of.add(l);
-      }
-      // merge incoming lines onto p2
-      for (let l of p1.end_of) {
-        to_reglomp.add(l);
-        attr(l, 'x2', attr(p2, 'cx'));
-        attr(l, 'y2', attr(p2, 'cy'));
-        l.end = p2;
-        p2.end_of.add(l);
-      }
-
-      // merge circles centered at p1
-      for (let c of p1.center_of) {
-        to_reglomp.add(c);
-        attr(c, 'cx', attr(p2, 'cx'));
-        attr(c, 'cy', attr(p2, 'cy'));
-        attr(c, 'r', vlen(vsub(center(c.sized_by), center(c))));
-        c.center = p2;
-        p2.center_of.add(c);
-      }
-
-      // merge circles sized by p1
-      for (let c of p1.defines_r_of) {
-        to_reglomp.add(c);
-        attr(c, 'r', vlen(vsub(center(p2), center(c))));
-        c.sized_by = p2;
-        p2.defines_r_of.add(c);
+      for (let shape of p1.used_by) {
+        to_reglomp.add(shape);
+        replace_point(shape, p1, p2);
+        p2.used_by.add(shape);
       }
 
       for (let x of to_reglomp) {
