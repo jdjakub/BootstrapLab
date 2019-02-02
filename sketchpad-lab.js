@@ -56,6 +56,11 @@ vmul = (k, [x, y]) => [k*x, k*y];
 vdot = ([a, b], [c, d]) => a*c + b*d;
 vquad = v => vdot(v,v);
 vlen = v => Math.sqrt(vquad(v));
+varea = ([a, b], [c, d]) => a*d - b*c;
+// varea(u,v) = |u||v|sinA
+// v is the base of the rect
+// u sets the height of the rect = |u|sinA
+// A is the angle between u and v
 
 window.onresize = resize;
 
@@ -96,15 +101,11 @@ svg.onmousedown = e => {
 
 body.onkeydown = e => {
   let { key } = e;
-  if (key === 'l') {
-    line();
-  } else if (key === 'm') {
-    move();
-  } else if (key === 'r') {
-    rect();
-  } else if (key === 'c') {
-    circle();
-  }
+  if (key === 'l')      line();
+  else if (key === 'm') move();
+  else if (key === 'r') rect();
+  else if (key === 'c') circle();
+  else if (key === 'i') intersect();
 };
 
 dom = {};
@@ -260,6 +261,28 @@ move = () => {
         p1.glomping.glomps.delete(p1);
       p1.remove();
     }
+  }
+};
+
+intersect = () => {
+  if (points.length >= 4) {
+    p4 = points.pop();
+    p3 = points.pop();
+    p2 = points.pop();
+    p1 = points.pop();
+
+    // wlog: take p1 as origin
+    let v1_to_2 = vsub(center(p2), center(p1));
+    let v1_to_3 = vsub(center(p3), center(p1));
+    let v3_to_4 = vsub(center(p4), center(p3));
+
+    let t1_to_2 = varea(v1_to_3, v3_to_4) / varea(v1_to_2, v3_to_4);
+    let v1_to_X = vmul(t1_to_2, v1_to_2);
+    let t3_to_4 = vdot(vsub(v1_to_X, v1_to_3), v3_to_4) / vquad(v3_to_4);
+
+    if (!(0 <= t1_to_2 && t1_to_2 <= 1)) console.log("1 outside", t1_to_2);
+    else if (!(0 <= t3_to_4 && t3_to_4 <= 1)) console.log("2 outside", t3_to_4);
+    else point('new', vadd(center(p1), v1_to_X));
   }
 };
 
