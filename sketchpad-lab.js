@@ -161,7 +161,7 @@ line = () => {
         x1: attr(p1, 'cx'), y1: attr(p1, 'cy'),
         x2: attr(p2, 'cx'), y2: attr(p2, 'cy'),
         stroke: 'black',
-        stroke_width: 5
+        stroke_width: 7
       });
       l.type = 'line';
 
@@ -192,7 +192,7 @@ circle = () => {
     if (p_defining_r !== p_center) {
       let c = svgel('circle', dom.circles, {
         cx, cy, r: vlen(vsub([px, py], [cx, cy])),
-        stroke: 'black', stroke_width: 5, fill: 'none'
+        stroke: 'black', stroke_width: 7, fill: 'none'
       });
       c.type = 'circle';
 
@@ -235,16 +235,16 @@ replace_point = (shape, p1, p2) => {
 
 move = () => {
   if (points.length >= 2) {
-    let p2 = points.pop();
-    let p1 = points.pop();
+    let dest = points.pop();
+    let src = points.pop();
 
-    if (p1 !== p2) { // move p1 to p2
+    if (src !== dest) { // move src to dest
       to_reglomp = new Set();
 
-      for (let shape of p1.used_by) {
+      for (let shape of src.used_by) {
         to_reglomp.add(shape);
-        replace_point(shape, p1, p2);
-        p2.used_by.add(shape);
+        replace_point(shape, src, dest);
+        dest.used_by.add(shape);
       }
 
       for (let x of to_reglomp) {
@@ -256,10 +256,10 @@ move = () => {
         }
       }
 
-      // delete p1
-      if (p1.glomping !== undefined)
-        p1.glomping.glomps.delete(p1);
-      p1.remove();
+      // delete src
+      if (src.glomping !== undefined)
+        src.glomping.glomps.delete(src);
+      src.remove();
     }
   }
 };
@@ -282,7 +282,7 @@ intersect = () => {
 
     if (!(0 <= t1_to_2 && t1_to_2 <= 1)) console.log("1 outside", t1_to_2);
     else if (!(0 <= t3_to_4 && t3_to_4 <= 1)) console.log("2 outside", t3_to_4);
-    else point('new', vadd(center(p1), v1_to_X));
+    else return point('new', vadd(center(p1), v1_to_X));
   }
 };
 
