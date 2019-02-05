@@ -35,6 +35,10 @@ svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
 last = (arr, n) => arr[arr.length-(n || 1)];
+only = arr => {
+  if (arr.length > 1) throw ['Expected 1 element; got: ', arr]
+  else return arr[0];
+};
 
 log = (...args) => { console.log(...args); return last(args); }
 
@@ -61,6 +65,56 @@ varea = ([a, b], [c, d]) => a*d - b*c;
 // v is the base of the rect
 // u sets the height of the rect = |u|sinA
 // A is the angle between u and v
+
+mappings = {};
+lookup = (name, input) => {
+  let mapping = mappings[name];
+  if (mapping === undefined) return undefined;
+  let [forward, inverse] = mapping;
+  return forward.get(input);
+};
+rlookup = (output, name) => {
+  let mapping = mappings[name];
+  if (mapping === undefined) return undefined;
+  let [forward, inverse] = mapping;
+  return inverse.get(output);
+};
+// TODO: ensure no mmeory leaks
+associate = (name, input, new_output) => {
+  let mapping = mappings[name];
+  // Lazy initialise
+  if (mapping === undefined) {
+    mapping = [new Map(), new Map()];
+    mappings[name] = mapping;
+  }
+  let [forward, inverse] = mapping;
+
+  let old_output = forward.get(input);
+  if (new_output === undefined) {
+    forward.delete(input);
+    // Remove if empty
+    if (forward.size === 0) delete mappings[name];
+  } else { // New output is defined
+    forward.set(input, new_output);
+    let other_inputs = inverse.get(new_output);
+    // Lazy initialise
+    if (other_inputs === undefined) {
+      other_inputs = new Set();
+      inverse.set(new_output, other_inputs);
+    }
+    other_inputs.add(input);
+  }
+  // Input no longer maps to old output
+  // old output is still mapped to by input...!
+  if (old_output !== undefined) {
+    let other_inputs = inverse.get(old_output);
+    if (input !== undefined)
+      other_inputs.delete(input);
+    // Remove if empty
+    if (other_inputs.size === 0)
+      inverse.delete(old_output);
+  }
+};
 
 window.onresize = resize;
 
@@ -102,6 +156,7 @@ svg.onmousedown = e => {
 body.onkeydown = e => {
   let { key } = e;
   if (key === 'l')      line();
+  else if (key === 'e') execute();
   else if (key === 'm') move();
   else if (key === 'r') rect();
   else if (key === 'c') circle();
@@ -110,6 +165,7 @@ body.onkeydown = e => {
 
 dom = {};
 
+dom.defs    = svgel('defs', svg);
 dom.lines   = svgel('g', svg, { id: "lines" });
 dom.circles = svgel('g', svg, { id: "circles" });
 dom.points  = svgel('g', svg, { id: "points" });
@@ -149,6 +205,18 @@ point = match({
   }
 });
 
+marker = svgel('marker', dom.defs, {
+  id: 'Arrowhead', viewBox: '0 0 10 10',
+  refX: 10, refY: 5,
+  markerUnits: 'strokeWidth',
+  markerWidth: 4, markerHeight: 3,
+  orient: 'auto'
+});
+
+svgel('path', marker, {
+  d: 'M 0 0 L 10 5 L 0 10 z'
+});
+
 glomp = (l, t) => vadd(vmul(1-t, start(l)), vmul(t, end(l)));
 
 line = () => {
@@ -161,7 +229,8 @@ line = () => {
         x1: attr(p1, 'cx'), y1: attr(p1, 'cy'),
         x2: attr(p2, 'cx'), y2: attr(p2, 'cy'),
         stroke: 'black',
-        stroke_width: 7
+        stroke_width: 7,
+        marker_end: 'url(#Arrowhead)'
       });
       l.type = 'line';
 
@@ -170,6 +239,39 @@ line = () => {
       l.end = p2;
       p2.used_by.add(l);
       l.glomps = new Map(); // points some distance along line
+    }
+  }
+};
+
+follow_arrows = p => {
+  // Find the thing it points to
+  let targets = [];
+  for (let shape of p.used_by)
+    if (shape.type === 'line')
+      if (shape.start === p && shape.end !== p)
+        targets.push(shape.end);
+  return targets;
+};
+
+execute = () => {
+  if (points.length >= 1) {
+    let p = points.pop();
+    let args = follow_arrows(p);
+    if (args.length == 2) {
+      let src_ptr, dst_ptr;
+      let outs0 = new Set(follow_arrows(args[0]));
+      let outs1 = new Set(follow_arrows(args[1]));
+      if (outs0.has(args[1])) {
+        src_ptr = args[0]; dst_ptr = args[1];
+      } else if (outs1.has(args[0])) {
+        src_ptr = args[1]; dst_ptr = args[0];
+      }
+      if (!src_ptr) throw "Couldn't find src_ptr";
+      let dst = only(follow_arrows(dst_ptr));
+      let src = only(follow_arrows(src_ptr).filter(x => x !== dst_ptr));
+      point('exists', src);
+      point('exists', dst);
+      line();
     }
   }
 };
