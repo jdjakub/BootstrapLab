@@ -7,7 +7,7 @@ More info at my [blog](https://programmingmadecomplicated.wordpress.com/category
 
 # SketchpadLab
 
-![Introduction](img/intro.png?raw=true)
+![Introduction](../img/intro.png?raw=true)
 
 Current specific research direction, as of late April 2018. [Blog post](https://programmingmadecomplicated.wordpress.com/2018/04/09/back-to-bootstrapping/)
 
@@ -17,9 +17,9 @@ Goal: build a visual and "pliable" model of arbitrary computation that is capabl
 
 # Gallery
 (Disclaimer: may or may not reflect the system in its current state)
-![Topological drawing of the complete graph K-8.](img/k-8.png?raw=true "Topological drawing of the complete graph K-8.")
-![Simple fun with introspection.](img/text.png?raw=true "Simple fun with introspection.")
-![Boxed lines of text with "self" i.e. receiver access](img/boxed-text.png?raw=true "Boxed lines of text with 'self' i.e. receiver access")
+![Topological drawing of the complete graph K-8.](../img/k-8.png?raw=true "Topological drawing of the complete graph K-8.")
+![Simple fun with introspection.](../img/text.png?raw=true "Simple fun with introspection.")
+![Boxed lines of text with "self" i.e. receiver access](../img/boxed-text.png?raw=true "Boxed lines of text with 'self' i.e. receiver access")
 
 # Previous thoughts
 Inspiration drawn from Ivan Sutherland's [1963 Sketchpad thesis](https://programmingmadecomplicated.wordpress.com/2018/04/15/reading-the-sketchpad-thesis/).

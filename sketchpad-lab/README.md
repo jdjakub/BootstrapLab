@@ -1,4 +1,4 @@
-![Current](img/lines-circles-glomps.png?raw=true)
+![Current](../img/lines-circles-glomps.png?raw=true)
 
 # Example input sequences
 
