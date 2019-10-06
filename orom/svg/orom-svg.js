@@ -38,6 +38,17 @@ vsub = ([a, b], [c, d]) => [a-c, b-d];
 
 xy = t => attrs(t, 'x', 'y').map(v => +v);
 
+bbox = el => {
+  let {x, y, width, height} = el.getBBox();
+  let l = x,     t = y;
+  let w = width, h = height;
+  let r = l+w,   b = t+h;
+  return {
+    left: l, right: r, top: t, bottom: b, width: w, height: h,
+    l, r, t, b, w, h
+  };
+}
+
 svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
@@ -49,7 +60,7 @@ resize = () => {
 window.onresize = resize;
 resize();
 
-create_entity = name => {
+new_entity = () => {
   let grid = svgel('g', svg);
   grid.translate = [0,0];
 
@@ -58,23 +69,42 @@ create_entity = name => {
     x: 0, y: 0, width: 200, height: 20
   });
 
-  let mappings = svgel('g', grid);
+  let below = svgel('g', grid, {'transform': 'translate(0, 20)'});
+
+  let mappings = svgel('g', below, {'class': 'mappings'});
+
+  let horizontals = svgel('g', mappings, {'class': 'horizontals'});
+  let verticals   = svgel('g', mappings, {'class': 'verticals'});
 
   let text = svgel('text', mappings, {
-    x: 8, y: 40, font_size: 20, font_family: 'Arial'
+    x: 8, y: 40, font_size: 20, font_family: 'Arial Narrow', fill: 'gray'
   });
 
-  text.textContent = name || "Hello World!";
+  text.textContent = 'New...';
 
-  let textbb = text.getBBox();
-  let handlebb = handle.getBBox();
+  // Left-align this text
+  let textbb = bbox(text);
 
-  let tl = [handlebb.x + 8, handlebb.y+handlebb.height + 8];
-  let delta = vsub(tl, [textbb.x, textbb.y]);
-  let [x, y] = vadd(xy(text), delta);
+  let tl = [24,4];
+  let delta = vsub(tl, [textbb.l, textbb.t]); // curr TL --> desired TL corner
+  let [x, y] = vadd(xy(text), delta);         // corresponding new text origin
 
-  attr(text, {x, y});
-  attr(handle, 'width', textbb.width + 16);
+  attr(text, {x, y}); // re-position text at new text origin
+  textbb = bbox(text); // get updated bbox
+  textbb.r += 4; // inflate bbox
+  textbb.b += 4;
+
+  // let cellGrid = new CellGrid(mappings);
+  // cellGrid.newRow();
+  // cellGrid.newColumn('handle');
+  // cellGrid.newColumn('input');
+  // cellGrid.newColumn('output');
+
+  let lleft    = svgel('line', verticals,   {x1: 0,        x2: 0,        y1: 0, y2: textbb.b});
+  let linputs  = svgel('line', verticals,   {x1: 20,       x2: 20,       y1: 0, y2: textbb.b});
+  let lright   = svgel('line', verticals,   {x1: 200,      x2: 200,      y1: 0, y2: textbb.b});
+  let loutputs = svgel('line', verticals,   {x1: textbb.r, x2: textbb.r, y1: 0, y2: textbb.b});
+  let lbottom  = svgel('line', horizontals, {y1: textbb.b, y2: textbb.b, x1: 0, x2: 200     });
 
   handle.onmousedown = e => {
     window.following_pointer = grid;
@@ -98,3 +128,5 @@ svg.onmousemove = e => {
 svg.onmouseup = e => {
   window.following_pointer = undefined;
 }
+
+new_entity();
