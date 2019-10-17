@@ -65,19 +65,22 @@ new_entity = () => {
   grid.translate = [0,0];
 
   let handle = svgel('rect', grid, {
-    'class': 'handle',
+    'class': 'ent-handle',
     x: 0, y: 0, width: 200, height: 20
   });
 
-  let below = svgel('g', grid, {'transform': 'translate(0, 20)'});
+  let below = svgel('g', grid, {transform: 'translate(0, 20)'});
 
   let mappings = svgel('g', below, {'class': 'mappings'});
 
   let horizontals = svgel('g', mappings, {'class': 'horizontals'});
   let verticals   = svgel('g', mappings, {'class': 'verticals'});
 
-  let text = svgel('text', mappings, {
-    x: 8, y: 40, font_size: 20, font_family: 'Arial Narrow', fill: 'gray'
+  let input_column = svgel('g', horizontals, {transform: 'translate(20, 0)'});
+
+  let text = svgel('text', input_column, {
+    x: 0, y: 0, font_size: 20, font_family: 'Arial Narrow',
+    fill: 'gray', stroke: 'none'
   });
 
   text.textContent = 'New...';
@@ -85,7 +88,7 @@ new_entity = () => {
   // Left-align this text
   let textbb = bbox(text);
 
-  let tl = [24,4];
+  let tl = [4,4];
   let delta = vsub(tl, [textbb.l, textbb.t]); // curr TL --> desired TL corner
   let [x, y] = vadd(xy(text), delta);         // corresponding new text origin
 
@@ -94,20 +97,36 @@ new_entity = () => {
   textbb.r += 4; // inflate bbox
   textbb.b += 4;
 
+  let output_column = svgel('g', input_column, {transform: `translate(${4+textbb.w+4}, 0)`});
+
+  let output_ptr_handle = svgel('circle', horizontals, {
+    cx: 200-4-5, cy: textbb.b / 2, r: 5, fill: 'black'
+  });
+
   // let cellGrid = new CellGrid(mappings);
   // cellGrid.newRow();
   // cellGrid.newColumn('handle');
   // cellGrid.newColumn('input');
   // cellGrid.newColumn('output');
 
-  let lleft    = svgel('line', verticals,   {x1: 0,        x2: 0,        y1: 0, y2: textbb.b});
-  let linputs  = svgel('line', verticals,   {x1: 20,       x2: 20,       y1: 0, y2: textbb.b});
-  let lright   = svgel('line', verticals,   {x1: 200,      x2: 200,      y1: 0, y2: textbb.b});
-  let loutputs = svgel('line', verticals,   {x1: textbb.r, x2: textbb.r, y1: 0, y2: textbb.b});
-  let lbottom  = svgel('line', horizontals, {y1: textbb.b, y2: textbb.b, x1: 0, x2: 200     });
+  let lleft    = svgel('line', verticals,     {x1: 0,      x2: 0,      y1: 0, y2: textbb.b});
+  let lright   = svgel('line', verticals,     {x1: 200,    x2: 200,    y1: 0, y2: textbb.b});
+  let linput   = svgel('line', input_column,  {x1: 0,      x2: 0,      y1: 0, y2: textbb.b});
+  let loutput  = svgel('line', output_column, {x1: 0,      x2: 0,      y1: 0, y2: textbb.b});
+  let lbottom  = svgel('line', horizontals, {y1: textbb.b, y2: textbb.b, x1: 0, x2: 200});
 
   handle.onmousedown = e => {
     window.following_pointer = grid;
+  };
+
+  text.beginEdit = () => {console.log('Begin edit')};
+  text.finishEdit = () => {console.log('Finish edit')};
+
+  text.onmousedown = e => {
+    if (window.active_text !== undefined)
+        window.active_text.finishEdit();
+    window.active_text = text;
+    window.active_text.beginEdit();
   };
 
   return grid;
@@ -127,6 +146,21 @@ svg.onmousemove = e => {
 
 svg.onmouseup = e => {
   window.following_pointer = undefined;
-}
+};
+
+body.onkeydown = e => {
+  let t = window.active_text;
+  if (t === undefined) return;
+  if (e.key === 'Backspace') {
+    t.textContent = t.textContent.slice(0, -1);
+  } else if (e.key === 'Enter') {
+    t.finishEdit();
+  } else if (e.key.length === 1) {
+    t.textContent += e.key;
+  } else {
+    return;
+  }
+  e.preventDefault();
+};
 
 new_entity();
