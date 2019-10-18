@@ -6,18 +6,23 @@ body.style.minHeight = '100%';
 
 // e.g. attr(rect, {stroke_width: 5, stroke: 'red'})
 //      attr(rect, 'stroke', 'red')
+//      attr(rect, 'height', h => h+32)
+//      attr(rect, {fill: 'orange', height: h => h+32})
 attr = (elem, key_or_dict, val_or_nothing) => {
   if (typeof(key_or_dict) === 'string') {
     let key = key_or_dict;
     let val = val_or_nothing;
     let old = elem.getAttribute(key);
-    if (val !== undefined) elem.setAttribute(key, val);
+    if (typeof(val) === 'function') elem.setAttribute(key, val(old));
+    else if (val !== undefined)     elem.setAttribute(key, val);
     return old;
   } else {
     let dict = key_or_dict;
-    for (let [k,v] of Object.entries(dict)) {
-      let value = v;
-      elem.setAttribute(k.replace('_','-'), value);
+    for (let [k,v_or_f] of Object.entries(dict)) {
+      let key = k.replace('_','-');
+      let old = elem.getAttribute(key);
+      let value = typeof(v_or_f) === 'function' ? v_or_f(old) : v_or_f;
+      elem.setAttribute(key, value);
     }
   }
 }
@@ -49,6 +54,12 @@ bbox = el => {
   };
 }
 
+final = xs => xs[xs.length-1];
+
+htranslate = x => `translate(${x}, 0)`;
+vtranslate = y => `translate(0, ${y})`;
+translate = (x,y) => `translate(${x},${y})`;
+
 svg = svgel('svg', body);
 svg.style.border = '2px dashed red';
 
@@ -59,6 +70,52 @@ resize = () => {
 
 window.onresize = resize;
 resize();
+
+pad = 4;
+
+class CellGrid2D {
+
+  constructor(container, width, height) {
+    this.width = width || 250;
+    this.row_height = height || 30;
+    let top_left = svgel('g', container);
+    top_left.translate = [0,0];
+    let big_rect = svgel('rect', top_left, {
+      x: 0, y: 0, width: pad+this.width+pad, height: this.row_height+pad,
+      'class': 'ent-handle'
+    });
+    let rows = svgel('g', top_left, {
+      'class': 'rows', transform: translate(pad,0)
+    });
+    this.top_left = top_left;
+    top_left.main_rect = big_rect;
+
+    top_left.onmousedown = e => {
+      window.following_pointer = top_left;
+      window.orig_pointer_pos = [e.clientX, e.clientY];
+      top_left.orig_translate = top_left.translate;
+    };
+  }
+
+  newRow() {
+    let curr_row = this.top_left.querySelector('.rows');
+    while (true) {
+      let next_row = curr_row.querySelector('.row');
+      if (next_row) curr_row = next_row;
+      else break;
+    }
+    let new_row = svgel('g', curr_row, {
+      'class': 'row', transform: vtranslate(this.row_height+pad)
+    });
+    svgel('rect', new_row, {
+      x: 0, y: 0, width: this.width, height: this.row_height
+    });
+    svgel('g', new_row, {
+      'class': 'cols', transform: translate(pad, pad)
+    });
+    attr(this.top_left.main_rect, 'height', h => +h+this.row_height+pad);
+  }
+}
 
 new_entity = () => {
   let grid = svgel('g', svg);
@@ -117,6 +174,8 @@ new_entity = () => {
 
   handle.onmousedown = e => {
     window.following_pointer = grid;
+    window.orig_pointer_pos = [e.clientX, e.clientY];
+    grid.orig_translate = grid.translate;
   };
 
   text.beginEdit = () => {console.log('Begin edit')};
@@ -133,12 +192,14 @@ new_entity = () => {
 }
 
 window.following_pointer = undefined;
+window.orig_pointer_pos = undefined;
 
 svg.onmousemove = e => {
   if (window.following_pointer !== undefined) {
-    let delta = [e.movementX, e.movementY];
+    let new_pointer_pos = [e.clientX, e.clientY];
+    let delta = vsub(new_pointer_pos, window.orig_pointer_pos);
     let container = window.following_pointer;
-    container.translate = vadd(container.translate, delta);
+    container.translate = vadd(container.orig_translate, delta);
     let [x,y] = container.translate;
     attr(container, 'transform', `translate(${x},${y})`);
   }
@@ -164,3 +225,8 @@ body.onkeydown = e => {
 };
 
 new_entity();
+grid = new CellGrid2D(svg);
+grid.newRow();
+grid.newRow();
+grid.newRow();
+grid.newRow();
