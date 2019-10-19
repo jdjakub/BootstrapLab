@@ -80,7 +80,7 @@ class CellGrid2D {
     this.width = width || 8;
     this.row_height = height || 30;
     let top_left = svgel('g', container);
-    top_left.translate = [0,0];
+
     let big_rect = svgel('rect', top_left, {
       x: 0, y: 0, width: pad+this.width+pad, height: this.row_height+pad,
       'class': 'ent-handle'
@@ -90,12 +90,6 @@ class CellGrid2D {
     });
     this.top_left = top_left;
     top_left.main_rect = big_rect;
-
-    top_left.onmousedown = e => {
-      window.following_pointer = top_left;
-      window.orig_pointer_pos = [e.clientX, e.clientY];
-      top_left.orig_translate = top_left.translate;
-    };
   }
 
   newRow() {
@@ -200,12 +194,6 @@ new_entity = () => {
   let loutput  = svgel('line', output_column, {x1: 0,      x2: 0,      y1: 0, y2: textbb.b});
   let lbottom  = svgel('line', horizontals, {y1: textbb.b, y2: textbb.b, x1: 0, x2: 200});
 
-  handle.onmousedown = e => {
-    window.following_pointer = grid;
-    window.orig_pointer_pos = [e.clientX, e.clientY];
-    grid.orig_translate = grid.translate;
-  };
-
   text.beginEdit = () => {console.log('Begin edit')};
   text.finishEdit = () => {console.log('Finish edit')};
 
@@ -221,15 +209,41 @@ new_entity = () => {
 
 window.following_pointer = undefined;
 window.orig_pointer_pos = undefined;
+window.drag_meaning = 'move'
+window.quadrant = undefined;
+
+svg.onmousedown = e => {
+  let r = svg.getBoundingClientRect();
+  let [x, y] = vsub([e.clientX, e.clientY], [r.left, r.top]);
+  if (e.target === svg) {
+  } else if (e.target.tagName === 'rect') {
+    let r = e.target;
+    window.following_pointer = r;
+    window.orig_pointer_pos = [e.clientX, e.clientY];
+    let bb = bbox(r);
+    r.orig = {
+      translate: r.translate === undefined ? [0,0] : r.translate,
+      x: bb.left, y: bb.top, width: bb.width, height: bb.height
+    };
+  }
+};
 
 svg.onmousemove = e => {
   if (window.following_pointer !== undefined) {
     let new_pointer_pos = [e.clientX, e.clientY];
     let delta = vsub(new_pointer_pos, window.orig_pointer_pos);
-    let container = window.following_pointer;
-    container.translate = vadd(container.orig_translate, delta);
-    let [x,y] = container.translate;
-    attr(container, 'transform', `translate(${x},${y})`);
+    let rect = window.following_pointer;
+    if (window.drag_meaning === 'move') {
+      rect.translate = vadd(rect.orig.translate, delta);
+      let [x,y] = rect.translate;
+      attr(rect, 'transform', translate(x,y));
+    } else if (window.drag_meaning === 'size') {
+      let [dx,dy] = delta;
+      attr(rect, {
+        width: rect.orig.width + dx,
+        height: rect.orig.height + dy
+      });
+    }
   }
 };
 
@@ -239,18 +253,34 @@ svg.onmouseup = e => {
 
 body.onkeydown = e => {
   let t = window.active_text;
-  if (t === undefined) return;
-  if (e.key === 'Backspace') {
-    t.textContent = t.textContent.slice(0, -1);
-  } else if (e.key === 'Enter') {
-    t.finishEdit();
-  } else if (e.key.length === 1) {
-    t.textContent += e.key;
+  if (t === undefined) {
+    if (e.key === 's' && !e.repeat) {
+      window.drag_meaning = 'size';
+      console.log(window.drag_meaning);
+    } else return;
+    e.preventDefault();
   } else {
-    return;
+    if (e.key === 'Backspace') {
+      t.textContent = t.textContent.slice(0, -1);
+    } else if (e.key === 'Enter') {
+      t.finishEdit();
+    } else if (e.key.length === 1) {
+      t.textContent += e.key;
+    } else {
+      return;
+    }
   }
   e.preventDefault();
 };
+
+body.onkeyup = e => {
+  let t = window.active_text;
+  if (t === undefined) {
+    window.drag_meaning = 'move';
+    console.log(window.drag_meaning);
+  }
+  e.preventDefault();
+}
 
 new_entity();
 grid = new CellGrid2D(svg);
