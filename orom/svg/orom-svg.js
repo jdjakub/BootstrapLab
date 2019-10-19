@@ -72,11 +72,12 @@ window.onresize = resize;
 resize();
 
 pad = 4;
+col_width = 80;
 
 class CellGrid2D {
 
   constructor(container, width, height) {
-    this.width = width || 250;
+    this.width = width || 8;
     this.row_height = height || 30;
     let top_left = svgel('g', container);
     top_left.translate = [0,0];
@@ -98,22 +99,49 @@ class CellGrid2D {
   }
 
   newRow() {
-    let curr_row = this.top_left.querySelector('.rows');
+    let last_row = this.top_left.querySelector('.rows');
     while (true) {
-      let next_row = curr_row.querySelector('.row');
-      if (next_row) curr_row = next_row;
+      let next_row = last_row.querySelector('.row');
+      if (next_row) last_row = next_row;
       else break;
     }
-    let new_row = svgel('g', curr_row, {
+    let new_row = svgel('g', last_row, {
       'class': 'row', transform: vtranslate(this.row_height+pad)
     });
     svgel('rect', new_row, {
       x: 0, y: 0, width: this.width, height: this.row_height
     });
     svgel('g', new_row, {
-      'class': 'cols', transform: translate(pad, pad)
+      'class': 'cols', transform: translate(-col_width, pad)
     });
     attr(this.top_left.main_rect, 'height', h => +h+this.row_height+pad);
+  }
+
+  newColumn() {
+    let prev_row = this.top_left.querySelector('.rows');
+    while (true) {
+      let curr_row = prev_row.querySelector('.row');
+      if (curr_row) {
+        let last_col = curr_row.querySelector('.cols');
+        while (true) {
+          let next_col = last_col.querySelector('.col');
+          if (next_col) last_col = next_col;
+          else break;
+        }
+
+        let new_col = svgel('g', last_col, {
+          'class': 'col', transform: htranslate(pad+col_width)
+        });
+        svgel('rect', new_col, {
+          x: 0, y: 0, width: col_width, height: this.row_height-2*pad
+        });
+        attr(curr_row.querySelector('rect'), 'width', w => +w+pad+col_width);
+
+        prev_row = curr_row;
+      } else break;
+    }
+
+    attr(this.top_left.main_rect, 'width', w => +w+pad+col_width);
   }
 }
 
@@ -229,4 +257,6 @@ grid = new CellGrid2D(svg);
 grid.newRow();
 grid.newRow();
 grid.newRow();
+grid.newColumn();
+grid.newColumn();
 grid.newRow();
