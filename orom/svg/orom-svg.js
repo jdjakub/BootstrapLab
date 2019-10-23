@@ -258,9 +258,12 @@ behaviors.background = {
 
    m.set(left_mouse_button_is_down, ({recv}, {to}) => {
      if (to === true) {
-       let pos = send({to: send({to: pointer, selector: 'position'}),
+       let pointer_pos = send({to: send({to: pointer, selector: 'position'}),
                        selector: 'poll'});
-       console.log("LMB down: ", pos);
+
+       let point = create.entity(behaviors.point);
+       let point_pos = send({to: point, selector: 'position'});
+       send({to: point_pos, selector: 'changed'}, {to: pointer_pos});
      }
     });
 
@@ -278,6 +281,44 @@ behaviors.background = {
     left_mouse_button_is_down |-> ({recv}, {to}) => {...}
   )
   */
+};
+
+//      ---***   POINT   ***---
+behaviors.point = {
+  ['created']: ({recv}) => {
+    recv.behaviors.push(behaviors.has_position);
+    behaviors.has_position['created']({recv}); // again, init the position "part" of Entity
+    // contra 'pointer' above, directly access own state even if it's from another behaviour?
+    send({from: recv, to: recv.position, selector: 'subscribe-me'});
+
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+
+    recv.circle = svgel('circle', svg, {fill: 'white', r: 8});
+    svg_userData(recv.circle, recv);
+
+    send({to: recv.position, selector: 'changed'}, {to: [0,0]});
+  },
+  ['changed']: ({sender, recv}, {to}) => {
+    if (sender === recv.position) {
+      let [cx,cy] = to;
+      attr(recv.circle, {cx, cy});
+    } else if (sender === recv.being_considered) {
+      // Same as in behaviors.background above!! Share this code somehow?
+      if (to === true) // PUSH...
+        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
+      else // ... POP!
+        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+    } else if (sender === left_mouse_button_is_down) {
+      let pointer_pos = send({to: pointer, selector: 'position'});
+      // Spoof [un]subscription message from position to pointer's position
+      // thus locking our position to follow the pointer
+      if (to === true)
+        send({from: recv.position, to: pointer_pos, selector: 'subscribe-me'});
+      else
+        send({from: recv.position, to: pointer_pos, selector: 'unsubscribe-me'});
+    }
+  },
 };
 
 pointer = create.entity(behaviors.pointer);
@@ -299,9 +340,12 @@ svg.onmouseup = e =>
   send({to: left_mouse_button_is_down, selector: 'changed'}, {to: false});
 
 // mousemove => pointer position changed
-svg.onmousemove = e =>
+svg.onmousemove = e => {
+  let r = svg.getBoundingClientRect();
+  let pos = vsub([e.clientX, e.clientY], [r.left, r.top]);
   send({to: send({to: pointer, selector: 'position'}),
-        selector: 'changed'}, {to: offset(e)});
+        selector: 'changed'}, {to: pos});
+};
 
 // mouseover => considering a new object
 svg.onmouseover = e => {
