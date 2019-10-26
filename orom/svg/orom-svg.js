@@ -143,16 +143,19 @@ behaviors.observable = {
   // If a function is specified as a new value, I treat this as a way to
   // compute the new value from the old.
   ['changed']: ({recv}, {to}) => {
+    if (recv.pending) return; // no cycles plz; FCFS only
     let old_value = recv.value();
     let new_value = to;
     if (typeof(new_value) === 'function') new_value = new_value(old_value);
     if (new_value !== old_value) {
       recv.update(new_value); // if there is a difference, update self and dependents
-      for (let s of recv.subs_copy()) {
-        // notify each dependent that I changed, but use a copy of the list, so that
-        // anyone who wishes to un-subscribe in response, can do so safely
-        send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
-      }
+      recv.pending = true;
+        for (let s of recv.subs_copy()) {
+          // notify each dependent that I changed, but use a copy of the list, so that
+          // anyone who wishes to un-subscribe in response, can do so safely
+          send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
+        }
+      recv.pending = false;
     }
   },
   ['poll']: ({recv}) => recv.value(), // returns mutable original...!
@@ -450,11 +453,9 @@ svg.onmouseout = e => {
    send({to: backg.dims, selector: 'changed'}, {to: dims});
  };
 
- window.onresize = resize;
+window.onresize = resize;
 resize()
 
-// Unfortunatrly, cannot be a true box yet, as rods must form a tree...
-// Any cycles and there'll be an infinite loop :P
 p1 = create.point([100, 100]);
 p2 = create.point([100, 300]);
 rod12 = create.rod(p1, p2);
@@ -462,15 +463,17 @@ p3 = create.point([300, 300]);
 rod23 = create.rod(p2, p3);
 p4 = create.point([300, 100]);
 rod34 = create.rod(p3, p4);
+rod41 = create.rod(p4, p1);
 boxy = () => {
   send({to: rod12.transmit_deltas, selector: 'changed'}, {to: [true,false]});
   send({to: rod23.transmit_deltas, selector: 'changed'}, {to: [false,true]});
   send({to: rod34.transmit_deltas, selector: 'changed'}, {to: [true,false]});
+  send({to: rod41.transmit_deltas, selector: 'changed'}, {to: [false,true]});
 }
-rigid = () => [rod12,rod23,rod34].forEach(r =>
+rigid = () => [rod12,rod23,rod34,rod41].forEach(r =>
     send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
   );
-flexy = () => [rod12,rod23,rod34].forEach(r =>
+flexy = () => [rod12,rod23,rod34,rod41].forEach(r =>
   send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
 );
 
