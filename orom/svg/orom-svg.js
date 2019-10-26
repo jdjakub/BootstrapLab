@@ -28,6 +28,7 @@ attr = (elem, key_or_dict, val_or_nothing) => {
 }
 
 attrs = (el, ...keys) => keys.map(k => attr(el, k));
+props = (o,  ...keys) => keys.map(k => o[k]);
 
 // e.g. rect = svgel('rect', svg, {x: 5, y: 5, width: 5, height: 5})
 svgel = (tag, parent, attrs) => {
@@ -49,6 +50,9 @@ svg_userData = (elem, obj) => state(elem, 'userData', obj);
 
 vadd = ([a, b], [c, d]) => [a+c, b+d];
 vsub = ([a, b], [c, d]) => [a-c, b-d];
+vdot = ([a, b], [c, d]) => a*c + b*d;
+vquad = v => vdot(v,v);
+vlen = v => Math.sqrt(vquad(v));
 
 xy = t => attrs(t, 'x', 'y').map(v => +v);
 
@@ -138,10 +142,9 @@ behaviors.observable = {
   // I can be told that I changed to a new value, optionally including the old.
   // If a function is specified as a new value, I treat this as a way to
   // compute the new value from the old.
-  ['changed']: ({recv}, {from, to}) => {
-    let old_value = from;
+  ['changed']: ({recv}, {to}) => {
+    let old_value = recv.value();
     let new_value = to;
-    if (old_value === undefined) old_value = recv.value(); // default to stored value
     if (typeof(new_value) === 'function') new_value = new_value(old_value);
     if (new_value !== old_value) {
       recv.update(new_value); // if there is a difference, update self and dependents
@@ -156,9 +159,11 @@ behaviors.observable = {
   // Feels like setting and un-setting an "is-subscribed" observable...
   ['subscribe-me']: ({sender, recv}) => {
     recv.add(sender);
+    return recv;
   },
   ['unsubscribe-me']: ({sender, recv}) => {
     recv.remove(sender);
+    return recv;
   },
 };
 
@@ -261,9 +266,7 @@ behaviors.background = {
        let pointer_pos = send({to: send({to: pointer, selector: 'position'}),
                        selector: 'poll'});
 
-       let point = create.entity(behaviors.point);
-       let point_pos = send({to: point, selector: 'position'});
-       send({to: point_pos, selector: 'changed'}, {to: pointer_pos});
+       let point = create.point(pointer_pos);
      }
     });
 
@@ -320,6 +323,76 @@ behaviors.point = {
     }
   },
 };
+
+create.point = (pos) => {
+  let p = create.entity(behaviors.point);
+  if (pos !== undefined) {
+    send({to: p.position, selector: 'changed'}, {to: pos});
+  }
+  return p;
+}
+
+//      ---***   ROD   ***---
+behaviors.rod = {
+  ['created']: ({recv}, {p1, p2}) => {
+    recv.p1 = p1; recv.p2 = p2;
+    send({from: recv, to: p1, selector: 'subscribe-me'});
+    send({from: recv, to: p2, selector: 'subscribe-me'});
+
+    recv.other = undefined;
+
+    recv.length = create.observable();
+
+    recv.transmit_deltas = create.observable();
+    send({to: recv.transmit_deltas, selector: 'changed'}, {to: [false,false]});
+
+    recv.line = svgel('line', svg);
+    svg_userData(recv.line, recv);
+  },
+  ['length']: ({recv}) => recv.length,
+  ['transmit-deltas']: ({recv}) => recv.transmit_deltas,
+  ['changed']: ({sender, recv}, {from, to}) => {
+    let update_my_length = () => {
+      let p1 = send({to: recv.p1, selector: 'poll'});
+      let p2 = send({to: recv.p2, selector: 'poll'});
+      let new_length = vlen(vsub(p1, p2));
+      send({to: recv.length, selector: 'changed'}, {to: new_length});
+      let [x1,y1] = p1;
+      let [x2,y2] = p2;
+      attr(recv.line, {x1, y1, x2, y2});
+    };
+
+    // If we caused the change, don't propagate it in a cycle
+    if (sender === recv.other) update_my_length();
+    else if (sender === recv.p1 || sender === recv.p2) {
+      // If this change came from the outside, propagate as necessary
+      recv.other = sender === recv.p1 ? recv.p2 : recv.p1;
+
+        let transmit_deltas = send({to: recv.transmit_deltas, selector: 'poll'});
+        let [dx,dy] = vsub(to, from);
+        let delta_for_other = [dx,dy];
+        if (!transmit_deltas[0] || dx === 0) delta_for_other[0] = 0;
+        if (!transmit_deltas[1] || dy === 0) delta_for_other[1] = 0;
+        if (delta_for_other[0] !== 0 || delta_for_other[1] !== 0) {
+          send({to: recv.other, selector: 'changed'}, {
+            to: p => vadd(p, delta_for_other)
+          });
+        } else update_my_length();
+
+      recv.other = undefined;
+    }
+  }
+};
+
+create.rod = (p1, p2) => {
+  let rod = {
+    behaviors: [{}, behaviors.rod]
+  }
+  p1 = send({to: p1, selector: 'position'});
+  p2 = send({to: p2, selector: 'position'});
+  send({to: rod, selector: 'created'}, {p1, p2});
+  return rod;
+}
 
 pointer = create.entity(behaviors.pointer);
 
@@ -379,3 +452,26 @@ svg.onmouseout = e => {
 
  window.onresize = resize;
 resize()
+
+// Unfortunatrly, cannot be a true box yet, as rods must form a tree...
+// Any cycles and there'll be an infinite loop :P
+p1 = create.point([100, 100]);
+p2 = create.point([100, 300]);
+rod12 = create.rod(p1, p2);
+p3 = create.point([300, 300]);
+rod23 = create.rod(p2, p3);
+p4 = create.point([300, 100]);
+rod34 = create.rod(p3, p4);
+boxy = () => {
+  send({to: rod12.transmit_deltas, selector: 'changed'}, {to: [true,false]});
+  send({to: rod23.transmit_deltas, selector: 'changed'}, {to: [false,true]});
+  send({to: rod34.transmit_deltas, selector: 'changed'}, {to: [true,false]});
+}
+rigid = () => [rod12,rod23,rod34].forEach(r =>
+    send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
+  );
+flexy = () => [rod12,rod23,rod34].forEach(r =>
+  send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+);
+
+boxy();
