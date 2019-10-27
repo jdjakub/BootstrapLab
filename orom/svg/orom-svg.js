@@ -82,7 +82,11 @@ send = ({ from, to, selector }, context) => {
   return next_code_path({ sender: from, recv: to, selector }, context || {});
 };
 
-defaults = { behavior: {} };
+defaults = {
+  behavior: {
+    ['clear-pending']: () => undefined,
+  }
+};
 
 defaults.dyn_double_dispatch = ({ sender, recv, selector }, context) => {
   let behaviors = recv.behaviors.concat([ defaults.behavior ]); // have at least default behaviour
@@ -139,23 +143,41 @@ behaviors.observable = {
     recv.add    = sub => recv._subs.add(sub);
     recv.remove = sub => recv._subs.delete(sub);
   },
-  // I can be told that I changed to a new value, optionally including the old.
-  // If a function is specified as a new value, I treat this as a way to
-  // compute the new value from the old.
-  ['changed']: ({recv}, {to}) => {
-    if (recv.pending) return; // no cycles plz; FCFS only
+  /* I can be told that I changed to a new value, optionally including the old.
+   * If a function is specified as a new value, I treat this as a way to
+   * compute the new value from the old.
+   * only_once means: mark each observable in the subscription graph, so each
+   * one only sees the effects of this change once.
+   * post_clear means: after I, the "first cause", spread this change throughout
+   * the subscription graph, spread a message that un-marks the nodes, making
+   * them ready for changes once again. Only makes sense with only_once as
+   * well, but post_clear must ONLY be active on the very first change.
+   * If it's propagated, then nodes are unmarked as soon as they've been
+   * visited, leaving them vulnerable to duplicate messages and defeating the
+   * purpose of marking them in the first place.
+   */
+  ['changed']: ({recv}, {only_once, post_clear, to}) => {
+    if (recv.pending) return; // if marked, ignore further changes. FCFS basis.
     let old_value = recv.value();
     let new_value = to;
     if (typeof(new_value) === 'function') new_value = new_value(old_value);
     if (new_value !== old_value) {
       recv.update(new_value); // if there is a difference, update self and dependents
-      recv.pending = true;
-        for (let s of recv.subs_copy()) {
-          // notify each dependent that I changed, but use a copy of the list, so that
-          // anyone who wishes to un-subscribe in response, can do so safely
-          send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value});
-        }
-      recv.pending = false;
+      if (only_once) recv.pending = true;
+      for (let s of recv.subs_copy()) {
+        // notify each dependent that I changed, but use a copy of the list, so that
+        // anyone who wishes to un-subscribe in response, can do so safely
+        send({from: recv, to: s, selector: 'changed'}, {from: old_value, to: new_value, only_once}); // propagate only_once but NOT post_clear
+      }
+      // begin propagation of un-marking by sending message to self
+      if (post_clear) send({to: recv, selector: 'clear-pending'});
+    }
+  },
+  ['clear-pending']: ({recv}) => {
+    if (!recv.pending) return;
+    recv.pending = false;
+    for (let s of recv.subs_copy()) {
+      send({from: recv, to: s, selector: 'clear-pending'});
     }
   },
   ['poll']: ({recv}) => recv.value(), // returns mutable original...!
@@ -169,6 +191,11 @@ behaviors.observable = {
     return recv;
   },
 };
+
+root_change = (obs, new_value) => send(
+  {to: obs, selector: 'changed'},
+  {to: new_value, only_once: true, post_clear: true}
+);
 
 create.observable = () => create.entity(behaviors.observable);
 
@@ -354,7 +381,7 @@ behaviors.rod = {
   },
   ['length']: ({recv}) => recv.length,
   ['transmit-deltas']: ({recv}) => recv.transmit_deltas,
-  ['changed']: ({sender, recv}, {from, to}) => {
+  ['changed']: ({sender, recv}, {from, to, only_once}) => {
     let update_my_length = () => {
       let p1 = send({to: recv.p1, selector: 'poll'});
       let p2 = send({to: recv.p2, selector: 'poll'});
@@ -371,20 +398,33 @@ behaviors.rod = {
       // If this change came from the outside, propagate as necessary
       recv.other = sender === recv.p1 ? recv.p2 : recv.p1;
 
-        let transmit_deltas = send({to: recv.transmit_deltas, selector: 'poll'});
-        let [dx,dy] = vsub(to, from);
-        let delta_for_other = [dx,dy];
-        if (!transmit_deltas[0] || dx === 0) delta_for_other[0] = 0;
-        if (!transmit_deltas[1] || dy === 0) delta_for_other[1] = 0;
-        if (delta_for_other[0] !== 0 || delta_for_other[1] !== 0) {
-          send({to: recv.other, selector: 'changed'}, {
-            to: p => vadd(p, delta_for_other)
-          });
-        } else update_my_length();
-
-      recv.other = undefined;
+      let transmit_deltas = send({to: recv.transmit_deltas, selector: 'poll'});
+      let [dx,dy] = vsub(to, from);
+      let delta_for_other = [dx,dy];
+      if (!transmit_deltas[0] || dx === 0) delta_for_other[0] = 0;
+      if (!transmit_deltas[1] || dy === 0) delta_for_other[1] = 0;
+      if (delta_for_other[0] !== 0 || delta_for_other[1] !== 0) {
+        send({to: recv.other, selector: 'changed'}, {
+          to: p => vadd(p, delta_for_other), only_once
+        });
+      } else update_my_length();
     }
-  }
+  },
+  ['clear-pending']: ({recv}) => {
+    /* NB: recv.other functions like "pending" in Observable above
+     * ... the Rod is not an Observable itself, but a maintainer of a relation
+     * between Observables. Thus it needs to know about changes in any of its
+     * Observables, but unlike a mere dependent, such as an SVG shape, it must
+     * react to these changes by causing further changes in the rest of its
+     * Observables. Because the purpose of clear-pending is to be forwarded down
+     * the path of causality, the Rod must also forward it according to which
+     * of its Observables caused changes in which others.
+     */
+    if (recv.other === undefined) return;
+    recv.other = undefined;
+    send({to: recv.p1, selector: 'clear-pending'});
+    send({to: recv.p2, selector: 'clear-pending'});
+  },
 };
 
 create.rod = (p1, p2) => {
@@ -410,33 +450,30 @@ left_mouse_button_is_down = create.observable();
 
 // Forget about coords; they are not part of the left button, or the keyboard, or the power button...
 svg.onmousedown = e =>
-  send({to: left_mouse_button_is_down, selector: 'changed'}, {to: true});
+  root_change(left_mouse_button_is_down, true);
 
 svg.onmouseup = e =>
-  send({to: left_mouse_button_is_down, selector: 'changed'}, {to: false});
+  root_change(left_mouse_button_is_down, false);
 
 // mousemove => pointer position changed
 svg.onmousemove = e => {
   let r = svg.getBoundingClientRect();
   let pos = vsub([e.clientX, e.clientY], [r.left, r.top]);
-  send({to: send({to: pointer, selector: 'position'}),
-        selector: 'changed'}, {to: pos});
+  root_change(send({to: pointer, selector: 'position'}), pos);
 };
 
 // mouseover => considering a new object
 svg.onmouseover = e => {
   let obj = svg_userData(e.target);
   if (obj !== undefined)
-    send({ to: send({to: pointer, selector: 'is-considering'}),
-           selector: 'changed' }, { to: obj });
+    root_change(send({to: pointer, selector: 'is-considering'}), obj);
 };
 
 // mouseout => no longer considering the object
 svg.onmouseout = e => {
   let obj = svg_userData(e.target);
   if (obj !== undefined)
-    send({ to: send({to: pointer, selector: 'is-considering'}),
-       selector: 'changed' }, { to: undefined });
+    root_change(send({to: pointer, selector: 'is-considering'}), undefined);
 };
 
 /*   ^
@@ -456,25 +493,32 @@ svg.onmouseout = e => {
 window.onresize = resize;
 resize()
 
-p1 = create.point([100, 100]);
-p2 = create.point([100, 300]);
-rod12 = create.rod(p1, p2);
-p3 = create.point([300, 300]);
-rod23 = create.rod(p2, p3);
-p4 = create.point([300, 100]);
-rod34 = create.rod(p3, p4);
-rod41 = create.rod(p4, p1);
-boxy = () => {
-  send({to: rod12.transmit_deltas, selector: 'changed'}, {to: [true,false]});
-  send({to: rod23.transmit_deltas, selector: 'changed'}, {to: [false,true]});
-  send({to: rod34.transmit_deltas, selector: 'changed'}, {to: [true,false]});
-  send({to: rod41.transmit_deltas, selector: 'changed'}, {to: [false,true]});
-}
-rigid = () => [rod12,rod23,rod34,rod41].forEach(r =>
-    send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
-  );
-flexy = () => [rod12,rod23,rod34,rod41].forEach(r =>
+p1 = create.point([400, 200]);
+p2 = create.point([400, 400]);
+p3 = create.point([600, 400]);
+p4 = create.point([600, 200]);
+
+points = [p1,p2,p3,p4];
+
+rods = [
+  [p1,p2],[p2,p3],[p3,p4],[p4,p1],
+];
+
+rods = rods.map(([a,b]) => create.rod(a,b));
+
+flexy = () => rods.forEach(r =>
   send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
 );
 
-boxy();
+rigid = () => rods.forEach(r =>
+  send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
+);
+
+boxy = () => {
+  props(rods, 0,2).forEach(r =>
+    send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,false]})
+  );
+  props(rods, 1,3).forEach(r =>
+    send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,true]})
+  );
+};
