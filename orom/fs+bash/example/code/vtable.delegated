@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recv=$1
+dest=$2
+
+mkdir $dest
+
+if [[ $recv == "/dev/null" ]]; then
+  vtable=/dev/null
+else
+  vtable=$(readlink -n $recv/vtable)  # dest.vtable := recv.vtable
+fi
+
+parent=$recv # dest delegates to receiver
+
+
+ln -s $vtable $dest/vtable
+ln -s $parent $dest/parent

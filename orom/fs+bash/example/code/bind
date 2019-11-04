@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recv=$1
+selector=$2
+
+if [[ $selector == "lookup" ]] && [[ ${recv##*/} == "vtable-vt" ]]; then
+  ./vtable.lookup $recv $selector
+else
+  ./send $recv/vtable lookup $selector
+fi

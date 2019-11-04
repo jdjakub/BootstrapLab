@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recv=$1
+selector=$2
+impl=$3
+
+mkdir -p $recv/methods
+ln -nsf $impl $recv/methods/$selector

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+master_dir=$(pwd)
+dest=$1
+
+cp -R ./code $dest
+cd $dest/code
+
+# Create vtable-vt
+./vtable.delegated /dev/null ../vtable-vt   # Create empty vtable
+echo "vtable vtable" > ../vtable-vt/name    # Give it a name
+ln -nsf ../vtable-vt ../vtable-vt/vtable     # Loop it back to itself as its vtable
+
+# Create object-vt
+./vtable.delegated ../vtable-vt ../object-vt  # Create with correct vtable ptr
+echo "object vtable" > ../object-vt/name       # Give it a name
+
+ln -nsf /dev/null    ../object-vt/parent  # object-vt should be end of parent chain
+ln -nsf ../object-vt ../vtable-vt/parent  # and should be parent of vtable-vt
+
+./vtable.addMethod ../vtable-vt addMethod ./vtable.addMethod  # add 'addMethod'
+./vtable.addMethod ../vtable-vt lookup    ./vtable.lookup     # add 'lookup'
+
+# Ready to send...
+./send ../vtable-vt addMethod allocate  ./vtable.allocate   # add 'allocate'
+./send ../vtable-vt addMethod delegated ./vtable.delegated  # add 'delegated'

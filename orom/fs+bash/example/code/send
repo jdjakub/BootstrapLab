@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recv=$1
+if [[ -h $recv ]]; then
+  recv=$(readlink -n $recv)
+fi
+
+selector=$2
+
+shift
+shift
+
+path_to_impl=$(./bind $recv $selector)
+$path_to_impl $recv "$@"

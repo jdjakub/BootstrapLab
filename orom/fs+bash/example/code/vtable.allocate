@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recv=$1
+dest=$2
+
+mkdir $dest
+ln -s $recv $dest/vtable

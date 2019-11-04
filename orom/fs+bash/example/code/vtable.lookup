@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+recv=$1
+selector=$2
+
+readlink -n $recv/methods/$selector
