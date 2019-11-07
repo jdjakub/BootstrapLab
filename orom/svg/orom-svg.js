@@ -30,12 +30,14 @@ attr = (elem, key_or_dict, val_or_nothing) => {
 attrs = (el, ...keys) => keys.map(k => attr(el, k));
 props = (o,  ...keys) => keys.map(k => o[k]);
 
-// e.g. rect = svgel('rect', svg, {x: 5, y: 5, width: 5, height: 5})
-svgel = (tag, parent, attrs) => {
+svg_parent = body; // Default parent for new SVG elements
+
+// e.g. rect = svgel('rect', {x: 5, y: 5, width: 5, height: 5}, svg)
+svgel = (tag, attrs, parent) => {
   let elem = document.createElementNS("http://www.w3.org/2000/svg", tag);
   if (attrs !== undefined) attr(elem, attrs);
-  if (parent !== undefined)
-    parent.appendChild(elem);
+  if (parent === undefined) parent = svg_parent;
+  parent.appendChild(elem);
   return elem;
 };
 
@@ -73,7 +75,6 @@ final = xs => xs[xs.length-1];
 
 htranslate = x => `translate(${x}, 0)`;
 vtranslate = y => `translate(0, ${y})`;
-translate = (x,y) => `translate(${x},${y})`;
 
 send = ({ from, to, selector }, context) => {
   // Allow objects to receive messages however they wish
@@ -228,6 +229,8 @@ list_to_attrs = (...keys) => (list) => {
   return dict;
 };
 
+transform_translate = ([x,y]) => ({transform: `translate(${x},${y})`});
+
 //      ---***   HAS-POSITION   ***---
 behaviors.has_position = {
   ['created']: ({recv}) => {
@@ -290,7 +293,7 @@ behaviors.pointer = {
 //      ---***   BACKGROUND   ***---
 behaviors.background = {
   ['created']: ({recv}) => {
-   recv.rect = svgel('rect', svg, {x: 0, y: 0, fill: 'black'});
+   recv.rect = svgel('rect', {x: 0, y: 0, fill: 'black'}, svg);
    svg_userData(recv.rect, recv);
 
    recv.dims = create.observable();
@@ -325,6 +328,7 @@ behaviors.background = {
        let pointer_pos = send({to: send({to: pointer, selector: 'position'}),
                        selector: 'poll'});
 
+       svg_parent = svg;
        let rect = create.rect();
        root_change(rect.top_left.position, pointer_pos);
        send({from: rect.bot_right.position, to: pointer.position, selector: 'subscribe-me'})
@@ -348,6 +352,14 @@ behaviors.background = {
 };
 
 //      ---***   POINT   ***---
+/*
+ * Currently a bit dishonest; would be better to call it Circle and expose
+ * radius. My current philosophy is that extended bodies DO NOT have a well
+ * defined "position"; it is a LIE to pick some arbitrary point on the body
+ * (e.g. Top Left, Centre) and call this its "position", by fiat.
+ * TODO: be HONEST about how I'm using the circle: circle.center
+ * instead of circle.position.
+*/
 behaviors.point = {
   ['created']: ({recv}) => {
     recv.behaviors.push(behaviors.has_position);
@@ -356,7 +368,7 @@ behaviors.point = {
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
 
-    let circle = svgel('circle', svg, {fill: 'white', r: 8});
+    let circle = svgel('circle', {fill: 'white', r: 4});
     svg_userData(circle, recv);
     recv.svg = {
       circle: circle,
@@ -408,7 +420,7 @@ behaviors.rod = {
     recv.transmit_deltas = create.observable();
     send({to: recv.transmit_deltas, selector: 'changed'}, {to: [false,false]});
 
-    recv.line = svgel('line', svg);
+    recv.line = svgel('line');
     svg_userData(recv.line, recv);
   },
   ['length']: ({recv}) => recv.length,
@@ -471,36 +483,46 @@ create.rod = (p1, p2) => {
 
 
 //      ---***   RECT   ***---
+/*
+ * Currently functioning as a fusion of "rectangle controls", SVG rect
+ * proxy and box-dict (<g> group etc.) TODO: separate these three out.
+*/
 behaviors.rect = {
   ['created']: ({recv}) => {
-    let handle = create.point([0,0]); // so it appears behind and doesn't get LMB
-
-    let rect = svgel('rect', svg, {fill: 'grey'});
-    svg_userData(rect, recv);
-    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-
     recv.svg = {
-      rect: rect,
-      width:    create.sink_to_dom_attrs(rect, 'width'),
-      height:   create.sink_to_dom_attrs(rect, 'height'),
-      top_left: create.sink_to_dom_attrs(rect, ['x', 'y'])
+      group: svgel('g')
     };
 
     let tl = create.point([-1, -1]);
     let bl = create.point([-1, +1]);
     let br = create.point([+1, +1]);
     let tr = create.point([+1, -1]);
+    let handle = create.point([0,0]); // so it appears behind and doesn't get LMB
+    attr(handle.svg.circle, 'visibility', 'hidden');
 
-    send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
-
-    recv.points = [tl,bl,br,tr];
+    recv.points = [tl,bl,br,tr,handle];
 
     let rods = [
       [tl,bl],[bl,br],[br,tr],[tr,tl],[handle,tl]
     ];
 
     recv.rods = rods.map(([a,b]) => create.rod(a,b));
+
+    recv.svg.top_left = create.sink_to_dom_attrs(recv.svg.group, transform_translate);
+    send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
+
+    svg_parent = recv.svg.group;
+
+    let rect = svgel('rect', {fill: 'grey'});
+    svg_userData(rect, recv);
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+
+    Object.assign(recv.svg, {
+      rect: rect,
+      width:    create.sink_to_dom_attrs(rect, 'width'),
+      height:   create.sink_to_dom_attrs(rect, 'height'),
+    });
 
     send({from: recv.svg.width,  to: recv.rods[1].length, selector: 'subscribe-me'});
     send({from: recv.svg.height, to: recv.rods[0].length, selector: 'subscribe-me'});
@@ -559,8 +581,9 @@ pointer = create.entity(behaviors.pointer);
  *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT, POSITIONAL INPUT ***
  */
 
- svg = svgel('svg', body);
- svg.style.border = '2px dashed red';
+svg = svgel('svg');
+svg.style.border = '2px dashed red';
+svg_parent = svg;
 
 left_mouse_button_is_down = create.observable();
 
