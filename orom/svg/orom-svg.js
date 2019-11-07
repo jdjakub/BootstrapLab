@@ -352,22 +352,23 @@ behaviors.point = {
   ['created']: ({recv}) => {
     recv.behaviors.push(behaviors.has_position);
     behaviors.has_position['created']({recv}); // again, init the position "part" of Entity
-    // contra 'pointer' above, directly access own state even if it's from another behaviour?
-    send({from: recv, to: recv.position, selector: 'subscribe-me'});
 
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
 
-    recv.circle = svgel('circle', svg, {fill: 'white', r: 8});
-    svg_userData(recv.circle, recv);
+    let circle = svgel('circle', svg, {fill: 'white', r: 8});
+    svg_userData(circle, recv);
+    recv.svg = {
+      circle: circle,
+      center: create.sink_to_dom_attrs(circle, ['cx','cy']),
+    };
+    // contra 'pointer' above, directly access own state even if it's from another behaviour?
+    send({from: recv.svg.center, to: recv.position, selector: 'subscribe-me'});
 
     send({to: recv.position, selector: 'changed'}, {to: [0,0]});
   },
   ['changed']: ({sender, recv}, {to}) => {
-    if (sender === recv.position) {
-      let [cx,cy] = to;
-      attr(recv.circle, {cx, cy});
-    } else if (sender === recv.being_considered) {
+    if (sender === recv.being_considered) {
       // Same as in behaviors.background above!! Share this code somehow?
       if (to === true) // PUSH...
         send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
@@ -472,6 +473,8 @@ create.rod = (p1, p2) => {
 //      ---***   RECT   ***---
 behaviors.rect = {
   ['created']: ({recv}) => {
+    let handle = create.point([0,0]); // so it appears behind and doesn't get LMB
+
     let rect = svgel('rect', svg, {fill: 'grey'});
     svg_userData(rect, recv);
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
@@ -479,8 +482,8 @@ behaviors.rect = {
 
     recv.svg = {
       rect: rect,
-      width: create.sink_to_dom_attrs(rect, 'width'),
-      height: create.sink_to_dom_attrs(rect, 'height'),
+      width:    create.sink_to_dom_attrs(rect, 'width'),
+      height:   create.sink_to_dom_attrs(rect, 'height'),
       top_left: create.sink_to_dom_attrs(rect, ['x', 'y'])
     };
 
@@ -488,7 +491,6 @@ behaviors.rect = {
     let bl = create.point([-1, +1]);
     let br = create.point([+1, +1]);
     let tr = create.point([+1, -1]);
-    let handle = create.point([0,0]);
 
     send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
 
@@ -538,23 +540,11 @@ behaviors.rect = {
         send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
     } else if (sender === left_mouse_button_is_down) {
       let pointer_pos = send({to: pointer, selector: 'position'});
-      if (to === true) {
+      if (to === true) { // Had to push handle point behind rect to make this work...
         root_change(recv.handle.position, send({to: pointer_pos, selector: 'poll'}));
         send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
         send({to: recv.mode, selector: 'changed'}, {to: 'rigid'});
       } else {
-        console.log("unsubbing rect"); // argh - never gets printed
-        // because LMB down on rect => position handle point under pointer => on
-        // LMB up, point (circle) sees event and unsubs; rect never sees LMB up
-        // PROBLEM: circle over rect BLOCKS LMB events, even though they still
-        // happen while the pointer is "over" the rect
-        // "considering" currently = topmost.
-        // What we really mean, though, is "considering" = multiple things
-        // at the same time...? No we don't! THe whole point was to be
-        // considering only ONE thing ...
-        // by this definition, the rect isn't concerned with THAT, rather it
-        // is concerned with LMB state while pointer is *inside* its area...
-        // slightly different
         send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
         send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
       }
