@@ -199,6 +199,35 @@ root_change = (obs, new_value) => send(
 
 create.observable = () => create.entity(behaviors.observable);
 
+// e.g. sink_to_dom_attrs(svg_rect, 'width') transmits changes to its width
+// e.g. sink_to_dom_attrs(svg_circle, ['cx', 'cy'])
+create.sink_to_dom_attrs = (node, attr_or_func) => {
+  return {
+    receive: ({recv,selector},{to}) => {
+      if (selector === 'changed')
+        if (typeof attr_or_func === 'string') {
+          let attr_name = attr_or_func;
+          attr(node, attr_name, to);
+        } else if (typeof attr_or_func === 'function') {
+          let value_to_attr_dict = attr_or_func;
+          let attr_dict = value_to_attr_dict(to);
+          attr(node, attr_dict);
+        } else { // assume list
+          let attr_names = attr_or_func;
+          let attr_dict = list_to_attrs(...attr_names)(to);
+          attr(node, attr_dict);
+        }
+    }
+  }
+};
+
+// e.g. list_to_attrs('cx', 'cy')([10,20]) = {cx: 10, cy: 20}
+list_to_attrs = (...keys) => (list) => {
+  let dict = {};
+  list.forEach((v, i) => dict[keys[i]] = v);
+  return dict;
+};
+
 //      ---***   HAS-POSITION   ***---
 behaviors.has_position = {
   ['created']: ({recv}) => {
@@ -443,10 +472,21 @@ create.rod = (p1, p2) => {
 //      ---***   RECT   ***---
 behaviors.rect = {
   ['created']: ({recv}) => {
+    let rect = svgel('rect', svg, {fill: 'grey'});
+    svg_userData(rect, recv);
+    recv.svg = {
+      rect: rect,
+      width: create.sink_to_dom_attrs(rect, 'width'),
+      height: create.sink_to_dom_attrs(rect, 'height'),
+      top_left: create.sink_to_dom_attrs(rect, ['x', 'y'])
+    };
+
     let tl = create.point([-1, -1]);
     let bl = create.point([-1, +1]);
     let br = create.point([+1, +1]);
     let tr = create.point([+1, -1]);
+
+    send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
 
     recv.points = [tl,bl,br,tr];
 
@@ -455,6 +495,9 @@ behaviors.rect = {
     ];
 
     recv.rods = rods.map(([a,b]) => create.rod(a,b));
+
+    send({from: recv.svg.width,  to: recv.rods[1].length, selector: 'subscribe-me'});
+    send({from: recv.svg.height, to: recv.rods[0].length, selector: 'subscribe-me'});
 
     recv.mode = create.observable();
     send({from: recv, to: recv.mode, selector: 'subscribe-me'});
