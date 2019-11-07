@@ -296,7 +296,9 @@ behaviors.background = {
        let pointer_pos = send({to: send({to: pointer, selector: 'position'}),
                        selector: 'poll'});
 
-       let point = create.point(pointer_pos);
+       let rect = create.rect();
+       root_change(rect.top_left.position, pointer_pos);
+       send({from: rect.bot_right.position, to: pointer.position, selector: 'subscribe-me'})
      }
     });
 
@@ -536,8 +538,3 @@ svg.onmouseout = e => {
 
 window.onresize = resize;
 resize()
-
-rect = create.rect();
-
-root_change(rect.top_left.position, [200, 200]);
-root_change(rect.bot_right.position, [400, 400]);
