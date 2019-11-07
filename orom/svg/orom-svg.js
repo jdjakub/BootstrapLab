@@ -437,6 +437,50 @@ create.rod = (p1, p2) => {
   return rod;
 }
 
+
+//      ---***   RECT   ***---
+behaviors.rect = {
+  ['created']: ({recv}) => {
+    let tl = create.point([-1, -1]);
+    let bl = create.point([-1, +1]);
+    let br = create.point([+1, +1]);
+    let tr = create.point([+1, -1]);
+
+    recv.points = [tl,bl,br,tr];
+
+    let rods = [
+      [tl,bl],[bl,br],[br,tr],[tr,tl],
+    ];
+
+    recv.rods = rods.map(([a,b]) => create.rod(a,b));
+
+    recv.mode = create.observable();
+    send({from: recv, to: recv.mode, selector: 'subscribe-me'});
+
+    send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
+
+    recv.top_left = tl;
+    recv.bot_left = bl;
+    recv.bot_right = br;
+    recv.top_right = tr;
+  },
+  ['changed']: ({sender, recv}, {from, to}) => {
+    if (sender === recv.mode) {
+      if (to === 'boxy') {
+        props(recv.rods, 0,2).forEach(r => // verticals transmit hor changes
+          send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,false]})
+        );
+        props(recv.rods, 1,3).forEach(r => // horizontals transmit ver changes
+          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,true]})
+        );
+      } else if (to === 'rigid') recv.rods.forEach(r =>
+          send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
+        );
+    }
+  }
+};
+create.rect = () => create.entity(behaviors.rect);
+
 pointer = create.entity(behaviors.pointer);
 
 /*
@@ -493,32 +537,7 @@ svg.onmouseout = e => {
 window.onresize = resize;
 resize()
 
-p1 = create.point([400, 200]);
-p2 = create.point([400, 400]);
-p3 = create.point([600, 400]);
-p4 = create.point([600, 200]);
+rect = create.rect();
 
-points = [p1,p2,p3,p4];
-
-rods = [
-  [p1,p2],[p2,p3],[p3,p4],[p4,p1],
-];
-
-rods = rods.map(([a,b]) => create.rod(a,b));
-
-flexy = () => rods.forEach(r =>
-  send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
-);
-
-rigid = () => rods.forEach(r =>
-  send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
-);
-
-boxy = () => {
-  props(rods, 0,2).forEach(r =>
-    send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,false]})
-  );
-  props(rods, 1,3).forEach(r =>
-    send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,true]})
-  );
-};
+root_change(rect.top_left.position, [200, 200]);
+root_change(rect.bot_right.position, [400, 400]);
