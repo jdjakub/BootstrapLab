@@ -474,6 +474,9 @@ behaviors.rect = {
   ['created']: ({recv}) => {
     let rect = svgel('rect', svg, {fill: 'grey'});
     svg_userData(rect, recv);
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+
     recv.svg = {
       rect: rect,
       width: create.sink_to_dom_attrs(rect, 'width'),
@@ -485,13 +488,14 @@ behaviors.rect = {
     let bl = create.point([-1, +1]);
     let br = create.point([+1, +1]);
     let tr = create.point([+1, -1]);
+    let handle = create.point([0,0]);
 
     send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
 
     recv.points = [tl,bl,br,tr];
 
     let rods = [
-      [tl,bl],[bl,br],[br,tr],[tr,tl],
+      [tl,bl],[bl,br],[br,tr],[tr,tl],[handle,tl]
     ];
 
     recv.rods = rods.map(([a,b]) => create.rod(a,b));
@@ -508,6 +512,7 @@ behaviors.rect = {
     recv.bot_left = bl;
     recv.bot_right = br;
     recv.top_right = tr;
+    recv.handle = handle;
   },
   ['changed']: ({sender, recv}, {from, to}) => {
     if (sender === recv.mode) {
@@ -518,9 +523,41 @@ behaviors.rect = {
         props(recv.rods, 1,3).forEach(r => // horizontals transmit ver changes
           send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,true]})
         );
-      } else if (to === 'rigid') recv.rods.forEach(r =>
+        // Handle-rod is free to jump to the next click within the rect
+        send({to: recv.rods[4].transmit_deltas, selector: 'changed'}, {to: [false,false]});
+      } else if (to === 'rigid') {
+        recv.rods.forEach(r =>
           send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
         );
+      }
+    } else if (sender === recv.being_considered) {
+      // Same as in behaviors.{background,point} above!! Share this code somehow?
+      if (to === true) // PUSH...
+        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
+      else // ... POP!
+        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+    } else if (sender === left_mouse_button_is_down) {
+      let pointer_pos = send({to: pointer, selector: 'position'});
+      if (to === true) {
+        root_change(recv.handle.position, send({to: pointer_pos, selector: 'poll'}));
+        send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
+        send({to: recv.mode, selector: 'changed'}, {to: 'rigid'});
+      } else {
+        console.log("unsubbing rect"); // argh - never gets printed
+        // because LMB down on rect => position handle point under pointer => on
+        // LMB up, point (circle) sees event and unsubs; rect never sees LMB up
+        // PROBLEM: circle over rect BLOCKS LMB events, even though they still
+        // happen while the pointer is "over" the rect
+        // "considering" currently = topmost.
+        // What we really mean, though, is "considering" = multiple things
+        // at the same time...? No we don't! THe whole point was to be
+        // considering only ONE thing ...
+        // by this definition, the rect isn't concerned with THAT, rather it
+        // is concerned with LMB state while pointer is *inside* its area...
+        // slightly different
+        send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
+        send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
+      }
     }
   }
 };
