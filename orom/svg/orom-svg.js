@@ -53,6 +53,7 @@ svg_userData = (elem, obj) => state(elem, 'userData', obj);
 vadd = ([a, b], [c, d]) => [a+c, b+d];
 vsub = ([a, b], [c, d]) => [a-c, b-d];
 vdot = ([a, b], [c, d]) => a*c + b*d;
+vmul = (k, [a,b]) => [k*a, k*b];
 vquad = v => vdot(v,v);
 vlen = v => Math.sqrt(vquad(v));
 
@@ -331,7 +332,7 @@ behaviors.background = {
        svg_parent = svg;
        let rect = create.rect();
        root_change(rect.top_left.position, pointer_pos);
-       send({from: rect.bot_right.position, to: pointer.position, selector: 'subscribe-me'})
+       send({from: rect.bot_right.position, to: pointer.position, selector: 'subscribe-me'});
      }
     });
 
@@ -416,28 +417,38 @@ behaviors.rod = {
     recv.other = undefined;
 
     recv.length = create.observable();
+    recv.p1_from_p2 = create.observable();
+    recv.p2_from_p1 = create.observable();
 
     recv.transmit_deltas = create.observable();
     send({to: recv.transmit_deltas, selector: 'changed'}, {to: [false,false]});
 
-    recv.line = svgel('line');
-    svg_userData(recv.line, recv);
+    let line = svgel('line');
+    svg_userData(line, recv);
+    recv.svg = {
+      line: line,
+      p1: create.sink_to_dom_attrs(line, ['x1', 'y1']),
+      p2: create.sink_to_dom_attrs(line, ['x2', 'y2']),
+    };
+    send({from: recv.svg.p1, to: p1, selector: 'subscribe-me'});
+    send({from: recv.svg.p2, to: p2, selector: 'subscribe-me'});
+
+    recv.update_my_length_etc = () => {
+      let p1 = send({to: recv.p1, selector: 'poll'});
+      let p2 = send({to: recv.p2, selector: 'poll'});
+      let p2_from_p1 = vsub(p2, p1);
+      send({to: recv.p2_from_p1, selector: 'changed'}, {to: p2_from_p1});
+      send({to: recv.p1_from_p2, selector: 'changed'}, {to: vmul(-1, p2_from_p1)});
+      send({to: recv.length, selector: 'changed'}, {to: vlen(p2_from_p1)});
+    };
+
+    recv.update_my_length_etc();
   },
   ['length']: ({recv}) => recv.length,
   ['transmit-deltas']: ({recv}) => recv.transmit_deltas,
   ['changed']: ({sender, recv}, {from, to, only_once}) => {
-    let update_my_length = () => {
-      let p1 = send({to: recv.p1, selector: 'poll'});
-      let p2 = send({to: recv.p2, selector: 'poll'});
-      let new_length = vlen(vsub(p1, p2));
-      send({to: recv.length, selector: 'changed'}, {to: new_length});
-      let [x1,y1] = p1;
-      let [x2,y2] = p2;
-      attr(recv.line, {x1, y1, x2, y2});
-    };
-
     // If we caused the change, don't propagate it in a cycle
-    if (sender === recv.other) update_my_length();
+    if (sender === recv.other) recv.update_my_length_etc();
     else if (sender === recv.p1 || sender === recv.p2) {
       // If this change came from the outside, propagate as necessary
       recv.other = sender === recv.p1 ? recv.p2 : recv.p1;
@@ -451,7 +462,7 @@ behaviors.rod = {
         send({to: recv.other, selector: 'changed'}, {
           to: p => vadd(p, delta_for_other), only_once
         });
-      } else update_my_length();
+      } else recv.update_my_length_etc();
     }
   },
   ['clear-pending']: ({recv}) => {
@@ -562,13 +573,26 @@ behaviors.rect = {
         send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
     } else if (sender === left_mouse_button_is_down) {
       let pointer_pos = send({to: pointer, selector: 'position'});
-      if (to === true) { // Had to push handle point behind rect to make this work...
-        root_change(recv.handle.position, send({to: pointer_pos, selector: 'poll'}));
-        send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
-        send({to: recv.mode, selector: 'changed'}, {to: 'rigid'});
-      } else {
-        send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
-        send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
+      let curr_pointer_pos = send({to: pointer_pos, selector: 'poll'});
+
+      if (current_tool === 'move') {
+        if (to === true) { // Had to push handle point behind rect to make this work...
+          root_change(recv.handle.position, curr_pointer_pos);
+          send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
+          send({to: recv.mode, selector: 'changed'}, {to: 'rigid'});
+        } else {
+          send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
+          send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
+        }
+      } else if (current_tool === 'draw') {
+        let ptr_copy = create.point(curr_pointer_pos);
+        send({from: ptr_copy.position, to: pointer_pos, selector: 'subscribe-me'});
+        let top_left_to_ptr = create.rod(recv.top_left, ptr_copy);
+
+        svg_parent = recv.svg.group; // NB: copied. TODO: background --> rect.
+        let rect = create.rect();
+        root_change(rect.top_left.position, send({to: top_left_to_ptr.p2_from_p1, selector: 'poll'}));
+        send({from: rect.bot_right.position, to: top_left_to_ptr.p2_from_p1, selector: 'subscribe-me'});
       }
     }
   }
