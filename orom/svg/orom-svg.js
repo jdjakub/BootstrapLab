@@ -369,7 +369,7 @@ behaviors.point = {
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
 
-    let circle = svgel('circle', {fill: 'white', r: 4});
+    let circle = svgel('circle', {fill: 'white', r: 4}, svg);
     svg_userData(circle, recv);
     recv.svg = {
       circle: circle,
@@ -423,7 +423,7 @@ behaviors.rod = {
     recv.transmit_deltas = create.observable();
     send({to: recv.transmit_deltas, selector: 'changed'}, {to: [false,false]});
 
-    let line = svgel('line');
+    let line = svgel('line', {}, svg);
     svg_userData(line, recv);
     recv.svg = {
       line: line,
@@ -503,6 +503,7 @@ behaviors.rect = {
     recv.svg = {
       group: svgel('g')
     };
+    svg_userData(recv.svg.group, recv);
 
     let tl = create.point([-1, -1]);
     let bl = create.point([-1, +1]);
@@ -520,7 +521,11 @@ behaviors.rect = {
     recv.rods = rods.map(([a,b]) => create.rod(a,b));
 
     recv.svg.top_left = create.sink_to_dom_attrs(recv.svg.group, transform_translate);
-    send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
+    let parent = svg_userData(recv.svg.group.parentElement);
+    if (parent !== undefined && parent.top_left !== undefined) {
+      let parent_to_me = create.rod(parent.top_left, tl);
+      send({from: recv.svg.top_left, to: parent_to_me.p2_from_p1, selector: 'subscribe-me'});
+    } else send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
 
     svg_parent = recv.svg.group;
 
@@ -585,14 +590,10 @@ behaviors.rect = {
           send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
         }
       } else if (current_tool === 'draw') {
-        let ptr_copy = create.point(curr_pointer_pos);
-        send({from: ptr_copy.position, to: pointer_pos, selector: 'subscribe-me'});
-        let top_left_to_ptr = create.rod(recv.top_left, ptr_copy);
-
         svg_parent = recv.svg.group; // NB: copied. TODO: background --> rect.
         let rect = create.rect();
-        root_change(rect.top_left.position, send({to: top_left_to_ptr.p2_from_p1, selector: 'poll'}));
-        send({from: rect.bot_right.position, to: top_left_to_ptr.p2_from_p1, selector: 'subscribe-me'});
+        root_change(rect.top_left.position, curr_pointer_pos);
+        send({from: rect.bot_right.position, to: pointer_pos, selector: 'subscribe-me'});
       }
     }
   }
@@ -600,6 +601,8 @@ behaviors.rect = {
 create.rect = () => create.entity(behaviors.rect);
 
 pointer = create.entity(behaviors.pointer);
+
+current_tool = 'draw';
 
 /*
  *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT, POSITIONAL INPUT ***
