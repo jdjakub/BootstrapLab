@@ -429,9 +429,16 @@ behaviors.rod = {
       line: line,
       p1: create.sink_to_dom_attrs(line, ['x1', 'y1']),
       p2: create.sink_to_dom_attrs(line, ['x2', 'y2']),
+      color: create.sink_to_dom_attrs(line, ([tx,ty]) => ({
+        stroke: {
+          true:  { true: '#ff0000', false: '#ffff00' },
+          false: { true: '#ffff00', false: '#00ff00' }
+        }[tx][ty]
+      }))
     };
     send({from: recv.svg.p1, to: p1, selector: 'subscribe-me'});
     send({from: recv.svg.p2, to: p2, selector: 'subscribe-me'});
+    send({from: recv.svg.color, to: recv.transmit_deltas, selector: 'subscribe-me'});
 
     recv.update_my_length_etc = () => {
       let p1 = send({to: recv.p1, selector: 'poll'});
@@ -515,7 +522,8 @@ behaviors.rect = {
     recv.points = [tl,bl,br,tr,handle];
 
     let rods = [
-      [tl,bl],[bl,br],[br,tr],[tr,tl],[handle,tl]
+      [tl,bl],[bl,br],[br,tr],[tr,tl],
+      [handle,tl],[handle,bl],[handle,br],[handle,tr]
     ];
 
     recv.rods = rods.map(([a,b]) => create.rod(a,b));
@@ -523,8 +531,8 @@ behaviors.rect = {
     recv.svg.top_left = create.sink_to_dom_attrs(recv.svg.group, transform_translate);
     let parent = svg_userData(recv.svg.group.parentElement);
     if (parent !== undefined && parent.top_left !== undefined) {
-      let parent_to_me = create.rod(parent.top_left, tl);
-      send({from: recv.svg.top_left, to: parent_to_me.p2_from_p1, selector: 'subscribe-me'});
+      recv.parent_to_me = create.rod(parent.top_left, tl);
+      send({from: recv.svg.top_left, to: recv.parent_to_me.p2_from_p1, selector: 'subscribe-me'});
     } else send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
 
     svg_parent = recv.svg.group;
@@ -563,12 +571,35 @@ behaviors.rect = {
         props(recv.rods, 1,3).forEach(r => // horizontals transmit ver changes
           send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,true]})
         );
-        // Handle-rod is free to jump to the next click within the rect
-        send({to: recv.rods[4].transmit_deltas, selector: 'changed'}, {to: [false,false]});
+        props(recv.rods, 4,5,6,7).forEach(r => // Handle-point is free to jump to the next click within the rect
+          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+        );
+        for (let child of recv.svg.group.children) { // recurse to descendants...
+          if (child.tagName !== 'g') continue;
+          let entity = svg_userData(child);
+          if (entity === undefined) continue;
+          if (entity.parent_to_me !== undefined) // allow descendants to move relative to parent
+            send({to: entity.parent_to_me.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+          send({to: entity.mode, selector: 'changed'}, {to: 'boxy'}); // restore descendants
+        }
       } else if (to === 'rigid') {
-        recv.rods.forEach(r =>
+        props(recv.rods, 0,2).forEach(r => // don't ruin rigid body changes
+          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+        );
+        props(recv.rods, 1,3).forEach(r => // don't ruin rigid body changes
+          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+        );
+        props(recv.rods, 4,5,6,7).forEach(r => // Handle-point copies changes to corners
           send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
         );
+        for (let child of recv.svg.group.children) { // recurse to descendants...
+          if (child.tagName !== 'g') continue;
+          let entity = svg_userData(child);
+          if (entity === undefined) continue;
+          if (entity.parent_to_me !== undefined) // connect parent rigid changes to child
+            send({to: entity.parent_to_me.transmit_deltas, selector: 'changed'}, {to: [true,true]})
+          send({to: entity.mode, selector: 'changed'}, {to: 'rigid'}); // make descendants rigid bodies
+        }
       }
     } else if (sender === recv.being_considered) {
       // Same as in behaviors.{background,point} above!! Share this code somehow?
