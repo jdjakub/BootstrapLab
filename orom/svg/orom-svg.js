@@ -293,67 +293,6 @@ behaviors.pointer = {
   }
 };
 
-//      ---***   BACKGROUND   ***---
-behaviors.background = {
-  ['created']: ({recv}) => {
-   recv.rect = svgel('rect', {x: 0, y: 0, fill: 'black'}, svg);
-   svg_userData(recv.rect, recv);
-
-   recv.dims = create.observable();
-   send({from: recv, to: recv.dims, selector: 'subscribe-me'});
-
-   recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-   send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
-
-   /* Initialise object's own specific 'changed' behaviour as a dispatch on
-      sender, where sender is compared to dynamic run-time properties of receiver
-      i.e. its "dims" or "being_considered" observables just created.
-    */
-
-   // First: lazy init the Map.
-   recv.behaviors[0]['changed'] = recv.behaviors[0]['changed'] || new Map();
-   let m = recv.behaviors[0]['changed'];
-   // Next: add the entries.
-
-   m.set(recv.being_considered, ({recv}, {to}) => {
-     if (to === true) // PUSH...
-       send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
-     else // ... POP!
-       send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
-   });
-
-   m.set(recv.dims, ({recv}, {to}) => {
-     attr(recv.rect, to);
-   });
-
-   m.set(left_mouse_button_is_down, ({recv}, {to}) => {
-     if (to === true) {
-       let pointer_pos = send({to: send({to: pointer, selector: 'position'}),
-                       selector: 'poll'});
-
-       svg_parent = svg;
-       let rect = create.rect();
-       root_change(rect.top_left.position, pointer_pos);
-       send({from: rect.bot_right.position, to: pointer.position, selector: 'subscribe-me'});
-     }
-    });
-
-    /*
-    Either we poll at runtime (if (sender === recv.being_considered)) every time,
-    or we construct an associative array that is only possible AFTER those are created.
-    This chosen latter solution relies on the requirement that the two observables
-    retain their identities throughout the background's lifetime, which is fair.
-    (as well as left_mouse_button_is_down)
-    */
-  }, /* At runtime this will be:
-  ['changed']: Map(
-    recv.being_considered     |-> ({recv}, {to}) => {...}
-    recv.dims                 |-> ({recv}, {to}) => {...}
-    left_mouse_button_is_down |-> ({recv}, {to}) => {...}
-  )
-  */
-};
-
 //      ---***   POINT   ***---
 /*
  * Currently a bit dishonest; would be better to call it Circle and expose
@@ -384,7 +323,7 @@ behaviors.point = {
   },
   ['changed']: ({sender, recv}, {to}) => {
     if (sender === recv.being_considered) {
-      // Same as in behaviors.background above!! Share this code somehow?
+      // Similar to behaviors.rect below! Share this code somehow?
       if (to === true) // PUSH...
         send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
       else // ... POP!
@@ -602,7 +541,7 @@ behaviors.rect = {
         }
       }
     } else if (sender === recv.being_considered) {
-      // Same as in behaviors.{background,point} above!! Share this code somehow?
+      // Similar to behaviors.point above! Share this code somehow?
       if (to === true) // PUSH...
         send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
       else // ... POP!
@@ -611,7 +550,7 @@ behaviors.rect = {
       let pointer_pos = send({to: pointer, selector: 'position'});
       let curr_pointer_pos = send({to: pointer_pos, selector: 'poll'});
 
-      if (current_tool === 'move') {
+      if (current_tool === 'move' && svg_userData(recv.svg.group.parentElement) !== undefined) { // proxy for top-level root rect
         if (to === true) { // Had to push handle point behind rect to make this work...
           root_change(recv.handle.position, curr_pointer_pos);
           send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
@@ -621,7 +560,7 @@ behaviors.rect = {
           change(recv.mode, 'boxy');
         }
       } else if (current_tool === 'draw') {
-        svg_parent = recv.svg.group; // NB: copied. TODO: background --> rect.
+        svg_parent = recv.svg.group;
         let rect = create.rect();
         root_change(rect.top_left.position, curr_pointer_pos);
         send({from: rect.bot_right.position, to: pointer_pos, selector: 'subscribe-me'});
@@ -679,13 +618,15 @@ svg.onmouseout = e => {
  *
  */
 
- backg = create.entity(behaviors.background);
+backg = create.rect();
+attr(backg.svg.rect, 'fill', 'black');
+root_change(backg.top_left.position, [0,0]);
 
- resize = () => {
-   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
-   attr(svg, dims);
-   change(backg.dims, dims);
- };
+resize = () => {
+  let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
+  attr(svg, dims);
+  change(backg.bot_right.position, [dims.width, dims.height]);
+};
 
 window.onresize = resize;
 resize()
