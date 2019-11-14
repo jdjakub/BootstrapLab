@@ -194,6 +194,8 @@ behaviors.observable = {
   },
 };
 
+change = (obs, new_value) => send({to: obs, selector: 'changed'}, {to: new_value});
+
 root_change = (obs, new_value) => send(
   {to: obs, selector: 'changed'},
   {to: new_value, only_once: true, post_clear: true}
@@ -270,7 +272,7 @@ behaviors.pointer = {
     if (is_considering_sender === undefined) {
       is_considering_sender = create.observable();
       recv.is_considering.set(sender, is_considering_sender);
-      send({to: is_considering_sender, selector: 'changed'}, {to: false});
+      change(is_considering_sender, false);
     }
     return is_considering_sender;
   },
@@ -280,12 +282,12 @@ behaviors.pointer = {
       if (context.from !== undefined) {
         // Spoof message send from the "no longer considered" Entity ... urgh
         let no_longer_considering = send({from: context.from, to: recv, selector: 'is-considering-me?'});
-        send({to: no_longer_considering, selector: 'changed'}, {to: false});
+        change(no_longer_considering, false);
       }
 
       if (context.to !== undefined) {
         let now_considering = send({from: context.to, to: recv, selector: 'is-considering-me?'});
-        send({to: now_considering, selector: 'changed'}, {to: true});
+        change(now_considering, true);
       }
     }
   }
@@ -378,7 +380,7 @@ behaviors.point = {
     // contra 'pointer' above, directly access own state even if it's from another behaviour?
     send({from: recv.svg.center, to: recv.position, selector: 'subscribe-me'});
 
-    send({to: recv.position, selector: 'changed'}, {to: [0,0]});
+    change(recv.position, [0,0]);
   },
   ['changed']: ({sender, recv}, {to}) => {
     if (sender === recv.being_considered) {
@@ -401,9 +403,7 @@ behaviors.point = {
 
 create.point = (pos) => {
   let p = create.entity(behaviors.point);
-  if (pos !== undefined) {
-    send({to: p.position, selector: 'changed'}, {to: pos});
-  }
+  if (pos !== undefined) change(p.position, pos);
   return p;
 }
 
@@ -421,7 +421,7 @@ behaviors.rod = {
     recv.p2_from_p1 = create.observable();
 
     recv.transmit_deltas = create.observable();
-    send({to: recv.transmit_deltas, selector: 'changed'}, {to: [false,false]});
+    change(recv.transmit_deltas, [false,false]);
 
     let line = svgel('line', {}, svg);
     svg_userData(line, recv);
@@ -444,9 +444,9 @@ behaviors.rod = {
       let p1 = send({to: recv.p1, selector: 'poll'});
       let p2 = send({to: recv.p2, selector: 'poll'});
       let p2_from_p1 = vsub(p2, p1);
-      send({to: recv.p2_from_p1, selector: 'changed'}, {to: p2_from_p1});
-      send({to: recv.p1_from_p2, selector: 'changed'}, {to: vmul(-1, p2_from_p1)});
-      send({to: recv.length, selector: 'changed'}, {to: vlen(p2_from_p1)});
+      change(recv.p2_from_p1, p2_from_p1);
+      change(recv.p1_from_p2, vmul(-1, p2_from_p1));
+      change(recv.length, vlen(p2_from_p1));
     };
 
     recv.update_my_length_etc();
@@ -554,7 +554,7 @@ behaviors.rect = {
     recv.mode = create.observable();
     send({from: recv, to: recv.mode, selector: 'subscribe-me'});
 
-    send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
+    change(recv.mode, 'boxy');
 
     recv.top_left = tl;
     recv.bot_left = bl;
@@ -566,39 +566,39 @@ behaviors.rect = {
     if (sender === recv.mode) {
       if (to === 'boxy') {
         props(recv.rods, 0,2).forEach(r => // verticals transmit hor changes
-          send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,false]})
+          change(r.transmit_deltas, [true,false])
         );
         props(recv.rods, 1,3).forEach(r => // horizontals transmit ver changes
-          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,true]})
+          change(r.transmit_deltas, [false,true])
         );
         props(recv.rods, 4,5,6,7).forEach(r => // Handle-point is free to jump to the next click within the rect
-          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+          change(r.transmit_deltas, [false,false])
         );
         for (let child of recv.svg.group.children) { // recurse to descendants...
           if (child.tagName !== 'g') continue;
           let entity = svg_userData(child);
           if (entity === undefined) continue;
           if (entity.parent_to_me !== undefined) // allow descendants to move relative to parent
-            send({to: entity.parent_to_me.transmit_deltas, selector: 'changed'}, {to: [false,false]})
-          send({to: entity.mode, selector: 'changed'}, {to: 'boxy'}); // restore descendants
+            change(entity.parent_to_me.transmit_deltas, [false,false]);
+          change(entity.mode, 'boxy'); // restore descendants
         }
       } else if (to === 'rigid') {
         props(recv.rods, 0,2).forEach(r => // don't ruin rigid body changes
-          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+          change(r.transmit_deltas, [false,false])
         );
         props(recv.rods, 1,3).forEach(r => // don't ruin rigid body changes
-          send({to: r.transmit_deltas, selector: 'changed'}, {to: [false,false]})
+          change(r.transmit_deltas, [false,false])
         );
         props(recv.rods, 4,5,6,7).forEach(r => // Handle-point copies changes to corners
-          send({to: r.transmit_deltas, selector: 'changed'}, {to: [true,true]})
+          change(r.transmit_deltas, [true,true])
         );
         for (let child of recv.svg.group.children) { // recurse to descendants...
           if (child.tagName !== 'g') continue;
           let entity = svg_userData(child);
           if (entity === undefined) continue;
           if (entity.parent_to_me !== undefined) // connect parent rigid changes to child
-            send({to: entity.parent_to_me.transmit_deltas, selector: 'changed'}, {to: [true,true]})
-          send({to: entity.mode, selector: 'changed'}, {to: 'rigid'}); // make descendants rigid bodies
+            change(entity.parent_to_me.transmit_deltas, [true,true]);
+          change(entity.mode, 'rigid'); // make descendants rigid bodies
         }
       }
     } else if (sender === recv.being_considered) {
@@ -615,10 +615,10 @@ behaviors.rect = {
         if (to === true) { // Had to push handle point behind rect to make this work...
           root_change(recv.handle.position, curr_pointer_pos);
           send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
-          send({to: recv.mode, selector: 'changed'}, {to: 'rigid'});
+          change(recv.mode, 'rigid');
         } else {
           send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
-          send({to: recv.mode, selector: 'changed'}, {to: 'boxy'});
+          change(recv.mode, 'boxy');
         }
       } else if (current_tool === 'draw') {
         svg_parent = recv.svg.group; // NB: copied. TODO: background --> rect.
@@ -684,7 +684,7 @@ svg.onmouseout = e => {
  resize = () => {
    let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
    attr(svg, dims);
-   send({to: backg.dims, selector: 'changed'}, {to: dims});
+   change(backg.dims, dims);
  };
 
 window.onresize = resize;
