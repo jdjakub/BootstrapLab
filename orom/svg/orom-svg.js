@@ -70,7 +70,7 @@ bbox = el => {
   };
 }
 
-offset = e => [e.offsetX, e.offsetY]
+offset = e => [e.offsetX, e.offsetY];
 
 final = xs => xs[xs.length-1];
 
@@ -444,6 +444,8 @@ create.rod = (p1, p2) => {
  * Currently functioning as a fusion of "rectangle controls", SVG rect
  * proxy and box-dict (<g> group etc.) TODO: separate these three out.
 */
+last_active = create.observable();
+
 behaviors.rect = {
   ['created']: ({recv}) => {
     recv.svg = {
@@ -559,11 +561,15 @@ behaviors.rect = {
           send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
           change(recv.mode, 'boxy');
         }
+        change(last_active, recv);
       } else if (current_tool === 'draw') {
-        svg_parent = recv.svg.group;
-        let rect = create.rect();
-        root_change(rect.top_left.position, curr_pointer_pos);
-        send({from: rect.bot_right.position, to: pointer_pos, selector: 'subscribe-me'});
+        if (to === true) {
+          svg_parent = recv.svg.group;
+          let rect = create.rect();
+          root_change(rect.top_left.position, curr_pointer_pos);
+          send({from: rect.bot_right.position, to: pointer_pos, selector: 'subscribe-me'});
+          change(last_active, rect);
+        }
       }
     }
   }
@@ -585,11 +591,13 @@ svg_parent = svg;
 left_mouse_button_is_down = create.observable();
 
 // Forget about coords; they are not part of the left button, or the keyboard, or the power button...
-svg.onmousedown = e =>
-  root_change(left_mouse_button_is_down, true);
+svg.onmousedown = e => {
+  if (e.button === 0) root_change(left_mouse_button_is_down, true);
+};
 
-svg.onmouseup = e =>
-  root_change(left_mouse_button_is_down, false);
+svg.onmouseup = e => {
+  if (e.button === 0) root_change(left_mouse_button_is_down, false);
+};
 
 // mousemove => pointer position changed
 svg.onmousemove = e => {
@@ -630,3 +638,24 @@ resize = () => {
 
 window.onresize = resize;
 resize()
+
+text = svgel('text', {font_family: 'Arial Narrow', x: 100, y: 100, fill: 'white'}, svg);
+tpos = create.sink_to_dom_attrs(text, ['x', 'y']);
+
+send({to: last_active, selector: 'subscribe-me', from: {
+  receive: ({recv,sender,selector},args) => {
+    if (selector === 'changed') {
+      let { from, to } = args;
+      let text_bb = bbox(text);
+      let new_text_tl = send({to: to.top_left.position, selector: 'poll'});
+      let curr_to_new = vsub(new_text_tl, props(text_bb,'left','top'));
+      change(tpos, vadd(xy(text), curr_to_new));
+    }
+  }
+}});
+
+body.onkeydown = e => {
+  let { key } = e;
+  if (key === 'Backspace') text.textContent = text.textContent.slice(0,-1);
+  else if (key.length === 1) text.textContent = text.textContent + key;
+};
