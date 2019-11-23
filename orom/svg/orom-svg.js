@@ -4,6 +4,18 @@ body = document.body;
 body.style.margin = '0px';
 body.style.minHeight = '100%';
 
+attr_single = (elem, key, val_or_func) => {
+  let old;
+  if (key === 'textContent') old = elem.textContent;
+  else old = elem.getAttribute(key);
+
+  let value = typeof(val_or_func) === 'function' ? val_or_func(old) : val_or_func;
+  if (key === 'textContent') elem.textContent = value;
+  else if (value !== undefined) elem.setAttribute(key, value);
+
+  return old;
+};
+
 // e.g. attr(rect, {stroke_width: 5, stroke: 'red'})
 //      attr(rect, 'stroke', 'red')
 //      attr(rect, 'height', h => h+32)
@@ -11,18 +23,13 @@ body.style.minHeight = '100%';
 attr = (elem, key_or_dict, val_or_nothing) => {
   if (typeof(key_or_dict) === 'string') {
     let key = key_or_dict;
-    let val = val_or_nothing;
-    let old = elem.getAttribute(key);
-    if (typeof(val) === 'function') elem.setAttribute(key, val(old));
-    else if (val !== undefined)     elem.setAttribute(key, val);
-    return old;
+    let value = val_or_nothing;
+    return attr_single(elem, key, value);
   } else {
     let dict = key_or_dict;
     for (let [k,v_or_f] of Object.entries(dict)) {
       let key = k.replace('_','-');
-      let old = elem.getAttribute(key);
-      let value = typeof(v_or_f) === 'function' ? v_or_f(old) : v_or_f;
-      elem.setAttribute(key, value);
+      attr_single(elem, key, v_or_f);
     }
   }
 }
@@ -483,14 +490,25 @@ behaviors.rect = {
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
 
+    let text = svgel('text', {font_family: 'Arial Narrow', x: 5, y: 20, fill: 'white'});
+    svg_userData(rect, recv);
+
     Object.assign(recv.svg, {
       rect: rect,
-      width:    create.sink_to_dom_attrs(rect, 'width'),
-      height:   create.sink_to_dom_attrs(rect, 'height'),
+      width: create.sink_to_dom_attrs(rect, 'width'),
+      height: create.sink_to_dom_attrs(rect, 'height'),
+      text: text,
+      text_content: create.sink_to_dom_attrs(text, 'textContent'),
+      css_class: create.sink_to_dom_attrs(recv.svg.group, 'class'),
     });
 
     send({from: recv.svg.width,  to: recv.rods[1].length, selector: 'subscribe-me'});
     send({from: recv.svg.height, to: recv.rods[0].length, selector: 'subscribe-me'});
+
+    recv.key_name = create.observable();
+    send({from: recv.svg.css_class, to: recv.key_name, selector: 'subscribe-me'});
+    send({from: recv.svg.text_content, to: recv.key_name, selector: 'subscribe-me'});
+    change(recv.key_name, 'unknown');
 
     recv.mode = create.observable();
     send({from: recv, to: recv.mode, selector: 'subscribe-me'});
@@ -561,16 +579,15 @@ behaviors.rect = {
           send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
           change(recv.mode, 'boxy');
         }
-        change(last_active, recv);
       } else if (current_tool === 'draw') {
         if (to === true) {
           svg_parent = recv.svg.group;
           let rect = create.rect();
           root_change(rect.top_left.position, curr_pointer_pos);
           send({from: rect.bot_right.position, to: pointer_pos, selector: 'subscribe-me'});
-          change(last_active, rect);
         }
       }
+      change(last_active, recv);
     }
   }
 };
@@ -629,6 +646,7 @@ svg.onmouseout = e => {
 backg = create.rect();
 attr(backg.svg.rect, 'fill', 'black');
 root_change(backg.top_left.position, [0,0]);
+change(last_active, backg);
 
 resize = () => {
   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
@@ -639,23 +657,9 @@ resize = () => {
 window.onresize = resize;
 resize()
 
-text = svgel('text', {font_family: 'Arial Narrow', x: 100, y: 100, fill: 'white'}, svg);
-tpos = create.sink_to_dom_attrs(text, ['x', 'y']);
-
-send({to: last_active, selector: 'subscribe-me', from: {
-  receive: ({recv,sender,selector},args) => {
-    if (selector === 'changed') {
-      let { from, to } = args;
-      let text_bb = bbox(text);
-      let new_text_tl = send({to: to.top_left.position, selector: 'poll'});
-      let curr_to_new = vsub(new_text_tl, props(text_bb,'left','top'));
-      change(tpos, vadd(xy(text), curr_to_new));
-    }
-  }
-}});
-
 body.onkeydown = e => {
   let { key } = e;
-  if (key === 'Backspace') text.textContent = text.textContent.slice(0,-1);
-  else if (key.length === 1) text.textContent = text.textContent + key;
+  let curr_active = send({to: last_active, selector: 'poll'});
+  if (key === 'Backspace') change(curr_active.key_name, s => s.slice(0,-1));
+  else if (key.length === 1) change(curr_active.key_name, s => s + key);
 };
