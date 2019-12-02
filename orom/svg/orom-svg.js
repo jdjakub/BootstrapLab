@@ -208,6 +208,9 @@ root_change = (obs, new_value) => send(
   {to: new_value, only_once: true, post_clear: true}
 );
 
+subscribe = (from, to) => send({from, to, selector: 'subscribe-me'});
+unsubscribe = (from, to) => send({from, to, selector: 'unsubscribe-me'});
+
 create.observable = () => create.entity(behaviors.observable);
 
 // e.g. sink_to_dom_attrs(svg_rect, 'width') transmits changes to its width
@@ -259,10 +262,10 @@ behaviors.pointer = {
     // CODE INHERITANCE / CODE MIXINS ETC...
 
     let pos = send({to: recv, selector: 'position'});
-    send({from: recv, to: pos, selector: 'subscribe-me'});
+    subscribe(recv, pos);
 
     recv.currently_considering = create.observable();
-    send({from: recv, to: recv.currently_considering, selector: 'subscribe-me'});
+    subscribe(recv, recv.currently_considering);
 
     recv.is_considering = new Map(); // Entity --> Observable
   },
@@ -315,7 +318,7 @@ behaviors.point = {
     behaviors.has_position['created']({recv}); // again, init the position "part" of Entity
 
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    subscribe(recv, recv.being_considered);
 
     let circle = svgel('circle', {fill: 'white', r: 4}, svg);
     svg_userData(circle, recv);
@@ -324,7 +327,7 @@ behaviors.point = {
       center: create.sink_to_dom_attrs(circle, ['cx','cy']),
     };
     // contra 'pointer' above, directly access own state even if it's from another behaviour?
-    send({from: recv.svg.center, to: recv.position, selector: 'subscribe-me'});
+    subscribe(recv.svg.center, recv.position);
 
     change(recv.position, [0,0]);
   },
@@ -332,17 +335,17 @@ behaviors.point = {
     if (sender === recv.being_considered) {
       // Similar to behaviors.rect below! Share this code somehow?
       if (to === true) // PUSH...
-        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
+        subscribe(recv, left_mouse_button_is_down);
       else // ... POP!
-        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+        unsubscribe(recv, left_mouse_button_is_down);
     } else if (sender === left_mouse_button_is_down) {
       let pointer_pos = send({to: pointer, selector: 'position'});
       // Spoof [un]subscription message from position to pointer's position
       // thus locking our position to follow the pointer
       if (to === true)
-        send({from: recv.position, to: pointer_pos, selector: 'subscribe-me'});
+        subscribe(recv.position, pointer_pos);
       else
-        send({from: recv.position, to: pointer_pos, selector: 'unsubscribe-me'});
+        unsubscribe(recv.position, pointer_pos);
     }
   },
 };
@@ -357,8 +360,8 @@ create.point = (pos) => {
 behaviors.rod = {
   ['created']: ({recv}, {p1, p2}) => {
     recv.p1 = p1; recv.p2 = p2;
-    send({from: recv, to: p1, selector: 'subscribe-me'});
-    send({from: recv, to: p2, selector: 'subscribe-me'});
+    subscribe(recv, p1);
+    subscribe(recv, p2);
 
     recv.other = undefined;
 
@@ -382,9 +385,9 @@ behaviors.rod = {
         }[tx][ty]
       }))
     };
-    send({from: recv.svg.p1, to: p1, selector: 'subscribe-me'});
-    send({from: recv.svg.p2, to: p2, selector: 'subscribe-me'});
-    send({from: recv.svg.color, to: recv.transmit_deltas, selector: 'subscribe-me'});
+    subscribe(recv.svg.p1, p1);
+    subscribe(recv.svg.p2, p2);
+    subscribe(recv.svg.color, recv.transmit_deltas);
 
     recv.update_my_length_etc = () => {
       let p1 = send({to: recv.p1, selector: 'poll'});
@@ -480,15 +483,15 @@ behaviors.rect = {
     let parent = svg_userData(recv.svg.group.parentElement);
     if (parent !== undefined && parent.top_left !== undefined) {
       recv.parent_to_me = create.rod(parent.top_left, tl);
-      send({from: recv.svg.top_left, to: recv.parent_to_me.p2_from_p1, selector: 'subscribe-me'});
-    } else send({from: recv.svg.top_left, to: tl.position, selector: 'subscribe-me'});
+      subscribe(recv.svg.top_left, recv.parent_to_me.p2_from_p1);
+    } else subscribe(recv.svg.top_left, tl.position);
 
     svg_parent = recv.svg.group;
 
     let rect = svgel('rect', {fill: 'grey'});
     svg_userData(rect, recv);
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-    send({from: recv, to: recv.being_considered, selector: 'subscribe-me'});
+    subscribe(recv, recv.being_considered);
 
     let text = svgel('text', {font_family: 'Arial Narrow', x: 5, y: 20, fill: 'white'});
     svg_userData(rect, recv);
@@ -502,16 +505,16 @@ behaviors.rect = {
       css_class: create.sink_to_dom_attrs(recv.svg.group, 'class'),
     });
 
-    send({from: recv.svg.width,  to: recv.rods[1].length, selector: 'subscribe-me'});
-    send({from: recv.svg.height, to: recv.rods[0].length, selector: 'subscribe-me'});
+    subscribe(recv.svg.width, recv.rods[1].length);
+    subscribe(recv.svg.height, recv.rods[0].length);
 
     recv.key_name = create.observable();
-    send({from: recv.svg.css_class, to: recv.key_name, selector: 'subscribe-me'});
-    send({from: recv.svg.text_content, to: recv.key_name, selector: 'subscribe-me'});
+    subscribe(recv.svg.css_class, recv.key_name);
+    subscribe(recv.svg.text_content, recv.key_name);
     change(recv.key_name, 'unknown');
 
     recv.mode = create.observable();
-    send({from: recv, to: recv.mode, selector: 'subscribe-me'});
+    subscribe(recv, recv.mode);
 
     change(recv.mode, 'boxy');
 
@@ -563,9 +566,9 @@ behaviors.rect = {
     } else if (sender === recv.being_considered) {
       // Similar to behaviors.point above! Share this code somehow?
       if (to === true) // PUSH...
-        send({from: recv, to: left_mouse_button_is_down, selector: 'subscribe-me'});
+        subscribe(recv, left_mouse_button_is_down);
       else // ... POP!
-        send({from: recv, to: left_mouse_button_is_down, selector: 'unsubscribe-me'});
+        unsubscribe(recv, left_mouse_button_is_down);
     } else if (sender === left_mouse_button_is_down) {
       let pointer_pos = send({to: pointer, selector: 'position'});
       let curr_pointer_pos = send({to: pointer_pos, selector: 'poll'});
@@ -573,10 +576,10 @@ behaviors.rect = {
       if (current_tool === 'move' && svg_userData(recv.svg.group.parentElement) !== undefined) { // proxy for top-level root rect
         if (to === true) { // Had to push handle point behind rect to make this work...
           root_change(recv.handle.position, curr_pointer_pos);
-          send({from: recv.handle.position, to: pointer_pos, selector: 'subscribe-me'});
+          subscribe(recv.handle.position, pointer_pos);
           change(recv.mode, 'rigid');
         } else {
-          send({from: recv.handle.position, to: pointer_pos, selector: 'unsubscribe-me'});
+          unsubscribe(recv.handle.position, pointer_pos);
           change(recv.mode, 'boxy');
         }
       } else if (current_tool === 'draw') {
@@ -584,7 +587,7 @@ behaviors.rect = {
           svg_parent = recv.svg.group;
           let rect = create.rect();
           root_change(rect.top_left.position, curr_pointer_pos);
-          send({from: rect.bot_right.position, to: pointer_pos, selector: 'subscribe-me'});
+          subscribe(rect.bot_right.position, pointer_pos);
         }
       }
       change(last_active, recv);
