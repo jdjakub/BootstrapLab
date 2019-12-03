@@ -456,10 +456,13 @@ create.rod = (p1, p2) => {
 */
 last_active = create.observable();
 
+next_id = 1;
+
 behaviors.rect = {
   ['created']: ({recv}) => {
+    recv.id = 'box-' + next_id; next_id++;
     recv.svg = {
-      group: svgel('g')
+      group: svgel('g', {id: recv.id})
     };
     svg_userData(recv.svg.group, recv);
 
@@ -511,7 +514,7 @@ behaviors.rect = {
     recv.key_name = create.observable();
     subscribe(recv.svg.css_class, recv.key_name);
     subscribe(recv.svg.text_content, recv.key_name);
-    change(recv.key_name, 'unknown');
+    change(recv.key_name, 'unnamed');
 
     recv.mode = create.observable();
     subscribe(recv, recv.mode);
@@ -542,7 +545,8 @@ behaviors.rect = {
           if (entity === undefined) continue;
           if (entity.parent_to_me !== undefined) // allow descendants to move relative to parent
             change(entity.parent_to_me.transmit_deltas, [false,false]);
-          change(entity.mode, 'boxy'); // restore descendants
+          if (entity.mode !== undefined)
+            change(entity.mode, 'boxy'); // restore descendants
         }
       } else if (to === 'rigid') {
         props(recv.rods, 0,2).forEach(r => // don't ruin rigid body changes
@@ -560,7 +564,8 @@ behaviors.rect = {
           if (entity === undefined) continue;
           if (entity.parent_to_me !== undefined) // connect parent rigid changes to child
             change(entity.parent_to_me.transmit_deltas, [true,true]);
-          change(entity.mode, 'rigid'); // make descendants rigid bodies
+          if (entity.mode !== undefined)
+            change(entity.mode, 'rigid'); // make descendants rigid bodies
         }
       }
     } else if (sender === recv.being_considered) {
@@ -589,12 +594,86 @@ behaviors.rect = {
           root_change(rect.top_left.position, curr_pointer_pos);
           subscribe(rect.bot_right.position, pointer_pos);
         }
+      } else if (current_tool === 'arrow') {
+        if (to === true) {
+          svg_parent = recv.svg.group;
+          let arrow = create.arrow();
+          root_change(arrow.source.position, curr_pointer_pos);
+          subscribe(arrow.svg.line_end, pointer_pos);
+          window.active_arrow = arrow;
+        } else if (window.active_arrow !== undefined) {
+          let dest = window.active_arrow.svg.line_end;
+          unsubscribe(dest, pointer_pos);
+          subscribe(dest, recv.top_left.position);
+          change(window.active_arrow.dest_id, recv.id);
+          window.active_arrow = undefined;
+        }
       }
       change(last_active, recv);
     }
   }
 };
 create.rect = () => create.entity(behaviors.rect);
+
+//      ---***   ARROW   ***---
+/*
+ * Ref
+*/
+
+behaviors.arrow = {
+  ['created']: ({recv}) => {
+    recv.svg = {
+      group: svgel('g'),
+    };
+    svg_userData(recv.svg.group, recv);
+
+    recv.source = create.point([-1, -1]);
+    svg_parent = recv.svg.group;
+    recv.svg.circle = svgel('circle', {r: 10, fill: 'white', stroke: 'black'});
+    svg_userData(recv.svg.circle, recv);
+
+    recv.svg.arrow = svgel('line', {
+      stroke: 'cyan', stroke_width: 1, marker_end: 'url(#Arrowhead)', class: 'arrow'
+    }, svg);
+
+    recv.svg.line_start = create.sink_to_dom_attrs(recv.svg.arrow, ['x1', 'y1']);
+    recv.svg.line_end   = create.sink_to_dom_attrs(recv.svg.arrow, ['x2', 'y2']);
+
+    subscribe(recv.svg.line_start, recv.source.position);
+
+    recv.dest_id = create.observable();
+    // ingeniously abuse circle's invisible textContent for ID of dest element
+    recv.svg.dest_id = create.sink_to_dom_attrs(recv.svg.circle, 'textContent');
+    subscribe(recv.svg.dest_id, recv.dest_id);
+
+    recv.svg.translate = create.sink_to_dom_attrs(recv.svg.group, transform_translate);
+    let parent = svg_userData(recv.svg.group.parentElement);
+    if (parent !== undefined && parent.top_left !== undefined) {
+      recv.parent_to_me = create.rod(parent.top_left, recv.source);
+      subscribe(recv.svg.translate, recv.parent_to_me.p2_from_p1);
+    } else subscribe(recv.svg.translate, recv.source.position);
+
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    subscribe(recv, recv.being_considered);
+  },
+  ['changed']: ({sender, recv}, {from, to}) => {
+    if (sender === recv.being_considered) {
+      // Duplicated again
+      if (to === true) // PUSH...
+        subscribe(recv, left_mouse_button_is_down);
+      else // ... POP!
+        unsubscribe(recv, left_mouse_button_is_down);
+    } else if (sender === left_mouse_button_is_down) {
+      let pointer_pos = send({to: pointer, selector: 'position'});
+
+      if (to === true) {
+        subscribe(recv.svg.line_end, pointer_pos);
+        window.active_arrow = recv;
+      }
+    }
+  }
+};
+create.arrow = () => create.entity(behaviors.arrow);
 
 pointer = create.entity(behaviors.pointer);
 
@@ -607,6 +686,20 @@ current_tool = 'draw';
 svg = svgel('svg');
 svg.style.border = '2px dashed red';
 svg_parent = svg;
+
+defs = svgel('defs');
+
+arrowhead = svgel('marker', {
+  id: 'Arrowhead', viewBox: '0 0 10 10',
+  refX: 10, refY: 5,
+  markerUnits: 'strokeWidth',
+  markerWidth: 8, markerHeight: 6,
+  orient: 'auto'
+}, defs);
+
+svgel('path', {
+  d: 'M 0 0 L 10 5 L 0 10 z', fill: 'cyan'
+}, arrowhead);
 
 left_mouse_button_is_down = create.observable();
 
