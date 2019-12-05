@@ -39,14 +39,18 @@ props = (o,  ...keys) => keys.map(k => o[k]);
 
 svg_parent = body; // Default parent for new SVG elements
 
-// e.g. rect = svgel('rect', {x: 5, y: 5, width: 5, height: 5}, svg)
-svgel = (tag, attrs, parent) => {
-  let elem = document.createElementNS("http://www.w3.org/2000/svg", tag);
+create_element = (tag, attrs, parent, namespace) => {
+  let elem = document.createElementNS(namespace, tag);
   if (attrs !== undefined) attr(elem, attrs);
   if (parent === undefined) parent = svg_parent;
   parent.appendChild(elem);
   return elem;
 };
+
+// e.g. rect = svgel('rect', {x: 5, y: 5, width: 5, height: 5}, svg)
+svgel = (tag, attrs, parent) => create_element(tag, attrs, parent, 'http://www.w3.org/2000/svg');
+
+htmlel = (tag, attrs, parent) => create_element(tag, attrs, parent, 'http://www.w3.org/1999/xhtml');
 
 state = function(o, k, v) {
   let old = o[k];
@@ -756,6 +760,19 @@ resize()
 body.onkeydown = e => {
   let { key } = e;
   let curr_active = send({to: last_active, selector: 'poll'});
+  if (curr_active !== undefined)
   if (key === 'Backspace') change(curr_active.key_name, s => s.slice(0,-1));
-  else if (key.length === 1) change(curr_active.key_name, s => s + key);
+  else if (key === 'Enter') {
+    let foreign = curr_active.svg.foreign_html;
+    if (foreign === undefined) {
+      foreign = svgel('foreignObject', {x: 5, y: 30, width: '100%', height: '100%'}, curr_active.svg.group);
+      curr_active.svg.textarea = htmlel('textarea', {}, foreign);
+      curr_active.svg.textarea.onfocus = () => change(last_active, undefined);
+      curr_active.svg.textarea.textContent = '() => throw "not implemented"';
+      curr_active.svg.foreign_html = foreign;
+    }
+    let textarea = curr_active.svg.textarea;
+    textarea.focus();
+    e.preventDefault();
+  } else if (key.length === 1) change(curr_active.key_name, s => s + key);
 };
