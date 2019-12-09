@@ -757,6 +757,8 @@ resize = () => {
 window.onresize = resize;
 resize()
 
+compile = src => new Function('return '+src)()
+
 body.onkeydown = e => {
   let { key } = e;
   let curr_active = send({to: last_active, selector: 'poll'});
@@ -768,11 +770,32 @@ body.onkeydown = e => {
       foreign = svgel('foreignObject', {x: 5, y: 30, width: '100%', height: '100%'}, curr_active.svg.group);
       curr_active.svg.textarea = htmlel('textarea', {}, foreign);
       curr_active.svg.textarea.onfocus = () => change(last_active, undefined);
-      curr_active.svg.textarea.textContent = '() => throw "not implemented"';
+      curr_active.svg.textarea.onkeydown = te => {
+        if (te.key === 'Enter' && te.ctrlKey) {
+          let code_path = compile(te.target.value);
+          code_path();
+        }
+      };
+      curr_active.svg.textarea.value = '() => {throw "not implemented";}';
       curr_active.svg.foreign_html = foreign;
     }
     let textarea = curr_active.svg.textarea;
     textarea.focus();
     e.preventDefault();
   } else if (key.length === 1) change(curr_active.key_name, s => s + key);
+};
+
+deref = id => svg_userData(document.getElementById(id));
+
+single_lookup = (root, key) => {
+  let grps = root.getElementsByClassName(key);
+  return grps.length === 0 ? undefined : svg_userData(grps[0]);
+};
+
+path_lookup = (root, ...keys) => {
+  if (root === undefined || keys.length === 0) return root;
+
+  let [key, ...rest] = keys;
+  let child = single_lookup(root, key);
+  return path_lookup(child, ...rest);
 };

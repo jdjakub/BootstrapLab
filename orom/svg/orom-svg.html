@@ -2,6 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
+    <title>OROM/SVG</title>
     <style>
     svg circle:hover {
       fill: lightgreen;
@@ -21,6 +22,12 @@
     }
     textarea {
       background: lightgray;
+    }
+    svg foreignObject {
+      pointer-events: none;
+    }
+    textarea {
+      pointer-events: all;
     }
     </style>
   </head>
