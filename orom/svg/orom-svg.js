@@ -679,6 +679,63 @@ behaviors.arrow = {
 };
 create.arrow = () => create.entity(behaviors.arrow);
 
+behaviors.dom = {};
+behaviors.dom.node = {
+  ['created']: ({recv}, {dom_node}) => {
+    recv.dom_node = dom_node;
+    recv.attrs = new Map();
+
+    let behavior_for_tag = behaviors.dom[dom_node.tagName];
+    if (behavior_for_tag !== undefined) {
+      recv.behaviors.push(behavior_for_tag);
+      behavior_for_tag['created']({recv});
+    }
+  },
+  ['attr']: ({recv}, {name}) => {
+    let obs = recv.attrs.get(name);
+    if (obs === undefined) { // lazy init
+      obs = create.sink_to_dom_attrs(recv.dom_node, name);
+      recv.attrs.set(name, obs);
+    }
+    return obs;
+  },
+};
+create.dom_node = (dom_node_to_wrap) => {
+  let obj = {
+    behaviors: [{}, behaviors.dom.node]
+  }
+  send({to: obj, selector: 'created'}, {dom_node: dom_node_to_wrap});
+  return obj;
+}
+
+behaviors.dom.circle = {
+  ['created']: ({recv}) => {
+    recv.center = create.sink_to_dom_attrs(recv.dom_node, ['cx','cy']);
+    recv.radius = create.sink_to_dom_attrs(recv.dom_node, 'r');
+  },
+};
+
+behaviors.dom.line = {
+  ['created']: ({recv}) => {
+    recv.p1 = create.sink_to_dom_attrs(recv.dom_node, ['x1','y1']);
+    recv.p2 = create.sink_to_dom_attrs(recv.dom_node, ['x2', 'y2']);
+  },
+};
+
+behaviors.dom.rect = {
+  ['created']: ({recv}) => {
+    recv.top_left  = create.sink_to_dom_attrs(recv.dom_node, ['x','y']);
+    recv.width     = create.sink_to_dom_attrs(recv.dom_node, 'width');
+    recv.height    = create.sink_to_dom_attrs(recv.dom_node, 'height');
+  },
+};
+
+behaviors.dom.g = {
+  ['created']: ({recv}) => {
+    recv.translate = create.sink_to_dom_attrs(recv.dom_node, transform_translate);
+  },
+};
+
 pointer = create.entity(behaviors.pointer);
 
 current_tool = 'draw';
