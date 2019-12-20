@@ -4,6 +4,12 @@ body = document.body;
 body.style.margin = '0px';
 body.style.minHeight = '100%';
 
+log = (x, str) => {
+  if (str === undefined) console.log(x);
+  else console.log(str, x);
+  return x;
+};
+
 attr_single = (elem, key, val_or_func) => {
   let old;
   if (key === 'textContent') old = elem.textContent;
@@ -136,25 +142,26 @@ defaults.dyn_double_dispatch = ({ sender, recv, selector }, context) => {
 behaviors = {}
 
 create = {};
-create.entity = (...behaviors) => {
+create.entity = (create_args, ...behaviors) => {
   let o = {
     behaviors: [{}, ...behaviors],
     //           ^ Entity's own personal behavior overrides specific to its instance
   };
-  send({to: o, selector: 'created'});
+  send({to: o, selector: 'created'}, create_args);
   return o;
 };
 
 //      ---***   OBSERVABLE   ***---
 // An Observable is live-state: a piece of state that notifies its dependents of change.
 behaviors.observable = {
-  ['created']: ({recv}) => {
+  ['created']: ({recv}, {func}) => {
     recv.value  = () => recv._value;
     recv.update =  v => recv._value = v;
     recv._subs     = new Set();
     recv.subs_copy = () => new Set(recv._subs);
     recv.add    = sub => recv._subs.add(sub);
     recv.remove = sub => recv._subs.delete(sub);
+    recv.func = func === undefined ? (_,x)=>x : func;
   },
   /* I can be told that I changed to a new value, optionally including the old.
    * If a function is specified as a new value, I treat this as a way to
@@ -169,10 +176,10 @@ behaviors.observable = {
    * visited, leaving them vulnerable to duplicate messages and defeating the
    * purpose of marking them in the first place.
    */
-  ['changed']: ({recv}, {only_once, post_clear, to}) => {
+  ['changed']: ({sender, recv}, {only_once, post_clear, to}) => {
     if (recv.pending) return; // if marked, ignore further changes. FCFS basis.
     let old_value = recv.value();
-    let new_value = to;
+    let new_value = recv.func(sender, to);
     if (typeof(new_value) === 'function') new_value = new_value(old_value);
     if (new_value !== old_value) {
       recv.update(new_value); // if there is a difference, update self and dependents
@@ -215,7 +222,7 @@ root_change = (obs, new_value) => send(
 subscribe = (from, to) => send({from, to, selector: 'subscribe-me'});
 unsubscribe = (from, to) => send({from, to, selector: 'unsubscribe-me'});
 
-create.observable = () => create.entity(behaviors.observable);
+create.observable = (func) => create.entity({func}, behaviors.observable);
 
 // e.g. sink_to_dom_attrs(svg_rect, 'width') transmits changes to its width
 // e.g. sink_to_dom_attrs(svg_circle, ['cx', 'cy'])
@@ -355,7 +362,7 @@ behaviors.point = {
 };
 
 create.point = (pos) => {
-  let p = create.entity(behaviors.point);
+  let p = create.entity({}, behaviors.point);
   if (pos !== undefined) change(p.position, pos);
   return p;
 }
@@ -617,7 +624,7 @@ behaviors.rect = {
     }
   }
 };
-create.rect = () => create.entity(behaviors.rect);
+create.rect = () => create.entity({}, behaviors.rect);
 
 behaviors.rect_controls = {
   ['created']: ({recv}) => {
@@ -707,7 +714,7 @@ behaviors.arrow = {
     }
   }
 };
-create.arrow = () => create.entity(behaviors.arrow);
+create.arrow = () => create.entity({}, behaviors.arrow);
 
 behaviors.dom = {};
 behaviors.dom.node = {
@@ -766,7 +773,7 @@ behaviors.dom.g = {
   },
 };
 
-pointer = create.entity(behaviors.pointer);
+pointer = create.entity({}, behaviors.pointer);
 
 current_tool = 'draw';
 
@@ -888,9 +895,30 @@ path_lookup = (root, ...keys) => {
 };
 
 rect = create.dom_node(svgel('rect', {fill: '#00ff00'}, svg));
-controls = create.entity(behaviors.rect_controls);
+controls = create.entity({}, behaviors.rect_controls);
 subscribe(rect.width, controls.width);
 subscribe(rect.height, controls.height);
 subscribe(rect.top_left, controls.top_left.position);
 root_change(controls.top_left.position, [300, 300]);
 root_change(controls.bot_right.position, [600, 400]);
+
+circ = create.dom_node(svgel('circle', {fill: 'red'}, svg));
+circ_controls = create.entity({}, behaviors.rect_controls);
+let tl = circ_controls.top_left.position, br = circ_controls.bot_right.position;
+let pair = create.observable((p,pos) => p1p2 => {
+  p1p2 = p1p2 === undefined ? [[0,0], [0,0]] : p1p2;
+  let [p1,p2] = p1p2;
+  if (p === tl) p1 = pos;
+  else p2 = pos;
+  return [p1,p2];
+});
+subscribe(pair, tl);
+subscribe(pair, br);
+let center = create.observable((_,[p1,p2]) => vmul(0.5, vadd(p1,p2)));
+subscribe(center, pair);
+subscribe(circ.center, center);
+let half_w = create.observable((_,w) => w/2);
+subscribe(half_w, circ_controls.width);
+subscribe(circ.radius, half_w);
+root_change(tl, [150, 100]);
+root_change(br, [250, 200]);
