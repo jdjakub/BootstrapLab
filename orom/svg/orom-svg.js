@@ -619,6 +619,36 @@ behaviors.rect = {
 };
 create.rect = () => create.entity(behaviors.rect);
 
+behaviors.rect_controls = {
+  ['created']: ({recv}) => {
+    let tl = create.point([-1, -1]);
+    let bl = create.point([-1, +1]);
+    let br = create.point([+1, +1]);
+    let tr = create.point([+1, -1]);
+
+    recv.points = [tl,bl,br,tr];
+
+    let rods = [
+      [tl,bl,true,false],[bl,br,false,true],
+      [br,tr,true,false],[tr,tl,false,true],
+    ];
+
+    recv.rods = rods.map(([a,b,tx,ty]) => {
+      let rod = create.rod(a,b);
+      change(rod.transmit_deltas, [tx,ty]);
+      return rod;
+    });
+
+    recv.top_left = tl;
+    recv.bot_left = bl;
+    recv.top_right = tr;
+    recv.bot_right = br;
+
+    recv.width  = recv.rods[1].length;
+    recv.height = recv.rods[0].length;
+  },
+};
+
 //      ---***   ARROW   ***---
 /*
  * Ref
@@ -856,3 +886,11 @@ path_lookup = (root, ...keys) => {
   let child = single_lookup(root, key);
   return path_lookup(child, ...rest);
 };
+
+rect = create.dom_node(svgel('rect', {fill: '#00ff00'}, svg));
+controls = create.entity(behaviors.rect_controls);
+subscribe(rect.width, controls.width);
+subscribe(rect.height, controls.height);
+subscribe(rect.top_left, controls.top_left.position);
+root_change(controls.top_left.position, [300, 300]);
+root_change(controls.bot_right.position, [600, 400]);
