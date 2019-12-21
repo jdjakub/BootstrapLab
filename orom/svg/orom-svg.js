@@ -359,6 +359,9 @@ behaviors.point = {
         unsubscribe(recv.position, pointer_pos);
     }
   },
+  ['detach-dom']: ({recv}) => {
+    recv.svg.circle.remove();
+  },
 };
 
 create.point = (pos) => {
@@ -446,6 +449,9 @@ behaviors.rod = {
     recv.other = undefined;
     send({to: recv.p1, selector: 'clear-pending'});
     send({to: recv.p2, selector: 'clear-pending'});
+  },
+  ['detach-dom']: ({recv}) => {
+    recv.svg.line.remove();
   },
 };
 
@@ -654,6 +660,10 @@ behaviors.rect_controls = {
     recv.width  = recv.rods[1].length;
     recv.height = recv.rods[0].length;
   },
+  ['detach-dom']: ({recv}) => {
+    recv.points.forEach(p => send({to: p, selector: 'detach-dom'}));
+    recv.rods.forEach(r => send({to: r, selector: 'detach-dom'}));
+  },
 };
 
 //      ---***   ARROW   ***---
@@ -764,6 +774,26 @@ behaviors.dom.rect = {
     recv.top_left  = create.sink_to_dom_attrs(recv.dom_node, ['x','y']);
     recv.width     = create.sink_to_dom_attrs(recv.dom_node, 'width');
     recv.height    = create.sink_to_dom_attrs(recv.dom_node, 'height');
+    recv.controls  = create.observable();
+    subscribe(recv, recv.controls);
+  },
+  ['changed']: ({sender,recv}, {from,to}) => {
+    if (sender === recv.controls) {
+      if (from !== undefined) {
+        unsubscribe(recv.width,    from.width);
+        unsubscribe(recv.height,   from.height);
+        unsubscribe(recv.top_left, from.top_left.position);
+        send({to: from, selector: 'detach-dom'});
+      }
+      if (to !== undefined) {
+        let bb = bbox(recv.dom_node);
+        root_change(to.top_left.position, props(bb, 'left', 'top'));
+        root_change(to.bot_right.position, props(bb, 'right', 'bottom'));
+        subscribe(recv.top_left, to.top_left.position);
+        subscribe(recv.width,    to.width);
+        subscribe(recv.height,   to.height);
+      }
+    }
   },
 };
 
@@ -894,13 +924,21 @@ path_lookup = (root, ...keys) => {
   return path_lookup(child, ...rest);
 };
 
-rect = create.dom_node(svgel('rect', {fill: '#00ff00'}, svg));
-controls = create.entity({}, behaviors.rect_controls);
-subscribe(rect.width, controls.width);
-subscribe(rect.height, controls.height);
-subscribe(rect.top_left, controls.top_left.position);
-root_change(controls.top_left.position, [300, 300]);
-root_change(controls.bot_right.position, [600, 400]);
+active_rect = create.observable();
+
+make_rect = (x, y) => {
+  let rect = create.dom_node(svgel('rect', {fill: '#00ff00'}, svg));
+  attr(rect.dom_node, {x, y, width: 300, height: 200});
+
+  rect.dom_node.onclick = () => {
+    let curr_active = send({to: active_rect, selector: 'poll'});
+    if (curr_active !== undefined) change(curr_active.controls, undefined);
+
+    let controls = create.entity({}, behaviors.rect_controls);
+    change(rect.controls, controls);
+    change(active_rect, rect);
+  };
+};
 
 circ = create.dom_node(svgel('circle', {fill: 'red'}, svg));
 circ_controls = create.entity({}, behaviors.rect_controls);
