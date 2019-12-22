@@ -405,7 +405,9 @@ behaviors.rod = {
 
     recv.update_my_length_etc = () => {
       let p1 = send({to: recv.p1, selector: 'poll'});
+      change(recv.svg.p1, p1);
       let p2 = send({to: recv.p2, selector: 'poll'});
+      change(recv.svg.p2, p2);
       let p2_from_p1 = vsub(p2, p1);
       change(recv.p2_from_p1, p2_from_p1);
       change(recv.p1_from_p2, vmul(-1, p2_from_p1));
@@ -730,6 +732,7 @@ behaviors.dom = {};
 behaviors.dom.node = {
   ['created']: ({recv}, {dom_node}) => {
     recv.dom_node = dom_node;
+    dom_node.user_data = recv;
     recv.attrs = new Map();
 
     let behavior_for_tag = behaviors.dom[dom_node.tagName];
@@ -755,6 +758,12 @@ create.dom_node = (dom_node_to_wrap) => {
   return obj;
 }
 
+user_data = el => {
+  if (el.user_data === undefined)
+    el.user_data = create.dom_node({dom_node: el});
+  return el.user_data;
+};
+
 behaviors.dom.circle = {
   ['created']: ({recv}) => {
     recv.center = create.sink_to_dom_attrs(recv.dom_node, ['cx','cy']);
@@ -779,19 +788,32 @@ behaviors.dom.rect = {
   },
   ['changed']: ({sender,recv}, {from,to}) => {
     if (sender === recv.controls) {
+      let g = recv.dom_node.parentElement;
       if (from !== undefined) {
-        unsubscribe(recv.width,    from.width);
-        unsubscribe(recv.height,   from.height);
-        unsubscribe(recv.top_left, from.top_left.position);
+        unsubscribe(recv.width,  from.width);
+        unsubscribe(recv.height, from.height);
+        unsubscribe(user_data(g).origin_from_parent, g.from_parent_rod.p2_from_p1);
         send({to: from, selector: 'detach-dom'});
+        send({to: g.from_parent_rod, selector: 'detach-dom'});
+        send({to: g.parent_origin_pt, selector: 'detach-dom'});
       }
       if (to !== undefined) {
+        g.parent_origin_pt = create.point(
+          props(g.parentElement.getCTM(), 'e', 'f')
+        );
+        let g_origin = props(g.getCTM(), 'e', 'f');
+        let g_origin_pt = to.top_left;
+        root_change(g_origin_pt.position, g_origin);
+        g.from_parent_rod = create.rod(g.parent_origin_pt, g_origin_pt);
+        change(g.from_parent_rod.transmit_deltas, [false, false]);
+        subscribe(user_data(g).origin_from_parent, g.from_parent_rod.p2_from_p1);
+
         let bb = bbox(recv.dom_node);
-        root_change(to.top_left.position, props(bb, 'left', 'top'));
-        root_change(to.bot_right.position, props(bb, 'right', 'bottom'));
-        subscribe(recv.top_left, to.top_left.position);
-        subscribe(recv.width,    to.width);
-        subscribe(recv.height,   to.height);
+        root_change(to.bot_right.position, vadd(
+          g_origin, props(bb, 'width', 'height')
+        ));
+        subscribe(recv.width,  to.width);
+        subscribe(recv.height, to.height);
       }
     }
   },
@@ -799,7 +821,7 @@ behaviors.dom.rect = {
 
 behaviors.dom.g = {
   ['created']: ({recv}) => {
-    recv.translate = create.sink_to_dom_attrs(recv.dom_node, transform_translate);
+    recv.origin_from_parent = create.sink_to_dom_attrs(recv.dom_node, transform_translate);
   },
 };
 
@@ -913,7 +935,7 @@ deref = id => svg_userData(document.getElementById(id));
 
 single_lookup = (root, key) => {
   let grps = root.getElementsByClassName(key);
-  return grps.length === 0 ? undefined : svg_userData(grps[0]);
+  return grps.length === 0 ? undefined : grps[0];
 };
 
 path_lookup = (root, ...keys) => {
@@ -926,9 +948,11 @@ path_lookup = (root, ...keys) => {
 
 active_rect = create.observable();
 
-make_rect = (x, y) => {
-  let rect = create.dom_node(svgel('rect', {fill: '#00ff00'}, svg));
-  attr(rect.dom_node, {x, y, width: 300, height: 200});
+make_rect = (x,y,w,h,parent) => {
+  let g = create.dom_node(svgel('g', transform_translate([x,y]), parent));
+  let rect = create.dom_node(svgel('rect', {
+    fill: 'lightgray', x: 0, y: 0, width: w, height: h
+  }, g.dom_node));
 
   rect.dom_node.onclick = () => {
     let curr_active = send({to: active_rect, selector: 'poll'});
