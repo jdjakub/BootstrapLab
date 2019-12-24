@@ -498,7 +498,7 @@ behaviors.box = {
 
     svg_parent = recv.svg.group;
 
-    let rect, text, textarea;
+    let rect, text;
 
     // ... containing a background <rect> ...
     if (dom_tree === undefined) rect = svgel('rect', {fill: 'grey'});
@@ -518,11 +518,15 @@ behaviors.box = {
 
     // ...and optionally a <textarea> ...
     if (dom_tree !== undefined) {
-      textarea = dom_tree.querySelector(':scope > foreignObject > textarea');
+      let existing_textarea = dom_tree.querySelector(
+        ':scope > foreignObject > textarea'
+      );
+      if (existing_textarea)
+        send({to: recv, selector: 'add-textarea'}, {existing_textarea});
     }
 
     Object.assign(recv.svg, {
-      rect, text, textarea,
+      rect, text,
       text_content: create.sink_to_dom_attrs(text, 'textContent'),
       css_class: create.sink_to_dom_attrs(recv.svg.group, 'class'),
     });
@@ -543,6 +547,32 @@ behaviors.box = {
           create.box(g, true);
       });
     }
+  },
+  ['add-textarea']: ({recv}, {existing_textarea}) => {
+    if (existing_textarea === undefined) {
+      if (recv.svg.textarea === undefined) {
+        let foreign = svgel('foreignObject', {x: 5, y: 30, width: '100%', height: '100%'}, recv.svg.group);
+        recv.svg.textarea = htmlel('textarea', {}, foreign);
+      }
+    } else {
+      recv.svg.textarea = existing_textarea;
+    }
+
+    let my_textarea = recv.svg.textarea;
+
+    // Initialise listeners
+    my_textarea.onfocus = () => change(text_destination, undefined);
+    my_textarea.onkeyup = te => {
+      if (te.key === 'Enter' && te.ctrlKey) {
+        let code_path = compile(te.target.value);
+        code_path();
+      } else {
+        te.target.innerHTML = te.target.value; // Stay externalised!
+      }
+    };
+
+    if (existing_textarea === undefined)
+      my_textarea.value = '() => {throw "not implemented";}';
   },
   ['changed']: ({sender, recv}, {from, to}) => {
     if (sender === recv.being_considered) {
@@ -574,7 +604,7 @@ behaviors.box = {
         } else if (window.active_arrow !== undefined) {
           let dest = window.active_arrow.svg.line_end;
           unsubscribe(dest, pointer_pos);
-          subscribe(dest, recv.top_left.position);
+          //subscribe(dest, recv.top_left.position); TODO: update
           change(window.active_arrow.dest_id, recv.id);
           window.active_arrow = undefined;
         }
@@ -785,7 +815,7 @@ current_tool = 'draw';
  *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT, POSITIONAL INPUT ***
  */
 
-svg = svgel('svg');
+svg = body.querySelector('svg');
 svg.style.border = '2px dashed red';
 svg.getCTM = () => ({a: 0, b: 0, c: 0, d: 0, e: 0, f: 0}); // polyfill
 svg_parent = svg;
@@ -842,9 +872,7 @@ svg.onmouseout = e => {
  *
  */
 
-backg = create.box();
-attr(backg.svg.rect, 'fill', 'black');
-attr(backg.svg.rect, {x: 0, y: 0});
+backg = create.box(svg.querySelector('g'));
 change(text_destination, backg);
 
 resize = () => {
@@ -864,24 +892,8 @@ body.onkeydown = e => {
   if (curr_active !== undefined)
   if (key === 'Backspace') change(curr_active.key_name, s => s.slice(0,-1));
   else if (key === 'Enter') {
-    let foreign = curr_active.svg.foreign_html;
-    if (foreign === undefined) {
-      foreign = svgel('foreignObject', {x: 5, y: 30, width: '100%', height: '100%'}, curr_active.svg.group);
-      curr_active.svg.textarea = htmlel('textarea', {}, foreign);
-      // TODO: THESE LISTENERS DON'T GET EXTERNALISED!! >:O
-      curr_active.svg.textarea.onfocus = () => change(text_destination, undefined);
-      curr_active.svg.textarea.onkeydown = te => {
-        if (te.key === 'Enter' && te.ctrlKey) {
-          let code_path = compile(te.target.value);
-          code_path();
-        } else {
-          te.target.innerHTML = te.target.value; // Stay externalised!
-        }
-      };
-      curr_active.svg.textarea.value = '() => {throw "not implemented";}';
-      curr_active.svg.foreign_html = foreign;
-    }
     let textarea = curr_active.svg.textarea;
+    if (textarea === undefined) send({to: curr_active, selector: 'add-textarea'});
     textarea.focus();
     e.preventDefault();
   } else if (key.length === 1) change(curr_active.key_name, s => s + key);
@@ -933,6 +945,7 @@ make_rect = (x,y,w,h,parent) => {
   }, g.dom_node));
 };
 
+/*
 circ = create.dom_node(svgel('circle', {fill: 'red'}, svg));
 circ_controls = create.entity({}, behaviors.rect_controls);
 let tl = circ_controls.top_left.position, br = circ_controls.bot_right.position;
@@ -953,3 +966,4 @@ subscribe(half_w, circ_controls.width);
 subscribe(circ.radius, half_w);
 root_change(tl, [150, 100]);
 root_change(br, [250, 200]);
+*/
