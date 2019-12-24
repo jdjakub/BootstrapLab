@@ -468,45 +468,22 @@ create.rod = (p1, p2) => {
 }
 
 
-//      ---***   RECT   ***---
+//      ---***   BOX   ***---
 /*
- * Currently functioning as a fusion of "rectangle controls", SVG rect
- * proxy and box-dict (<g> group etc.) TODO: separate these three out.
+ * Boxer-like rect and text (keyname / title / CSS class) inside a <g>
 */
-last_active = create.observable();
+text_destination = create.observable();
 
 next_id = 1;
 
-behaviors.rect = {
+behaviors.box = {
+  // TODO: create from existing DOM tree
   ['created']: ({recv}) => {
     recv.id = 'box-' + next_id; next_id++;
     recv.svg = {
       group: svgel('g', {id: recv.id})
     };
     svg_userData(recv.svg.group, recv);
-
-    let tl = create.point([-1, -1]);
-    let bl = create.point([-1, +1]);
-    let br = create.point([+1, +1]);
-    let tr = create.point([+1, -1]);
-    let handle = create.point([0,0]); // so it appears behind and doesn't get LMB
-    attr(handle.svg.circle, 'visibility', 'hidden');
-
-    recv.points = [tl,bl,br,tr,handle];
-
-    let rods = [
-      [tl,bl],[bl,br],[br,tr],[tr,tl],
-      [handle,tl],[handle,bl],[handle,br],[handle,tr]
-    ];
-
-    recv.rods = rods.map(([a,b]) => create.rod(a,b));
-
-    recv.svg.top_left = create.sink_to_dom_attrs(recv.svg.group, transform_translate);
-    let parent = svg_userData(recv.svg.group.parentElement);
-    if (parent !== undefined && parent.top_left !== undefined) {
-      recv.parent_to_me = create.rod(parent.top_left, tl);
-      subscribe(recv.svg.top_left, recv.parent_to_me.p2_from_p1);
-    } else subscribe(recv.svg.top_left, tl.position);
 
     svg_parent = recv.svg.group;
 
@@ -520,74 +497,18 @@ behaviors.rect = {
 
     Object.assign(recv.svg, {
       rect: rect,
-      width: create.sink_to_dom_attrs(rect, 'width'),
-      height: create.sink_to_dom_attrs(rect, 'height'),
       text: text,
       text_content: create.sink_to_dom_attrs(text, 'textContent'),
       css_class: create.sink_to_dom_attrs(recv.svg.group, 'class'),
     });
 
-    subscribe(recv.svg.width, recv.rods[1].length);
-    subscribe(recv.svg.height, recv.rods[0].length);
-
     recv.key_name = create.observable();
     subscribe(recv.svg.css_class, recv.key_name);
     subscribe(recv.svg.text_content, recv.key_name);
     change(recv.key_name, 'unnamed');
-
-    recv.mode = create.observable();
-    subscribe(recv, recv.mode);
-
-    change(recv.mode, 'boxy');
-
-    recv.top_left = tl;
-    recv.bot_left = bl;
-    recv.bot_right = br;
-    recv.top_right = tr;
-    recv.handle = handle;
   },
   ['changed']: ({sender, recv}, {from, to}) => {
-    if (sender === recv.mode) {
-      if (to === 'boxy') {
-        props(recv.rods, 0,2).forEach(r => // verticals transmit hor changes
-          change(r.transmit_deltas, [true,false])
-        );
-        props(recv.rods, 1,3).forEach(r => // horizontals transmit ver changes
-          change(r.transmit_deltas, [false,true])
-        );
-        props(recv.rods, 4,5,6,7).forEach(r => // Handle-point is free to jump to the next click within the rect
-          change(r.transmit_deltas, [false,false])
-        );
-        for (let child of recv.svg.group.children) { // recurse to descendants...
-          if (child.tagName !== 'g') continue;
-          let entity = svg_userData(child);
-          if (entity === undefined) continue;
-          if (entity.parent_to_me !== undefined) // allow descendants to move relative to parent
-            change(entity.parent_to_me.transmit_deltas, [false,false]);
-          if (entity.mode !== undefined)
-            change(entity.mode, 'boxy'); // restore descendants
-        }
-      } else if (to === 'rigid') {
-        props(recv.rods, 0,2).forEach(r => // don't ruin rigid body changes
-          change(r.transmit_deltas, [false,false])
-        );
-        props(recv.rods, 1,3).forEach(r => // don't ruin rigid body changes
-          change(r.transmit_deltas, [false,false])
-        );
-        props(recv.rods, 4,5,6,7).forEach(r => // Handle-point copies changes to corners
-          change(r.transmit_deltas, [true,true])
-        );
-        for (let child of recv.svg.group.children) { // recurse to descendants...
-          if (child.tagName !== 'g') continue;
-          let entity = svg_userData(child);
-          if (entity === undefined) continue;
-          if (entity.parent_to_me !== undefined) // connect parent rigid changes to child
-            change(entity.parent_to_me.transmit_deltas, [true,true]);
-          if (entity.mode !== undefined)
-            change(entity.mode, 'rigid'); // make descendants rigid bodies
-        }
-      }
-    } else if (sender === recv.being_considered) {
+    if (sender === recv.being_considered) {
       // Similar to behaviors.point above! Share this code somehow?
       if (to === true) // PUSH...
         subscribe(recv, left_mouse_button_is_down);
@@ -597,21 +518,14 @@ behaviors.rect = {
       let pointer_pos = send({to: pointer, selector: 'position'});
       let curr_pointer_pos = send({to: pointer_pos, selector: 'poll'});
 
-      if (current_tool === 'move' && svg_userData(recv.svg.group.parentElement) !== undefined) { // proxy for top-level root rect
-        if (to === true) { // Had to push handle point behind rect to make this work...
-          root_change(recv.handle.position, curr_pointer_pos);
-          subscribe(recv.handle.position, pointer_pos);
-          change(recv.mode, 'rigid');
-        } else {
-          unsubscribe(recv.handle.position, pointer_pos);
-          change(recv.mode, 'boxy');
-        }
-      } else if (current_tool === 'draw') {
+      if (current_tool === 'draw') {
         if (to === true) {
           svg_parent = recv.svg.group;
-          let rect = create.rect();
-          root_change(rect.top_left.position, curr_pointer_pos);
-          subscribe(rect.bot_right.position, pointer_pos);
+          let box = create.box();
+          let ctrls = make_active(box.svg.rect);
+          root_change(ctrls.top_left.position, curr_pointer_pos);
+          subscribe(ctrls.bot_right.position, pointer_pos);
+          change(text_destination, box);
         }
       } else if (current_tool === 'arrow') {
         if (to === true) {
@@ -627,12 +541,12 @@ behaviors.rect = {
           change(window.active_arrow.dest_id, recv.id);
           window.active_arrow = undefined;
         }
+        change(text_destination, recv);
       }
-      change(last_active, recv);
     }
   }
 };
-create.rect = () => create.entity({}, behaviors.rect);
+create.box = () => create.entity({}, behaviors.box);
 
 behaviors.rect_controls = {
   ['created']: ({recv}) => {
@@ -760,7 +674,7 @@ create.dom_node = (dom_node_to_wrap) => {
 
 user_data = el => {
   if (el.user_data === undefined)
-    el.user_data = create.dom_node({dom_node: el});
+    el.user_data = create.dom_node(el);
   return el.user_data;
 };
 
@@ -788,25 +702,26 @@ behaviors.dom.rect = {
   },
   ['changed']: ({sender,recv}, {from,to}) => {
     if (sender === recv.controls) {
-      let g = recv.dom_node.parentElement;
+      let g = user_data(recv.dom_node.parentElement);
       if (from !== undefined) {
         unsubscribe(recv.width,  from.width);
         unsubscribe(recv.height, from.height);
-        unsubscribe(user_data(g).origin_from_parent, g.from_parent_rod.p2_from_p1);
+        unsubscribe(g.origin_from_parent, g.from_parent_rod.p2_from_p1);
         send({to: from, selector: 'detach-dom'});
         send({to: g.from_parent_rod, selector: 'detach-dom'});
         send({to: g.parent_origin_pt, selector: 'detach-dom'});
       }
       if (to !== undefined) {
         g.parent_origin_pt = create.point(
-          props(g.parentElement.getCTM(), 'e', 'f')
+          props(g.dom_node.parentElement.getCTM(), 'e', 'f')
         );
-        let g_origin = props(g.getCTM(), 'e', 'f');
+        g.parent_origin_pt.svg.circle.style.visibility = 'hidden';
+        let g_origin = props(g.dom_node.getCTM(), 'e', 'f');
         let g_origin_pt = to.top_left;
         root_change(g_origin_pt.position, g_origin);
         g.from_parent_rod = create.rod(g.parent_origin_pt, g_origin_pt);
         change(g.from_parent_rod.transmit_deltas, [false, false]);
-        subscribe(user_data(g).origin_from_parent, g.from_parent_rod.p2_from_p1);
+        subscribe(g.origin_from_parent, g.from_parent_rod.p2_from_p1);
 
         let bb = bbox(recv.dom_node);
         root_change(to.bot_right.position, vadd(
@@ -835,6 +750,7 @@ current_tool = 'draw';
 
 svg = svgel('svg');
 svg.style.border = '2px dashed red';
+svg.getCTM = () => ({a: 0, b: 0, c: 0, d: 0, e: 0, f: 0}); // polyfill
 svg_parent = svg;
 
 defs = svgel('defs');
@@ -889,15 +805,15 @@ svg.onmouseout = e => {
  *
  */
 
-backg = create.rect();
+backg = create.box();
 attr(backg.svg.rect, 'fill', 'black');
-root_change(backg.top_left.position, [0,0]);
-change(last_active, backg);
+attr(backg.svg.rect, {x: 0, y: 0});
+change(text_destination, backg);
 
 resize = () => {
   let dims = {width: body.offsetWidth*0.99, height: body.offsetHeight*0.99};
   attr(svg, dims);
-  change(backg.bot_right.position, [dims.width, dims.height]);
+  attr(backg.svg.rect, dims);
 };
 
 window.onresize = resize;
@@ -907,7 +823,7 @@ compile = src => new Function('return '+src)()
 
 body.onkeydown = e => {
   let { key } = e;
-  let curr_active = send({to: last_active, selector: 'poll'});
+  let curr_active = send({to: text_destination, selector: 'poll'});
   if (curr_active !== undefined)
   if (key === 'Backspace') change(curr_active.key_name, s => s.slice(0,-1));
   else if (key === 'Enter') {
@@ -915,11 +831,13 @@ body.onkeydown = e => {
     if (foreign === undefined) {
       foreign = svgel('foreignObject', {x: 5, y: 30, width: '100%', height: '100%'}, curr_active.svg.group);
       curr_active.svg.textarea = htmlel('textarea', {}, foreign);
-      curr_active.svg.textarea.onfocus = () => change(last_active, undefined);
+      curr_active.svg.textarea.onfocus = () => change(text_destination, undefined);
       curr_active.svg.textarea.onkeydown = te => {
         if (te.key === 'Enter' && te.ctrlKey) {
           let code_path = compile(te.target.value);
           code_path();
+        } else {
+          te.target.innerHTML = te.target.value; // Stay externalised!
         }
       };
       curr_active.svg.textarea.value = '() => {throw "not implemented";}';
@@ -948,20 +866,38 @@ path_lookup = (root, ...keys) => {
 
 active_rect = create.observable();
 
+make_active = rect => {
+  rect = user_data(rect);
+  let curr_active = send({to: active_rect, selector: 'poll'});
+  if (curr_active !== undefined) change(curr_active.controls, undefined);
+
+  let controls = create.entity({}, behaviors.rect_controls);
+  change(rect.controls, controls);
+  change(active_rect, rect);
+
+  return controls;
+}
+
+svg.onclick = e => {
+  if (e.button === 0)
+    if (e.target.tagName === 'rect')
+      make_active(e.target);
+};
+
 make_rect = (x,y,w,h,parent) => {
   let g = create.dom_node(svgel('g', transform_translate([x,y]), parent));
   let rect = create.dom_node(svgel('rect', {
     fill: 'lightgray', x: 0, y: 0, width: w, height: h
   }, g.dom_node));
 
-  rect.dom_node.onclick = () => {
+  /*rect.dom_node.onclick = () => {
     let curr_active = send({to: active_rect, selector: 'poll'});
     if (curr_active !== undefined) change(curr_active.controls, undefined);
 
     let controls = create.entity({}, behaviors.rect_controls);
     change(rect.controls, controls);
     change(active_rect, rect);
-  };
+  };*/
 };
 
 circ = create.dom_node(svgel('circle', {fill: 'red'}, svg));
