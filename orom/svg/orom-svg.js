@@ -477,27 +477,52 @@ text_destination = create.observable();
 next_id = 1;
 
 behaviors.box = {
-  // TODO: create from existing DOM tree
-  ['created']: ({recv}) => {
-    recv.id = 'box-' + next_id; next_id++;
-    recv.svg = {
-      group: svgel('g', {id: recv.id})
-    };
+  ['created']: ({recv}, {dom_tree, fail_silent}) => {
+    let abort = (loud_msg) => {
+      if (fail_silent) return true;
+      else throw [loud_msg, dom_tree];
+    }
+
+    recv.svg = {};
+
+    // Consists of a <g> ...
+    if (dom_tree === undefined) recv.svg.group = svgel('g', {id: recv.id});
+    else if (dom_tree.tagName !== 'g' && abort('Expected outermost <g>'))
+      return;
+    else recv.svg.group = dom_tree;
+
+    if (dom_tree === undefined) { recv.id = 'box-' + next_id; next_id++; }
+    else recv.id = attr(dom_tree, 'id');
+
     svg_userData(recv.svg.group, recv);
 
     svg_parent = recv.svg.group;
 
-    let rect = svgel('rect', {fill: 'grey'});
-    svg_userData(rect, recv);
-    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
-    subscribe(recv, recv.being_considered);
+    let rect, text, textarea;
 
-    let text = svgel('text', {font_family: 'Arial Narrow', x: 5, y: 20, fill: 'white'});
+    // ... containing a background <rect> ...
+    if (dom_tree === undefined) rect = svgel('rect', {fill: 'grey'});
+    else rect = dom_tree.querySelector(':scope > rect');
+    if (!rect && abort('Expected <rect> in <g>')) return;
+
     svg_userData(rect, recv);
+
+    // ... and a title <text> ...
+    if (dom_tree === undefined) text = svgel('text', {
+      font_family: 'Arial Narrow', x: 5, y: 20, fill: 'white'
+    });
+    else text = dom_tree.querySelector(':scope > text');
+    if (!text && abort('Expected <text> in <g>')) return;
+
+    svg_userData(text, recv);
+
+    // ...and optionally a <textarea> ...
+    if (dom_tree !== undefined) {
+      textarea = dom_tree.querySelector(':scope > foreignObject > textarea');
+    }
 
     Object.assign(recv.svg, {
-      rect: rect,
-      text: text,
+      rect, text, textarea,
       text_content: create.sink_to_dom_attrs(text, 'textContent'),
       css_class: create.sink_to_dom_attrs(recv.svg.group, 'class'),
     });
@@ -505,7 +530,19 @@ behaviors.box = {
     recv.key_name = create.observable();
     subscribe(recv.svg.css_class, recv.key_name);
     subscribe(recv.svg.text_content, recv.key_name);
-    change(recv.key_name, 'unnamed');
+
+    if (dom_tree === undefined) change(recv.key_name, 'unnamed');
+    else change(recv.key_name, text.textContent);
+
+    recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
+    subscribe(recv, recv.being_considered);
+
+    if (dom_tree !== undefined) { // Go down the tree and make boxes
+      dom_tree.querySelectorAll(':scope > g').forEach(g => {
+        if (svg_userData(g) === undefined)
+          create.box(g, true);
+      });
+    }
   },
   ['changed']: ({sender, recv}, {from, to}) => {
     if (sender === recv.being_considered) {
@@ -546,7 +583,7 @@ behaviors.box = {
     }
   }
 };
-create.box = () => create.entity({}, behaviors.box);
+create.box = (dom_tree, fail_silent) => create.entity({dom_tree, fail_silent}, behaviors.box);
 
 behaviors.rect_controls = {
   ['created']: ({recv}) => {
@@ -831,6 +868,7 @@ body.onkeydown = e => {
     if (foreign === undefined) {
       foreign = svgel('foreignObject', {x: 5, y: 30, width: '100%', height: '100%'}, curr_active.svg.group);
       curr_active.svg.textarea = htmlel('textarea', {}, foreign);
+      // TODO: THESE LISTENERS DON'T GET EXTERNALISED!! >:O
       curr_active.svg.textarea.onfocus = () => change(text_destination, undefined);
       curr_active.svg.textarea.onkeydown = te => {
         if (te.key === 'Enter' && te.ctrlKey) {
@@ -866,14 +904,18 @@ path_lookup = (root, ...keys) => {
 
 active_rect = create.observable();
 
-make_active = rect => {
-  rect = user_data(rect);
+make_active = dom_rect => {
+  rect = user_data(dom_rect);
   let curr_active = send({to: active_rect, selector: 'poll'});
   if (curr_active !== undefined) change(curr_active.controls, undefined);
 
   let controls = create.entity({}, behaviors.rect_controls);
   change(rect.controls, controls);
   change(active_rect, rect);
+
+  if (svg_userData(dom_rect) !== undefined) {
+    change(text_destination, svg_userData(dom_rect));
+  }
 
   return controls;
 }
@@ -889,15 +931,6 @@ make_rect = (x,y,w,h,parent) => {
   let rect = create.dom_node(svgel('rect', {
     fill: 'lightgray', x: 0, y: 0, width: w, height: h
   }, g.dom_node));
-
-  /*rect.dom_node.onclick = () => {
-    let curr_active = send({to: active_rect, selector: 'poll'});
-    if (curr_active !== undefined) change(curr_active.controls, undefined);
-
-    let controls = create.entity({}, behaviors.rect_controls);
-    change(rect.controls, controls);
-    change(active_rect, rect);
-  };*/
 };
 
 circ = create.dom_node(svgel('circle', {fill: 'red'}, svg));
