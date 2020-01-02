@@ -222,6 +222,8 @@ root_change = (obs, new_value) => send(
 subscribe = (from, to) => send({from, to, selector: 'subscribe-me'});
 unsubscribe = (from, to) => send({from, to, selector: 'unsubscribe-me'});
 
+poll = (obs) => send({to: obs, selector: 'poll'});
+
 create.observable = (func) => create.entity({func}, behaviors.observable);
 
 // e.g. sink_to_dom_attrs(svg_rect, 'width') transmits changes to its width
@@ -404,9 +406,9 @@ behaviors.rod = {
     subscribe(recv.svg.color, recv.transmit_deltas);
 
     recv.update_my_length_etc = () => {
-      let p1 = send({to: recv.p1, selector: 'poll'});
+      let p1 = poll(recv.p1);
       change(recv.svg.p1, p1);
-      let p2 = send({to: recv.p2, selector: 'poll'});
+      let p2 = poll(recv.p2);
       change(recv.svg.p2, p2);
       let p2_from_p1 = vsub(p2, p1);
       change(recv.p2_from_p1, p2_from_p1);
@@ -425,7 +427,7 @@ behaviors.rod = {
       // If this change came from the outside, propagate as necessary
       recv.other = sender === recv.p1 ? recv.p2 : recv.p1;
 
-      let transmit_deltas = send({to: recv.transmit_deltas, selector: 'poll'});
+      let transmit_deltas = poll(recv.transmit_deltas);
       let [dx,dy] = vsub(to, from);
       let delta_for_other = [dx,dy];
       if (!transmit_deltas[0] || dx === 0) delta_for_other[0] = 0;
@@ -477,7 +479,7 @@ text_destination = create.observable();
 next_id = create.observable();
 
 gen_id = () => {
-  let id = send({to: next_id, selector: 'poll'});
+  let id = poll(next_id);
   change(next_id, x => x+1);
   return id;
 };
@@ -593,7 +595,7 @@ behaviors.box = {
         unsubscribe(recv, left_mouse_button_is_down);
     } else if (sender === left_mouse_button_is_down) {
       let pointer_pos = send({to: pointer, selector: 'position'});
-      let curr_pointer_pos = send({to: pointer_pos, selector: 'poll'});
+      let curr_pointer_pos = poll(pointer_pos);
 
       if (current_tool === 'draw') {
         if (to === true) {
@@ -828,7 +830,7 @@ behaviors.dom.rect = {
         change(g.global_origin_pt, to.top_left);
 
         let bb = bbox(recv.dom_node);
-        let top_left_now = send({to: to.top_left.position, selector: 'poll'});
+        let top_left_now = poll(to.top_left.position);
         root_change(to.bot_right.position, vadd(
           top_left_now, props(bb, 'width', 'height')
         ));
@@ -955,7 +957,7 @@ compile = src => new Function('return '+src)()
 
 body.onkeydown = e => {
   let { key } = e;
-  let curr_active = send({to: text_destination, selector: 'poll'});
+  let curr_active = poll(text_destination);
   if (curr_active !== undefined)
   if (key === 'Backspace') change(curr_active.key_name, s => s.slice(0,-1));
   else if (key === 'Enter') {
@@ -966,7 +968,11 @@ body.onkeydown = e => {
   } else if (key.length === 1) change(curr_active.key_name, s => s + key);
 };
 
-deref = id => svg_userData(document.getElementById(id));
+follow_arrow = (g) => {
+  let arrow = svg_userData(g); // assumes arrow
+  let dest_circle = document.getElementById(poll(arrow.dest_id));
+  return dest_circle.parentElement;
+};
 
 single_lookup = (root, key) => {
   let grps = root.getElementsByClassName(key);
@@ -985,7 +991,7 @@ active_rect = create.observable();
 
 make_active = dom_rect => {
   rect = user_data(dom_rect);
-  let curr_active = send({to: active_rect, selector: 'poll'});
+  let curr_active = poll(active_rect);
   if (curr_active !== undefined) change(curr_active.controls, undefined);
 
   let controls = create.entity({}, behaviors.rect_controls);
