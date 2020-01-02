@@ -872,7 +872,7 @@ behaviors.dom.g = {
 
 pointer = create.entity({}, behaviors.pointer);
 
-current_tool = 'draw';
+current_tool = 'move';
 
 /*
  *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT, POSITIONAL INPUT ***
