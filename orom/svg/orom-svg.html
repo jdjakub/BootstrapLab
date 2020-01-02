@@ -33,24 +33,27 @@
   </head>
   <body>
     <svg>
-      <g class="root">
+      <g id="box-1" class="root">
         <rect fill="black" x="0" y="0" width="874.17" height="787.05"></rect>
         <text font-family="Arial Narrow" x="5" y="20" fill="white">root</text>
-        <g class="vtable-vtable" transform="translate(21,55)">
+        <g id="box-2" class="vtable-vtable" transform="translate(21,55)">
           <rect fill="grey" height="504" width="447"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable-vtable</text>
-          <g class="vtable" transform="translate(11,45)">
+          <g id="box-3" class="vtable" transform="translate(11,45)">
             <rect fill="grey" height="46" width="229"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable</text>
           </g>
-          <g class="parent" transform="translate(254,48)">
+          <g id="box-4" class="parent" transform="translate(254,48)">
             <rect fill="grey" height="40" width="181"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">parent</text>
+            <g transform="translate(158,25)">
+              <circle r="10" fill="white" stroke="black" id="circle-1">circle-2</circle>
+            </g>
           </g>
-          <g class="methods" transform="translate(13,105)">
+          <g id="box-5" class="methods" transform="translate(13,105)">
             <rect fill="grey" height="384" width="419"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">methods</text>
-            <g class="testing" transform="translate(13,42)">
+            <g id="box-6" class="testing" transform="translate(13,42)">
               <rect fill="grey" height="169" width="389"></rect>
               <text font-family="Arial Narrow" x="5" y="20" fill="white">testing</text>
               <foreignObject x="5" y="30" width="100%" height="100%">
@@ -59,7 +62,7 @@
 }</textarea>
               </foreignObject>
             </g>
-            <g class="say-hello" transform="translate(19,230)">
+            <g id="box-7" class="say-hello" transform="translate(19,230)">
               <rect fill="grey" height="141" width="387"></rect>
               <text font-family="Arial Narrow" x="5" y="20" fill="white">say-hello</text>
               <foreignObject x="5" y="30" width="100%" height="100%">
@@ -70,17 +73,18 @@
             </g>
           </g>
         </g>
-        <g class="object-vtable" transform="translate(485,59)">
+        <g id="box-8" class="object-vtable" transform="translate(485,59)">
           <rect fill="grey" height="153" width="208"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">object-vtable</text>
-          <g class="vtable" transform="translate(67,45)">
+          <g id="box-9" class="vtable" transform="translate(67,45)">
             <rect fill="grey" height="90" width="59"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable</text>
           </g>
-          <g class="parent" transform="translate(136,46)">
+          <g id="box-10" class="parent" transform="translate(136,46)">
             <rect fill="grey" height="85" width="56"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">parent</text>
           </g>
+          <circle id="circle-2" cx="515" cy="128"></circle>
         </g>
       </g>
     </svg>

@@ -483,6 +483,8 @@ behaviors.box = {
       else throw [loud_msg, dom_tree];
     }
 
+    //TODO: creates partial tree even if fails!! ROLLBACK
+
     recv.svg = {};
 
     // Consists of a <g> ...
@@ -541,12 +543,14 @@ behaviors.box = {
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     subscribe(recv, recv.being_considered);
 
-    if (dom_tree !== undefined) { // Go down the tree and make boxes
+    if (dom_tree !== undefined) { // Go down the tree and make sub-units
       dom_tree.querySelectorAll(':scope > g').forEach(g => {
         if (svg_userData(g) === undefined)
-          create.box(g, true);
+          create.box(g, true) || create.arrow(g, true);
       });
     }
+
+    return true;
   },
   ['add-textarea']: ({recv}, {existing_textarea}) => {
     if (existing_textarea === undefined) {
@@ -599,13 +603,16 @@ behaviors.box = {
           svg_parent = recv.svg.group;
           let arrow = create.arrow();
           root_change(arrow.source.position, curr_pointer_pos);
-          subscribe(arrow.svg.line_end, pointer_pos);
+          subscribe(user_data(arrow.svg.arrow).end, pointer_pos);
           window.active_arrow = arrow;
         } else if (window.active_arrow !== undefined) {
-          let dest = window.active_arrow.svg.line_end;
-          unsubscribe(dest, pointer_pos);
-          //subscribe(dest, recv.top_left.position); TODO: update
-          change(window.active_arrow.dest_id, recv.id);
+          let line = user_data(window.active_arrow.svg.arrow);
+          unsubscribe(line.end, pointer_pos);
+          change(user_data(svgel('circle', {id: 'circle-'+next_id}, recv.svg.group))
+            .center, attrs(line.dom_node, 'x2', 'y2'));
+          change(user_data(window.active_arrow.svg.group).global_origin_pt, undefined);
+          change(window.active_arrow.dest_id, 'circle-'+next_id);
+          next_id++;
           window.active_arrow = undefined;
         }
         change(text_destination, recv);
@@ -613,7 +620,13 @@ behaviors.box = {
     }
   }
 };
-create.box = (dom_tree, fail_silent) => create.entity({dom_tree, fail_silent}, behaviors.box);
+create.box = (dom_tree, fail_silent) => {
+  let box = {
+    behaviors: [{}, behaviors.box]
+  }
+  let ok = send({to: box, selector: 'created'}, {dom_tree, fail_silent});
+  return ok ? box : undefined;
+}
 
 behaviors.rect_controls = {
   ['created']: ({recv}) => {
@@ -655,40 +668,70 @@ behaviors.rect_controls = {
 */
 
 behaviors.arrow = {
-  ['created']: ({recv}) => {
-    recv.svg = {
-      group: svgel('g'),
-    };
-    svg_userData(recv.svg.group, recv);
+  ['created']: ({recv}, {dom_tree, fail_silent}) => {
+    let abort = (loud_msg) => {
+      if (fail_silent) return true;
+      else throw [loud_msg, dom_tree];
+    }
 
-    recv.source = create.point([-1, -1]);
+    recv.svg = {};
+
+    // Consists of a <g> ...
+    if (dom_tree === undefined) recv.svg.group = svgel('g', {id: recv.id});
+    else if (dom_tree.tagName !== 'g' && abort('Expected outermost <g>'))
+      return;
+    else recv.svg.group = dom_tree;
+
+    svg_userData(recv.svg.group, recv);
     svg_parent = recv.svg.group;
-    recv.svg.circle = svgel('circle', {r: 10, fill: 'white', stroke: 'black'});
-    svg_userData(recv.svg.circle, recv);
+
+    let circle;
+
+    // ... containing a background <circle> ...
+    if (dom_tree === undefined) {
+      circle = svgel('circle', {
+        r: 10, fill: 'white', stroke: 'black', id: 'circle-' + next_id
+      });
+      next_id++;
+    } else circle = dom_tree.querySelector(':scope > circle');
+    if (!circle && abort('Expected <circle> in <g>')) return;
+
+    svg_userData(circle, recv);
+    recv.svg.circle = circle;
+
+    let source_pos;
+
+    if (dom_tree === undefined) source_pos = [0,0];
+    else source_pos = props(recv.svg.group.getCTM(), 'e', 'f');
+    recv.source = create.point(source_pos);
 
     recv.svg.arrow = svgel('line', {
       stroke: 'cyan', stroke_width: 1, marker_end: 'url(#Arrowhead)', class: 'arrow'
     }, svg);
 
-    recv.svg.line_start = create.sink_to_dom_attrs(recv.svg.arrow, ['x1', 'y1']);
-    recv.svg.line_end   = create.sink_to_dom_attrs(recv.svg.arrow, ['x2', 'y2']);
-
-    subscribe(recv.svg.line_start, recv.source.position);
+    subscribe(user_data(recv.svg.arrow).start, recv.source.position);
+    change(user_data(recv.svg.group).global_origin_pt, recv.source);
+    if (dom_tree !== undefined)
+      change(user_data(recv.svg.group).global_origin_pt, undefined);
 
     recv.dest_id = create.observable();
     // ingeniously abuse circle's invisible textContent for ID of dest element
-    recv.svg.dest_id = create.sink_to_dom_attrs(recv.svg.circle, 'textContent');
+    recv.svg.dest_id = send({to: user_data(recv.svg.circle), selector: 'attr'}, {
+      name: 'textContent'
+    });
     subscribe(recv.svg.dest_id, recv.dest_id);
 
-    recv.svg.translate = create.sink_to_dom_attrs(recv.svg.group, transform_translate);
-    let parent = svg_userData(recv.svg.group.parentElement);
-    if (parent !== undefined && parent.top_left !== undefined) {
-      recv.parent_to_me = create.rod(parent.top_left, recv.source);
-      subscribe(recv.svg.translate, recv.parent_to_me.p2_from_p1);
-    } else subscribe(recv.svg.translate, recv.source.position);
+    let current_id = attr(recv.svg.circle, 'textContent');
+    if (current_id.length > 0) {
+      change(recv.dest_id, current_id);
+      let dest = document.getElementById(current_id);
+      change(user_data(recv.svg.arrow).end, attrs(dest, 'cx', 'cy'));
+    } else if (dom_tree !== undefined && abort('Expected dest id in circle textContent')) return;
 
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     subscribe(recv, recv.being_considered);
+
+    return true;
   },
   ['changed']: ({sender, recv}, {from, to}) => {
     if (sender === recv.being_considered) {
@@ -701,13 +744,13 @@ behaviors.arrow = {
       let pointer_pos = send({to: pointer, selector: 'position'});
 
       if (to === true) {
-        subscribe(recv.svg.line_end, pointer_pos);
+        subscribe(user_data(recv.svg.arrow).end, pointer_pos);
         window.active_arrow = recv;
       }
     }
   }
 };
-create.arrow = () => create.entity({}, behaviors.arrow);
+create.arrow = (dom_tree, fail_silent) => create.entity({dom_tree, fail_silent}, behaviors.arrow);
 
 behaviors.dom = {};
 behaviors.dom.node = {
@@ -754,8 +797,8 @@ behaviors.dom.circle = {
 
 behaviors.dom.line = {
   ['created']: ({recv}) => {
-    recv.p1 = create.sink_to_dom_attrs(recv.dom_node, ['x1','y1']);
-    recv.p2 = create.sink_to_dom_attrs(recv.dom_node, ['x2', 'y2']);
+    recv.start = create.sink_to_dom_attrs(recv.dom_node, ['x1','y1']);
+    recv.end = create.sink_to_dom_attrs(recv.dom_node, ['x2','y2']);
   },
 };
 
@@ -769,30 +812,20 @@ behaviors.dom.rect = {
   },
   ['changed']: ({sender,recv}, {from,to}) => {
     if (sender === recv.controls) {
-      let g = user_data(recv.dom_node.parentElement);
+      let g = user_data(recv.dom_node.parentElement); // ASSUMED <g>
       if (from !== undefined) {
         unsubscribe(recv.width,  from.width);
         unsubscribe(recv.height, from.height);
-        unsubscribe(g.origin_from_parent, g.from_parent_rod.p2_from_p1);
         send({to: from, selector: 'detach-dom'});
-        send({to: g.from_parent_rod, selector: 'detach-dom'});
-        send({to: g.parent_origin_pt, selector: 'detach-dom'});
+        change(g.global_origin_pt, undefined);
       }
-      if (to !== undefined) {
-        g.parent_origin_pt = create.point(
-          props(g.dom_node.parentElement.getCTM(), 'e', 'f')
-        );
-        g.parent_origin_pt.svg.circle.style.visibility = 'hidden';
-        let g_origin = props(g.dom_node.getCTM(), 'e', 'f');
-        let g_origin_pt = to.top_left;
-        root_change(g_origin_pt.position, g_origin);
-        g.from_parent_rod = create.rod(g.parent_origin_pt, g_origin_pt);
-        change(g.from_parent_rod.transmit_deltas, [false, false]);
-        subscribe(g.origin_from_parent, g.from_parent_rod.p2_from_p1);
+      if (to !== undefined) { // TODO: affect x,y vs. parent translate
+        change(g.global_origin_pt, to.top_left);
 
         let bb = bbox(recv.dom_node);
+        let top_left_now = send({to: to.top_left.position, selector: 'poll'});
         root_change(to.bot_right.position, vadd(
-          g_origin, props(bb, 'width', 'height')
+          top_left_now, props(bb, 'width', 'height')
         ));
         subscribe(recv.width,  to.width);
         subscribe(recv.height, to.height);
@@ -804,7 +837,32 @@ behaviors.dom.rect = {
 behaviors.dom.g = {
   ['created']: ({recv}) => {
     recv.origin_from_parent = create.sink_to_dom_attrs(recv.dom_node, transform_translate);
+    recv.global_origin_pt = create.observable();
+    subscribe(recv, recv.global_origin_pt);
   },
+  ['changed']: ({sender,recv},{from,to}) => {
+    if (sender === recv.global_origin_pt) {
+      if (from !== undefined) {
+        unsubscribe(recv.origin_from_parent, recv.from_parent_rod.p2_from_p1);
+        send({to: recv.from_parent_rod, selector: 'detach-dom'});
+        send({to: recv.parent_origin_pt, selector: 'detach-dom'});
+      }
+      if (to !== undefined) {
+        recv.parent_origin_pt = create.point( // create parent origin
+          props(recv.dom_node.parentElement.getCTM(), 'e', 'f')
+        );
+        recv.parent_origin_pt.svg.circle.style.visibility = 'hidden'; // hide it
+        let origin = props(recv.dom_node.getCTM(), 'e', 'f');
+        let origin_pt = to;
+        // translate these two into relative offset from parent
+        recv.from_parent_rod = create.rod(recv.parent_origin_pt, origin_pt);
+        change(recv.from_parent_rod.transmit_deltas, [false, false]);
+        // feed into svg translate
+        subscribe(recv.origin_from_parent, recv.from_parent_rod.p2_from_p1);
+        root_change(origin_pt.position, origin); // snap other point to our origin
+      }
+    }
+  }
 };
 
 pointer = create.entity({}, behaviors.pointer);
