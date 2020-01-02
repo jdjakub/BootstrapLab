@@ -474,7 +474,13 @@ create.rod = (p1, p2) => {
 */
 text_destination = create.observable();
 
-next_id = 1;
+next_id = create.observable();
+
+gen_id = () => {
+  let id = send({to: next_id, selector: 'poll'});
+  change(next_id, x => x+1);
+  return id;
+};
 
 behaviors.box = {
   ['created']: ({recv}, {dom_tree, fail_silent}) => {
@@ -493,7 +499,7 @@ behaviors.box = {
       return;
     else recv.svg.group = dom_tree;
 
-    if (dom_tree === undefined) { recv.id = 'box-' + next_id; next_id++; }
+    if (dom_tree === undefined) { recv.id = 'box-' + gen_id() }
     else recv.id = attr(dom_tree, 'id');
 
     svg_userData(recv.svg.group, recv);
@@ -608,11 +614,11 @@ behaviors.box = {
         } else if (window.active_arrow !== undefined) {
           let line = user_data(window.active_arrow.svg.arrow);
           unsubscribe(line.end, pointer_pos);
-          change(user_data(svgel('circle', {id: 'circle-'+next_id}, recv.svg.group))
+          let dest_circle_id = 'circle-'+gen_id();
+          change(user_data(svgel('circle', {id: dest_circle_id}, recv.svg.group))
             .center, attrs(line.dom_node, 'x2', 'y2'));
           change(user_data(window.active_arrow.svg.group).global_origin_pt, undefined);
-          change(window.active_arrow.dest_id, 'circle-'+next_id);
-          next_id++;
+          change(window.active_arrow.dest_id, dest_circle_id);
           window.active_arrow = undefined;
         }
         change(text_destination, recv);
@@ -688,12 +694,11 @@ behaviors.arrow = {
     let circle;
 
     // ... containing a background <circle> ...
-    if (dom_tree === undefined) {
+    if (dom_tree === undefined)
       circle = svgel('circle', {
-        r: 10, fill: 'white', stroke: 'black', id: 'circle-' + next_id
+        r: 10, fill: 'white', stroke: 'black', id: 'circle-' + gen_id()
       });
-      next_id++;
-    } else circle = dom_tree.querySelector(':scope > circle');
+    else circle = dom_tree.querySelector(':scope > circle');
     if (!circle && abort('Expected <circle> in <g>')) return;
 
     svg_userData(circle, recv);
@@ -877,6 +882,10 @@ svg = body.querySelector('svg');
 svg.style.border = '2px dashed red';
 svg.getCTM = () => ({a: 0, b: 0, c: 0, d: 0, e: 0, f: 0}); // polyfill
 svg_parent = svg;
+
+externalised_next_id = document.getElementById('next-id');
+subscribe(send({to: user_data(externalised_next_id), selector: 'attr'}, {name: 'textContent'}), next_id);
+change(next_id, +externalised_next_id.textContent);
 
 defs = svgel('defs');
 
