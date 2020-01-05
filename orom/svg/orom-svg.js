@@ -554,7 +554,9 @@ behaviors.box = {
     if (dom_tree !== undefined) { // Go down the tree and make sub-units
       dom_tree.querySelectorAll(':scope > g').forEach(g => {
         if (svg_userData(g) === undefined)
-          create.box(g, true) || create.arrow(g, true);
+          if (create.box(g, true)) return;
+          let arr = create.arrow(g, true);
+          if (arr) recv.arrow = arr;
       });
     }
 
@@ -953,24 +955,29 @@ resize = () => {
 window.onresize = resize;
 resize()
 
-compile = src => new Function('return '+src)()
-
 body.onkeydown = e => {
   let { key } = e;
   let curr_active = poll(text_destination);
   if (curr_active !== undefined)
   if (key === 'Backspace') change(curr_active.key_name, s => s.slice(0,-1));
   else if (key === 'Enter') {
+    if (curr_active.svg.textarea === undefined)
+      send({to: curr_active, selector: 'add-textarea'});
     let textarea = curr_active.svg.textarea;
-    if (textarea === undefined) send({to: curr_active, selector: 'add-textarea'});
     textarea.focus();
     e.preventDefault();
   } else if (key.length === 1) change(curr_active.key_name, s => s + key);
 };
 
+compile = src => new Function('return '+src)()
+
+get_func = (...path) => compile(svg_userData(
+  path_lookup(...path)
+).svg.textarea.value);
+
 follow_arrow = (g) => {
-  let arrow = svg_userData(g); // assumes arrow
-  let dest_circle = document.getElementById(poll(arrow.dest_id));
+  let box = svg_userData(g); // assumes contains arrow
+  let dest_circle = document.getElementById(poll(box.arrow.dest_id));
   return dest_circle.parentElement;
 };
 
@@ -979,12 +986,17 @@ single_lookup = (root, key) => {
   return grps.length === 0 ? undefined : grps[0];
 };
 
-path_lookup = (root, ...keys) => {
-  if (root === undefined || keys.length === 0) return root;
+path_lookup = (...path) => {
+  let lookup = (root, ...keys) => {
+    if (root === undefined || keys.length === 0) return root;
 
-  let [key, ...rest] = keys;
-  let child = single_lookup(root, key);
-  return path_lookup(child, ...rest);
+    let [key, ...rest] = keys;
+    let child = single_lookup(root, key);
+    return lookup(child, ...rest);
+  };
+  return (typeof(path[0]) === 'string'
+    ? lookup(backg.svg.group, ...path) // programmer's UI sugar
+    : lookup(...path));
 };
 
 active_rect = create.observable();
