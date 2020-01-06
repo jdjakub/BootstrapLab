@@ -34,11 +34,11 @@
   <body>
     <svg>
       <g id="box-1" class="root" transform="translate(0,0)">
-        <g id="next-id">18</g>
+        <g id="next-id">19</g>
         <rect fill="black" x="0" y="0" width="1348.3799999999999" height="963.27"></rect>
         <text font-family="Arial Narrow" x="5" y="20" fill="white">root</text>
         <g id="box-2" class="vtable-vtable" transform="translate(21,55)">
-          <rect fill="grey" height="504" width="447"></rect>
+          <rect fill="grey" height="338" width="443"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable-vtable</text>
           <g id="box-3" class="vtable" transform="translate(11,45)">
             <rect fill="grey" height="46" width="229"></rect>
@@ -55,36 +55,30 @@
             </g>
           </g>
           <g id="box-5" class="methods" transform="translate(13,105)">
-            <rect fill="grey" height="384" width="419"></rect>
+            <rect fill="grey" height="222" width="413"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">methods</text>
-            <g id="box-6" class="lookup" transform="translate(13,42)">
-              <rect fill="grey" height="169" width="389"></rect>
-              <text font-family="Arial Narrow" x="5" y="20" fill="white">lookup</text>
+            <g id="box-6" class="add-method" transform="translate(10,42)">
+              <rect fill="grey" height="169" width="393"></rect>
+              <text font-family="Arial Narrow" x="5" y="20" fill="white">add-method</text>
               <foreignObject x="5" y="30" width="100%" height="100%">
-                <textarea style="width: 366px; height: 117px;">(rcv, name) =&gt; {
-  let box = path_lookup(rcv, 'methods', name);
-  if (!box) return;
-  let src = svg_userData(box).svg.textarea.value;
-  let impl = compile(src);
-  return impl;
+                <textarea style="width: 373px; height: 127px;">(rcv, name, code) =&gt; {
+  let methods = path_lookup(rcv, 'methods');
+  let box = path_lookup(methods, name);
+  if (box === undefined)
+    box = append_new_box(methods, name);
+  else box = svg_userData(box);
+  let ta = box.svg.textarea;
+  ta.value = ta.textContent = code;
 }</textarea>
               </foreignObject>
             </g>
-            <g id="box-7" class="say-hello" transform="translate(10,221)">
-              <rect fill="grey" height="147" width="396"></rect>
-              <text font-family="Arial Narrow" x="5" y="20" fill="white">say-hello</text>
-              <foreignObject x="5" y="30" width="100%" height="100%">
-                <textarea style="width: 372px; height: 106px;">() =&gt; {
-  alert('Hello, World!');
-}</textarea>
-              </foreignObject>
-            </g>
+
           </g>
           <circle id="circle-12" cx="440" cy="79"></circle>
           <circle id="circle-14" cx="234" cy="81"></circle>
         </g>
         <g id="box-8" class="object-vtable" transform="translate(477,12)">
-          <rect fill="grey" height="139" width="213"></rect>
+          <rect fill="grey" height="183" width="405"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">object-vtable</text>
           <g id="box-9" class="vtable" transform="translate(7,30)">
             <rect fill="grey" height="69" width="112"></rect>
@@ -98,38 +92,60 @@
             <text font-family="Arial Narrow" x="5" y="20" fill="white">parent</text>
           </g>
           <circle id="circle-2" cx="515" cy="128"></circle>
+          <g id="box-18" class="methods" transform="translate(9,133)">
+            <rect fill="grey" height="37" width="386"></rect>
+            <text font-family="Arial Narrow" x="5" y="20" fill="white">methods</text>
+          </g>
         </g>
         <g class="init" transform="translate(902,59)">
           <rect fill="grey" height="794" width="431"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">init</text>
           <foreignObject x="5" y="30" width="100%" height="100%">
             <textarea style="width: 408px; height: 750px; font-family: 'Arial Narrow';">() =&gt; {
-  vtable_vtable = path_lookup('vtable-vtable');
-  vtable_lookup = get_func(vtable_vtable, 'methods', 'lookup');
-  object_vtable = follow_arrow(path_lookup(vtable_vtable, 'parent'));
+vtable_vtable = path_lookup('vtable-vtable');
+vtable_addMethod = get_func(vtable_vtable, 'methods', 'add-method');
+object_vtable = follow_arrow(path_lookup(vtable_vtable, 'parent'));
 
-  orom = {}; // IMPORTANT...!
-  orom.send = get_func('send');
-  orom.bind = get_func('bind');
+vtable_addMethod(vtable_vtable, 'lookup', `(rcv, name) =&gt; {
+  let box = path_lookup(rcv, 'methods', name);
+  if (!box) return;
+  let src = svg_userData(box).svg.textarea.value;
+  let impl = compile(src);
+  return impl;
+}`);
 
-  orom.send(vtable_vtable, 'say-hello');
+vtable_lookup = get_func(vtable_vtable, 'methods', 'lookup');
 
-  console.log('Init finished');
+orom = {}; // IMPORTANT...!
+orom.send = get_func('send');
+orom.bind = get_func('bind');
+
+alert("We've added vtable.lookup...");
+
+orom.send(vtable_vtable, 'add-method', 'say-hello', `(rcv) =&gt; {
+  console.log("Hello, World! From "+attr(rcv, 'class'));
+}`);
+
+alert("We've added vtable.say-hello...");
+
+orom.send(object_vtable, 'say-hello');
+
+console.log('Init finished');
 }</textarea>
           </foreignObject>
         </g>
-      <g class="send" transform="translate(490,281)">
-        <rect fill="grey" height="108" width="329"></rect>
-        <text font-family="Arial Narrow" x="5" y="20" fill="white">send</text>
-        <foreignObject x="5" y="30" width="100%" height="100%">
-          <textarea style="width: 307px; height: 58px;">(rcv, selector, ...args) =&gt; {
-  let impl = orom.bind(rcv, selector);
-  return impl(rcv, ...args);
-}</textarea>
-        </foreignObject>
-      </g>
-      <g class="bind" transform="translate(481,402)">
-        <rect fill="grey" height="223" width="413"></rect>
+        <g class="send" transform="translate(570,511)">
+          <rect fill="grey" height="108" width="323"></rect>
+          <text font-family="Arial Narrow" x="5" y="20" fill="white">send</text>
+          <foreignObject x="5" y="30" width="100%" height="100%">
+            <textarea style="width: 299px; height: 59px;">(rcv, selector, ...args) =&gt; {
+    let impl = orom.bind(rcv, selector);
+    return impl(rcv, ...args);
+  }</textarea>
+          </foreignObject>
+        </g>
+        <g class="bind" transform="translate(485,629)">
+        <rect fill="grey" height="224" width="409"></rect>
         <text font-family="Arial Narrow" x="5" y="20" fill="white">bind</text>
         <foreignObject x="5" y="30" width="100%" height="100%">
           <textarea style="width: 392px; height: 177px;">(rcv, selector) =&gt; {
@@ -149,7 +165,7 @@
     </svg>
     <script src="orom-svg.js"></script>
     <script type="text/javascript">
-      get_func('init')();
+      //get_func('init')();
     </script>
   </body>
 </html>

@@ -495,14 +495,14 @@ behaviors.box = {
 
     recv.svg = {};
 
+    if (dom_tree === undefined) recv.id = 'box-' + gen_id();
+    else recv.id = attr(dom_tree, 'id');
+
     // Consists of a <g> ...
     if (dom_tree === undefined) recv.svg.group = svgel('g', {id: recv.id});
     else if (dom_tree.tagName !== 'g' && abort('Expected outermost <g>'))
       return;
     else recv.svg.group = dom_tree;
-
-    if (dom_tree === undefined) { recv.id = 'box-' + gen_id() }
-    else recv.id = attr(dom_tree, 'id');
 
     svg_userData(recv.svg.group, recv);
 
@@ -581,7 +581,7 @@ behaviors.box = {
         let code_path = compile(te.target.value);
         code_path();
       } else {
-        te.target.innerHTML = te.target.value; // Stay externalised!
+        te.target.textContent = te.target.value; // Stay externalised!
       }
     };
 
@@ -671,6 +671,8 @@ behaviors.rect_controls = {
     recv.rods.forEach(r => send({to: r, selector: 'detach-dom'}));
   },
 };
+
+create.rect_controls = () => create.entity({}, behaviors.rect_controls);
 
 //      ---***   ARROW   ***---
 /*
@@ -969,6 +971,30 @@ body.onkeydown = e => {
   } else if (key.length === 1) change(curr_active.key_name, s => s + key);
 };
 
+active_rect = create.observable();
+
+make_active = dom_rect => {
+  rect = user_data(dom_rect);
+  let curr_active = poll(active_rect);
+  if (curr_active !== undefined) change(curr_active.controls, undefined);
+
+  let controls = create.entity({}, behaviors.rect_controls);
+  change(rect.controls, controls);
+  change(active_rect, rect);
+
+  if (svg_userData(dom_rect) !== undefined) {
+    change(text_destination, svg_userData(dom_rect));
+  }
+
+  return controls;
+}
+
+svg.onclick = e => {
+  if (e.button === 0)
+    if (e.target.tagName === 'rect')
+      make_active(e.target);
+};
+
 compile = src => new Function('return '+src)()
 
 get_func = (...path) => compile(svg_userData(
@@ -999,36 +1025,48 @@ path_lookup = (...path) => {
     : lookup(...path));
 };
 
-active_rect = create.observable();
+append_new_box = (parent, name) => {
+  const pad = 10, height = 200;
+  svg_parent = parent;
+  box = create.box();
 
-make_active = dom_rect => {
-  rect = user_data(dom_rect);
-  let curr_active = poll(active_rect);
-  if (curr_active !== undefined) change(curr_active.controls, undefined);
+  // find the rects
+  let p_rect = svg_userData(parent).svg.rect;
+  let b_rect = box.svg.rect;
 
-  let controls = create.entity({}, behaviors.rect_controls);
-  change(rect.controls, controls);
-  change(active_rect, rect);
+  // obtain access to the four corners of our new box and parent boxes
+  let p_ctrls = create.rect_controls();
+  change(user_data(p_rect).controls, p_ctrls);
 
-  if (svg_userData(dom_rect) !== undefined) {
-    change(text_destination, svg_userData(dom_rect));
+  let b_ctrls = create.rect_controls();
+  change(user_data(b_rect).controls, b_ctrls);
+
+  root_change(b_ctrls.top_left.position, // bring new box to bottom
+    vadd(poll(p_ctrls.bot_left.position), [pad,0])); // with some left pad
+  root_change(b_ctrls.bot_right.position, // extend new box past bottom
+    vadd(poll(p_ctrls.bot_right.position),[-pad,height])); // with right pad
+
+  send({to: box, selector: 'add-textarea'});
+  box.svg.textarea.style.width  = (+attr(box.svg.rect, 'width' )-20)+'px';
+  box.svg.textarea.style.height = (+attr(box.svg.rect, 'height')-50)+'px';
+
+  change(user_data(b_rect).controls, undefined); // no longer need these
+
+  if (name !== undefined) change(box.key_name, name);
+
+  change(user_data(p_rect).controls, undefined);
+
+  for (let curr = parent; curr !== backg.svg.group; curr = curr.parentElement) {
+    let ctrls = create.rect_controls();
+    let rect = svg_userData(curr).svg.rect
+    change(user_data(rect).controls, ctrls);
+      // extend parent box to encompass new box, plus bottom pad
+      root_change(ctrls.bot_right.position, ([x,y]) => [x, y+height+pad]);
+    change(user_data(rect).controls, undefined);
   }
 
-  return controls;
+  return box;
 }
-
-svg.onclick = e => {
-  if (e.button === 0)
-    if (e.target.tagName === 'rect')
-      make_active(e.target);
-};
-
-make_rect = (x,y,w,h,parent) => {
-  let g = create.dom_node(svgel('g', transform_translate([x,y]), parent));
-  let rect = create.dom_node(svgel('rect', {
-    fill: 'lightgray', x: 0, y: 0, width: w, height: h
-  }, g.dom_node));
-};
 
 /*
 circ = create.dom_node(svgel('circle', {fill: 'red'}, svg));
@@ -1052,38 +1090,3 @@ subscribe(circ.radius, half_w);
 root_change(tl, [150, 100]);
 root_change(br, [250, 200]);
 */
-
-methods = path_lookup('vtable-vtable', 'methods');
-svg_parent = methods;
-
-box = create.box();
-
-g_ctrls = create.entity({}, behaviors.rect_controls);
-change(user_data(svg_userData(methods).svg.rect).controls, g_ctrls);
-
-  b_ctrls = create.entity({}, behaviors.rect_controls);
-  change(user_data(box.svg.rect).controls, b_ctrls);
-
-    root_change(b_ctrls.top_left.position, poll(g_ctrls.bot_left.position));
-    root_change(b_ctrls.top_left.position, ([x,y]) => [x+10, y]);
-    root_change(b_ctrls.bot_right.position, poll(g_ctrls.bot_right.position));
-    root_change(b_ctrls.bot_right.position, ([x,y]) => [x-10,y+200]);
-
-    send({to: box, selector: 'add-textarea'});
-    box.svg.textarea.style.width  = (+attr(box.svg.rect, 'width' )-20)+'px';
-    box.svg.textarea.style.height = (+attr(box.svg.rect, 'height')-50)+'px';
-
-  change(user_data(box.svg.rect).controls, undefined);
-
-  change(box.key_name, 'new-method');
-
-  root_change(g_ctrls.bot_right.position, ([x,y]) => [x, y+210]);
-
-  par_ctrls = create.entity({}, behaviors.rect_controls);
-  change(user_data(svg_userData(methods.parentElement).svg.rect).controls, par_ctrls);
-
-    root_change(par_ctrls.bot_right.position, ([x,y]) => [x, y+210]);
-
-change(user_data(svg_userData(methods).svg.rect).controls, undefined);
-
-  change(user_data(svg_userData(methods.parentElement).svg.rect).controls, undefined);
