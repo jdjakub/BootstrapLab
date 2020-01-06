@@ -1052,3 +1052,38 @@ subscribe(circ.radius, half_w);
 root_change(tl, [150, 100]);
 root_change(br, [250, 200]);
 */
+
+methods = path_lookup('vtable-vtable', 'methods');
+svg_parent = methods;
+
+box = create.box();
+
+g_ctrls = create.entity({}, behaviors.rect_controls);
+change(user_data(svg_userData(methods).svg.rect).controls, g_ctrls);
+
+  b_ctrls = create.entity({}, behaviors.rect_controls);
+  change(user_data(box.svg.rect).controls, b_ctrls);
+
+    root_change(b_ctrls.top_left.position, poll(g_ctrls.bot_left.position));
+    root_change(b_ctrls.top_left.position, ([x,y]) => [x+10, y]);
+    root_change(b_ctrls.bot_right.position, poll(g_ctrls.bot_right.position));
+    root_change(b_ctrls.bot_right.position, ([x,y]) => [x-10,y+200]);
+
+    send({to: box, selector: 'add-textarea'});
+    box.svg.textarea.style.width  = (+attr(box.svg.rect, 'width' )-20)+'px';
+    box.svg.textarea.style.height = (+attr(box.svg.rect, 'height')-50)+'px';
+
+  change(user_data(box.svg.rect).controls, undefined);
+
+  change(box.key_name, 'new-method');
+
+  root_change(g_ctrls.bot_right.position, ([x,y]) => [x, y+210]);
+
+  par_ctrls = create.entity({}, behaviors.rect_controls);
+  change(user_data(svg_userData(methods.parentElement).svg.rect).controls, par_ctrls);
+
+    root_change(par_ctrls.bot_right.position, ([x,y]) => [x, y+210]);
+
+change(user_data(svg_userData(methods).svg.rect).controls, undefined);
+
+  change(user_data(svg_userData(methods.parentElement).svg.rect).controls, undefined);
