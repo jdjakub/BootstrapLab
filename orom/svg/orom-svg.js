@@ -1004,7 +1004,7 @@ get_func = (...path) => compile(svg_userData(
 follow_arrow = (g) => {
   let box = svg_userData(g); // assumes contains arrow
   let dest_circle = document.getElementById(poll(box.arrow.dest_id));
-  return dest_circle.parentElement;
+  return dest_circle ? dest_circle.parentElement : undefined;
 };
 
 single_lookup = (root, key) => {

@@ -28,6 +28,8 @@
     }
     textarea {
       pointer-events: all;
+      font-size: 11px;
+      font-family: 'Courier New';
     }
     </style>
   </head>
@@ -101,17 +103,20 @@
           <rect fill="grey" height="794" width="431"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">init</text>
           <foreignObject x="5" y="30" width="100%" height="100%">
-            <textarea style="width: 408px; height: 750px; font-family: 'Arial Narrow';">() =&gt; {
+            <textarea style="width: 408px; height: 750px; font-family: 'Arial Narrow'; font-size: 15px;">() =&gt; {
 vtable_vtable = path_lookup('vtable-vtable');
 vtable_addMethod = get_func(vtable_vtable, 'methods', 'add-method');
 object_vtable = follow_arrow(path_lookup(vtable_vtable, 'parent'));
 
 vtable_addMethod(vtable_vtable, 'lookup', `(rcv, name) =&gt; {
   let box = path_lookup(rcv, 'methods', name);
-  if (!box) return;
-  let src = svg_userData(box).svg.textarea.value;
-  let impl = compile(src);
-  return impl;
+  if (box) {
+    let src = svg_userData(box).svg.textarea.value;
+    return compile(src);
+  } else {
+    let par = follow_arrow(path_lookup(rcv, 'parent'));
+    return par ? orom.send(par, 'lookup', name) : undefined;
+  }
 }`);
 
 vtable_lookup = get_func(vtable_vtable, 'methods', 'lookup');
@@ -120,13 +125,13 @@ orom = {}; // IMPORTANT...!
 orom.send = get_func('send');
 orom.bind = get_func('bind');
 
-alert("We've added vtable.lookup...");
+alert("We've added 'lookup' to all vtables...");
 
-orom.send(vtable_vtable, 'add-method', 'say-hello', `(rcv) =&gt; {
+orom.send(object_vtable, 'add-method', 'say-hello', `(rcv) =&gt; {
   console.log("Hello, World! From "+attr(rcv, 'class'));
 }`);
 
-alert("We've added vtable.say-hello...");
+alert("We've added 'say-hello' to all objects...");
 
 orom.send(object_vtable, 'say-hello');
 
@@ -139,9 +144,9 @@ console.log('Init finished');
           <text font-family="Arial Narrow" x="5" y="20" fill="white">send</text>
           <foreignObject x="5" y="30" width="100%" height="100%">
             <textarea style="width: 299px; height: 59px;">(rcv, selector, ...args) =&gt; {
-    let impl = orom.bind(rcv, selector);
-    return impl(rcv, ...args);
-  }</textarea>
+  let impl = orom.bind(rcv, selector);
+  return impl(rcv, ...args);
+}</textarea>
           </foreignObject>
         </g>
         <g class="bind" transform="translate(485,629)">
