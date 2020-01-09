@@ -95,6 +95,15 @@ final = xs => xs[xs.length-1];
 htranslate = x => `translate(${x}, 0)`;
 vtranslate = y => `translate(0, ${y})`;
 
+debug = {line: {}, point: {}};
+
+debug.line.on = (elem) => { elem.style.strokeWidth = 5; };
+debug.line.off = (elem) => { elem.style.strokeWidth = null; };
+debug.point.on = ([cx,cy], stroke) => svgel('circle', {
+  cx, cy, stroke, stroke_width: 2, r: 10, fill_opacity: 0
+}, svg);
+debug.point.off = (elem) => elem.remove();
+
 send = ({ from, to, selector }, context) => {
   // Allow objects to receive messages however they wish
   // Treat absence of 'receive' as presence of 99%-case default
@@ -431,11 +440,15 @@ behaviors.rod = {
   ['length']: ({recv}) => recv.length,
   ['transmit-deltas']: ({recv}) => recv.transmit_deltas,
   ['changed']: ({sender, recv}, {from, to, only_once}) => {
+    debug.line.on(recv.svg.line);
+    let debug_pts = [debug.point.on(poll(sender), 'magenta')];
+
     // If we caused the change, don't propagate it in a cycle
     if (sender === recv.other) recv.update_my_length_etc();
     else if (sender === recv.p1 || sender === recv.p2) {
       // If this change came from the outside, propagate as necessary
       recv.other = sender === recv.p1 ? recv.p2 : recv.p1;
+      debug_pts.push(debug.point.on(poll(recv.other), 'orange'));
 
       let transmit_deltas = poll(recv.transmit_deltas);
       let [dx,dy] = vsub(to, from);
@@ -443,11 +456,17 @@ behaviors.rod = {
       if (!transmit_deltas[0] || dx === 0) delta_for_other[0] = 0;
       if (!transmit_deltas[1] || dy === 0) delta_for_other[1] = 0;
       if (delta_for_other[0] !== 0 || delta_for_other[1] !== 0) {
+        debug.line.off(recv.svg.line);
+        debug_pts.forEach(debug.point.off);
+
         send({to: recv.other, selector: 'changed'}, {
           to: p => vadd(p, delta_for_other), only_once
         });
       } else recv.update_my_length_etc();
     }
+
+    debug.line.off(recv.svg.line);
+    debug_pts.forEach(debug.point.off);
   },
   ['clear-pending']: ({recv}) => {
     /* NB: recv.other functions like "pending" in Observable above
@@ -459,8 +478,21 @@ behaviors.rod = {
      * the path of causality, the Rod must also forward it according to which
      * of its Observables caused changes in which others.
      */
-    if (recv.other === undefined) return;
+    debug.line.on(recv.svg.line);
+
+    if (recv.other === undefined) {
+      debug.line.off(recv.svg.line);
+
+      return;
+    }
+
+    let debug_circle = debug.point.on(poll(recv.other), 'orange');
+
     recv.other = undefined;
+
+    debug.line.off(recv.svg.line);
+    debug.point.off(debug_circle);
+
     send({to: recv.p1, selector: 'clear-pending'});
     send({to: recv.p2, selector: 'clear-pending'});
   },
@@ -676,10 +708,21 @@ behaviors.rect_controls = {
 
     recv.width  = recv.rods[1].length;
     recv.height = recv.rods[0].length;
+
+    ctrls = recv;
   },
   ['detach-dom']: ({recv}) => {
     recv.points.forEach(p => send({to: p, selector: 'detach-dom'}));
     recv.rods.forEach(r => send({to: r, selector: 'detach-dom'}));
+  },
+  ['rigid']: ({recv}) => {
+    let tl = recv.top_left, br = recv.bot_right;
+    c1 = create.point(vmul(0.5, vadd(poll(tl.position), poll(br.position))));
+    c2 = create.point(vmul(0.5, vadd(poll(tl.position), poll(br.position))));
+    let rtl = create.rod(c1, tl);
+    let rbr = create.rod(c2, br);
+    change(rtl.transmit_deltas, [true,true]);
+    change(rbr.transmit_deltas, [true,true]);
   },
 };
 
@@ -1159,3 +1202,9 @@ subscribe(circ.radius, half_w);
 root_change(tl, [150, 100]);
 root_change(br, [250, 200]);
 */
+
+
+// GRRRRR
+// send({to: ctrls, selector: 'rigid'});
+//root_change(c1.position, ([x,y]) => [x+20, y-20]);
+//root_change(c2.position, ([x,y]) => [x+20, y-20]);
