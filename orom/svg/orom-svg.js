@@ -40,6 +40,7 @@ attr = (elem, key_or_dict, val_or_nothing) => {
   }
 }
 
+nums = (arr) => arr.map(x => +x);
 attrs = (el, ...keys) => keys.map(k => attr(el, k));
 props = (o,  ...keys) => keys.map(k => o[k]);
 
@@ -246,6 +247,15 @@ create.sink_to_dom_attrs = (node, attr_or_func) => {
         }
     }
   }
+};
+
+// Subscribable and pollable version of the "sink"
+create.dom_attrs_proxy = (node, attr_or_func, initial_value) => {
+  let obs = create.observable();
+  let sink = create.sink_to_dom_attrs(node, attr_or_func);
+  subscribe(sink, obs);
+  if (initial_value !== undefined) change(obs, initial_value);
+  return obs;
 };
 
 // e.g. list_to_attrs('cx', 'cy')([10,20]) = {cx: 10, cy: 20}
@@ -456,6 +466,8 @@ behaviors.rod = {
   },
   ['detach-dom']: ({recv}) => {
     recv.svg.line.remove();
+    unsubscribe(recv, recv.p1);
+    unsubscribe(recv, recv.p2);
   },
 };
 
@@ -555,7 +567,7 @@ behaviors.box = {
       dom_tree.querySelectorAll(':scope > g').forEach(g => {
         if (svg_userData(g) === undefined)
           if (create.box(g, true)) return;
-          let arr = create.arrow(g, true);
+          let arr = create.arrow({dom_tree: g, fail_silent: true});
           if (arr) recv.arrow = arr;
       });
     }
@@ -611,8 +623,7 @@ behaviors.box = {
       } else if (current_tool === 'arrow') {
         if (to === true) {
           svg_parent = recv.svg.group;
-          let arrow = create.arrow();
-          root_change(arrow.source.position, curr_pointer_pos);
+          let arrow = create.arrow({source_pos: curr_pointer_pos});
           subscribe(user_data(arrow.svg.arrow).end, pointer_pos);
           window.active_arrow = arrow;
         } else if (window.active_arrow !== undefined) {
@@ -680,7 +691,7 @@ create.rect_controls = () => create.entity({}, behaviors.rect_controls);
 */
 
 behaviors.arrow = {
-  ['created']: ({recv}, {dom_tree, fail_silent}) => {
+  ['created']: ({recv}, {source_pos, dom_tree, fail_silent}) => {
     let abort = (loud_msg) => {
       if (fail_silent) return true;
       else throw [loud_msg, dom_tree];
@@ -710,20 +721,23 @@ behaviors.arrow = {
     svg_userData(circle, recv);
     recv.svg.circle = circle;
 
-    let source_pos;
-
-    if (dom_tree === undefined) source_pos = [0,0];
-    else source_pos = props(recv.svg.group.getCTM(), 'e', 'f');
-    recv.source = create.point(source_pos);
+    recv.source_pt = create.point([0,0]);
+    recv.dest_pt = create.point([0,0]);
 
     recv.svg.arrow = svgel('line', {
       stroke: 'cyan', stroke_width: 1, marker_end: 'url(#Arrowhead)', class: 'arrow'
     }, svg);
 
-    subscribe(user_data(recv.svg.arrow).start, recv.source.position);
-    change(user_data(recv.svg.group).global_origin_pt, recv.source);
-    if (dom_tree !== undefined)
-      change(user_data(recv.svg.group).global_origin_pt, undefined);
+    subscribe(user_data(recv.svg.arrow).start, recv.source_pt.position);
+    subscribe(user_data(recv.svg.arrow).end, recv.dest_pt.position);
+
+    change(user_data(recv.svg.group).global_origin_pt, recv.source_pt);
+      if (dom_tree !== undefined)
+        source_pos = props(recv.svg.group.getCTM(), 'e', 'f');
+      if (source_pos !== undefined)
+        root_change(recv.source_pt.position, source_pos);
+
+    change(user_data(recv.svg.group).global_origin_pt, undefined);
 
     recv.dest_id = create.observable();
     // ingeniously abuse circle's invisible textContent for ID of dest element
@@ -736,16 +750,46 @@ behaviors.arrow = {
     if (current_id.length > 0) {
       change(recv.dest_id, current_id);
       let dest = document.getElementById(current_id);
-      change(user_data(recv.svg.arrow).end, attrs(dest, 'cx', 'cy'));
+      change(recv.dest_pt.position, nums(attrs(dest, 'cx', 'cy')));
+      svg_userData(dest, recv); // link it to this arrow object
     } else if (dom_tree !== undefined && abort('Expected dest id in circle textContent')) return;
 
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     subscribe(recv, recv.being_considered);
 
+    // For managing top-level arrow <line>s, updating positions on box move
+    recv.source_attachment_pt = create.observable();
+    subscribe(recv, recv.source_attachment_pt);
+
+    recv.dest_attachment_pt = create.observable();
+    subscribe(recv, recv.dest_attachment_pt);
+
     return true;
   },
   ['changed']: ({sender, recv}, {from, to}) => {
-    if (sender === recv.being_considered) {
+    if (sender === recv.source_attachment_pt) {
+      if (to === undefined) {
+        if (recv.source_rod) {
+          send({to: recv.source_rod, selector: 'detach-dom'});
+          recv.source_rod = undefined;
+        }
+      } else {
+        let attach_pt = to;
+        recv.source_rod = create.rod(attach_pt, recv.source_pt);
+        change(recv.source_rod.transmit_deltas, [true, true]);
+      }
+    } else if (sender == recv.dest_attachment_pt) { // same but s/source/dest/
+      if (to === undefined) {
+        if (recv.dest_rod) {
+          send({to: recv.dest_rod, selector: 'detach-dom'});
+          recv.dest_rod = undefined;
+        }
+      } else {
+        let attach_pt = to;
+        recv.dest_rod = create.rod(attach_pt, recv.dest_pt);
+        change(recv.dest_rod.transmit_deltas, [true, true]);
+      }
+    } else if (sender === recv.being_considered) {
       // Duplicated again
       if (to === true) // PUSH...
         subscribe(recv, left_mouse_button_is_down);
@@ -761,7 +805,7 @@ behaviors.arrow = {
     }
   }
 };
-create.arrow = (dom_tree, fail_silent) => create.entity({dom_tree, fail_silent}, behaviors.arrow);
+create.arrow = (args) => create.entity(args, behaviors.arrow);
 
 behaviors.dom = {};
 behaviors.dom.node = {
@@ -825,10 +869,22 @@ behaviors.dom.rect = {
     if (sender === recv.controls) {
       let g = user_data(recv.dom_node.parentElement); // ASSUMED <g>
       if (from !== undefined) {
+        recv.dom_node.style.strokeWidth = null;
         unsubscribe(recv.width,  from.width);
         unsubscribe(recv.height, from.height);
         send({to: from, selector: 'detach-dom'});
         change(g.global_origin_pt, undefined);
+
+        if (g.dom_node !== backg.svg.group)
+          g.dom_node.querySelectorAll('circle').forEach(c => {
+            let arr = svg_userData(c);
+            if (arr) {
+              if (c.textContent.length === 0) // dest
+                change(arr.dest_attachment_pt, undefined);
+              else // source
+                change(arr.source_attachment_pt, undefined);
+            }
+          });
       }
       if (to !== undefined) { // TODO: affect x,y vs. parent translate
         change(g.global_origin_pt, to.top_left);
@@ -840,6 +896,19 @@ behaviors.dom.rect = {
         ));
         subscribe(recv.width,  to.width);
         subscribe(recv.height, to.height);
+        recv.dom_node.style.strokeWidth = 2;
+
+        // TODO: newly created arrows while controls exist won't get attached
+        if (g.dom_node !== backg.svg.group)
+          g.dom_node.querySelectorAll('circle').forEach(c => {
+            let arr = svg_userData(c);
+            if (arr) {
+              if (c.textContent.length === 0) // dest
+                change(arr.dest_attachment_pt, to.top_left);
+              else // source
+                change(arr.source_attachment_pt, to.top_left);
+            }
+          });
       }
     }
   },
@@ -978,7 +1047,7 @@ make_active = dom_rect => {
   let curr_active = poll(active_rect);
   if (curr_active !== undefined) change(curr_active.controls, undefined);
 
-  let controls = create.entity({}, behaviors.rect_controls);
+  let controls = create.rect_controls();
   change(rect.controls, controls);
   change(active_rect, rect);
 

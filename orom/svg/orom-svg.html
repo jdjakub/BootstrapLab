@@ -115,7 +115,9 @@ vtable_addMethod(vtable_vtable, 'lookup', `(rcv, name) =&gt; {
     return compile(src);
   } else {
     let par = follow_arrow(path_lookup(rcv, 'parent'));
-    return par ? orom.send(par, 'lookup', name) : undefined;
+    return par
+      ? orom.send(par, 'lookup', name)
+      : undefined;
   }
 }`);
 
