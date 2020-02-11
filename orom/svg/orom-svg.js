@@ -656,19 +656,22 @@ behaviors.box = {
         if (to === true) {
           svg_parent = recv.svg.group;
           let arrow = create.arrow({source_pos: curr_pointer_pos});
-          subscribe(user_data(arrow.svg.arrow).end, pointer_pos);
+          subscribe(arrow.dest_pt.position, pointer_pos);
+          arrow.dest_pt.svg.circle.style.visibility = 'hidden';
+          recv.arrow = arrow;
           window.active_arrow = arrow;
-        } else if (window.active_arrow !== undefined) {
-          let line = user_data(window.active_arrow.svg.arrow);
-          unsubscribe(line.end, pointer_pos);
-          let dest_circle_id = 'circle-'+gen_id();
-          change(user_data(svgel('circle', {id: dest_circle_id}, recv.svg.group))
-            .center, attrs(line.dom_node, 'x2', 'y2'));
-          change(user_data(window.active_arrow.svg.group).global_origin_pt, undefined);
-          change(window.active_arrow.dest_id, dest_circle_id);
-          window.active_arrow = undefined;
         }
         change(text_destination, recv);
+      } else if (window.active_arrow !== undefined) {
+        let line = user_data(window.active_arrow.svg.arrow);
+        unsubscribe(window.active_arrow.dest_pt.position, pointer_pos);
+        window.active_arrow.dest_pt.svg.circle.style.visibility = null;
+        let dest_circle = window.active_arrow.dest_circle;
+        dest_circle.remove();
+        recv.svg.group.appendChild(dest_circle);
+        change(user_data(dest_circle).center, attrs(line.dom_node, 'x2', 'y2'));
+        change(user_data(window.active_arrow.svg.group).global_origin_pt, undefined);
+        window.active_arrow = undefined;
       }
     }
   }
@@ -792,10 +795,18 @@ behaviors.arrow = {
     let current_id = attr(recv.svg.circle, 'textContent');
     if (current_id.length > 0) {
       change(recv.dest_id, current_id);
-      let dest = document.getElementById(current_id);
-      change(recv.dest_pt.position, nums(attrs(dest, 'cx', 'cy')));
-      svg_userData(dest, recv); // link it to this arrow object
+      recv.dest_circle = document.getElementById(current_id);
+      change(recv.dest_pt.position, nums(attrs(recv.dest_circle, 'cx', 'cy')));
+      svg_userData(recv.dest_circle, recv); // link it to this arrow object
     } else if (dom_tree !== undefined && abort('Expected dest id in circle textContent')) return;
+    else {
+      let dest_circle_id = 'circle-'+gen_id();
+      change(recv.dest_id, dest_circle_id);
+      recv.dest_circle = svgel('circle', {id: dest_circle_id}, recv.svg.group);
+      svg_userData(recv.dest_circle, recv);
+    }
+
+    recv.source_pt.svg.circle.style.visibility = 'hidden';
 
     recv.being_considered = send({from: recv, to: pointer, selector: 'is-considering-me?'});
     subscribe(recv, recv.being_considered);
@@ -842,7 +853,8 @@ behaviors.arrow = {
       let pointer_pos = send({to: pointer, selector: 'position'});
 
       if (to === true) {
-        subscribe(user_data(recv.svg.arrow).end, pointer_pos);
+        subscribe(recv.dest_pt.position, pointer_pos);
+        recv.dest_pt.svg.circle.style.visibility = 'hidden';
         window.active_arrow = recv;
       }
     }
