@@ -552,14 +552,36 @@ behaviors.box = {
 
     svg_parent = recv.svg.group;
 
-    let rect, text;
+    let rect, clip_path, text;
 
     // ... containing a background <rect> ...
     if (dom_tree === undefined) rect = svgel('rect', {fill: 'grey'});
     else rect = dom_tree.querySelector(':scope > rect');
     if (!rect && abort('Expected <rect> in <g>')) return;
 
+    // Migration: ensure rect has id for clipPath
+    let rect_id = attr(rect, 'id');
+    if (rect_id === null) {
+      rect_id = 'rect-'+gen_id();
+      attr(rect, 'id', rect_id);
+    }
+
     svg_userData(rect, recv);
+
+    // ... and a <clipPath>...
+    if (dom_tree !== undefined)
+      clip_path = dom_tree.querySelector(':scope > clipPath');
+    if (!clip_path) {
+      clip_path = svgel('clipPath', {});
+      svgel('use', {href: '#'+rect_id}, clip_path); // clip to box rect
+    }
+    let clip_id = attr(clip_path, 'id');
+    if (clip_id === null) {
+      clip_id = 'clip-'+gen_id();
+      attr(clip_path, 'id', clip_id);
+    }
+    attr(recv.svg.group, 'clip-path', `url(#${clip_id})`);
+
 
     // ... and a title <text> ...
     if (dom_tree === undefined) text = svgel('text', {
