@@ -552,35 +552,38 @@ behaviors.box = {
 
     svg_parent = recv.svg.group;
 
-    let rect, clip_path, text;
+    let rect, rect_id, clip_path, clip_id, text;
 
     // ... containing a background <rect> ...
-    if (dom_tree === undefined) rect = svgel('rect', {fill: 'grey'});
-    else rect = dom_tree.querySelector(':scope > rect');
-    if (!rect && abort('Expected <rect> in <g>')) return;
-
-    // Migration: ensure rect has id for clipPath
-    let rect_id = attr(rect, 'id');
-    if (rect_id === null) {
+    if (dom_tree === undefined) {
+      rect = svgel('rect', {fill: 'grey'});
       rect_id = 'rect-'+gen_id();
       attr(rect, 'id', rect_id);
+    } else {
+      rect = dom_tree.querySelector(':scope > rect');
+      if (!rect && abort('Expected <rect> in <g>')) return;
+
+      rect_id = attr(rect, 'id');
+      if (rect_id === null && abort('Expected ID for <rect> in <g>')) return;
     }
 
     svg_userData(rect, recv);
 
     // ... and a <clipPath>...
-    if (dom_tree !== undefined)
-      clip_path = dom_tree.querySelector(':scope > clipPath');
-    if (!clip_path) {
+    if (dom_tree === undefined) {
       clip_path = svgel('clipPath', {});
       svgel('use', {href: '#'+rect_id}, clip_path); // clip to box rect
-    }
-    let clip_id = attr(clip_path, 'id');
-    if (clip_id === null) {
       clip_id = 'clip-'+gen_id();
       attr(clip_path, 'id', clip_id);
+    } else {
+      clip_path = dom_tree.querySelector(':scope > clipPath');
+      if (!clip_path && abort('Expected <clipPath> in <g>')) return;
+
+      clip_id = attr(clip_path, 'id');
+      if (!clip_id && abort('Expected ID for <clipPath> in <g>')) return;
     }
-    attr(recv.svg.group, 'clip-path', `url(#${clip_id})`);
+
+    attr(recv.svg.group, 'clip-path', `url(#${clip_id})`); // clip the <g>
 
 
     // ... and a title <text> ...

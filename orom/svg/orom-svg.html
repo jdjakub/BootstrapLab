@@ -18,6 +18,7 @@
     }
     svg rect {
       stroke: white;
+      stroke-width: 2;
       shape-rendering: crispEdges;
     }
     textarea {
@@ -35,32 +36,34 @@
   </head>
   <body>
     <svg>
-      <g id="box-1" class="root" transform="translate(0,0)">
-        <g id="next-id">19</g>
-        <rect fill="black" x="0" y="0" width="1348.3799999999999" height="963.27"></rect>
+      <g id="box-1" class="root" transform="translate(0,0)" clip-path="url(#clip-20)">
+        <g id="next-id">43</g>
+        <rect fill="black" x="0" y="0" width="1463.22" height="963.27" id="rect-19"></rect>
         <text font-family="Arial Narrow" x="5" y="20" fill="white">root</text>
-        <g id="box-2" class="vtable-vtable" transform="translate(21,55)">
-          <rect fill="grey" height="338" width="443"></rect>
+        <g id="box-2" class="vtable-vtable" transform="translate(21,55)" clip-path="url(#clip-22)">
+          <rect fill="grey" height="338" width="443" id="rect-21"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable-vtable</text>
-          <g id="box-3" class="vtable" transform="translate(11,45)">
-            <rect fill="grey" height="46" width="229"></rect>
+          <g id="box-3" class="vtable" transform="translate(11,45)" clip-path="url(#clip-24)">
+            <rect fill="grey" height="46" width="229" id="rect-23"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable</text>
             <g transform="translate(203,27)">
               <circle r="10" fill="white" stroke="black" id="circle-13">circle-14</circle>
             </g>
+            <clipPath id="clip-24"><use href="#rect-23"></use></clipPath>
           </g>
-          <g id="box-4" class="parent" transform="translate(254,48)">
-            <rect fill="grey" height="40" width="181"></rect>
+          <g id="box-4" class="parent" transform="translate(254,48)" clip-path="url(#clip-26)">
+            <rect fill="grey" height="40" width="181" id="rect-25"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">parent</text>
             <g transform="translate(158,25)">
               <circle r="10" fill="white" stroke="black" id="circle-1">circle-2</circle>
             </g>
+            <clipPath id="clip-26"><use href="#rect-25"></use></clipPath>
           </g>
-          <g id="box-5" class="methods" transform="translate(13,105)">
-            <rect fill="grey" height="222" width="413"></rect>
+          <g id="box-5" class="methods" transform="translate(13,105)" clip-path="url(#clip-28)">
+            <rect fill="grey" height="222" width="413" id="rect-27"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">methods</text>
-            <g id="box-6" class="add-method" transform="translate(10,42)">
-              <rect fill="grey" height="169" width="393"></rect>
+            <g id="box-6" class="add-method" transform="translate(10,42)" clip-path="url(#clip-30)">
+              <rect fill="grey" height="169" width="393" id="rect-29"></rect>
               <text font-family="Arial Narrow" x="5" y="20" fill="white">add-method</text>
               <foreignObject x="5" y="30" width="100%" height="100%">
                 <textarea style="width: 373px; height: 127px;">(rcv, name, code) =&gt; {
@@ -73,37 +76,40 @@
   ta.value = ta.textContent = code;
 }</textarea>
               </foreignObject>
+              <clipPath id="clip-30"><use href="#rect-29"></use></clipPath>
             </g>
-
+            <clipPath id="clip-28"><use href="#rect-27"></use></clipPath>
           </g>
           <circle id="circle-12" cx="440" cy="79"></circle>
           <circle id="circle-14" cx="234" cy="81"></circle>
+          <clipPath id="clip-22"><use href="#rect-21"></use></clipPath>
         </g>
         <g id="box-8" class="object-vtable" transform="translate(477,12)" clip-path="url(#clip-8)">
-          <clipPath id="clip-8">
-            <use href="#rect-8" />
-          </clipPath>
+          <clipPath id="clip-8"><use href="#rect-8"></use></clipPath>
           <rect id="rect-8" fill="grey" height="183" width="405"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">object-vtable</text>
-          <g id="box-9" class="vtable" transform="translate(7,30)">
-            <rect fill="grey" height="69" width="112"></rect>
+          <g id="box-9" class="vtable" transform="translate(7,30)" clip-path="url(#clip-32)">
+            <rect fill="grey" height="69" width="112" id="rect-31"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">vtable</text>
             <g transform="translate(82,46)">
               <circle r="10" fill="white" stroke="black" id="circle-11">circle-12</circle>
             </g>
+            <clipPath id="clip-32"><use href="#rect-31"></use></clipPath>
           </g>
-          <g id="box-10" class="parent" transform="translate(128,32)">
-            <rect fill="grey" height="66" width="74"></rect>
+          <g id="box-10" class="parent" transform="translate(128,32)" clip-path="url(#clip-34)">
+            <rect fill="grey" height="66" width="74" id="rect-33"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">parent</text>
+            <clipPath id="clip-34"><use href="#rect-33"></use></clipPath>
           </g>
           <circle id="circle-2" cx="515" cy="128"></circle>
-          <g id="box-18" class="methods" transform="translate(9,133)">
-            <rect fill="grey" height="37" width="386"></rect>
+          <g id="box-18" class="methods" transform="translate(9,133)" clip-path="url(#clip-36)">
+            <rect fill="grey" height="37" width="386" id="rect-35"></rect>
             <text font-family="Arial Narrow" x="5" y="20" fill="white">methods</text>
+            <clipPath id="clip-36"><use href="#rect-35"></use></clipPath>
           </g>
         </g>
-        <g class="init" transform="translate(902,59)">
-          <rect fill="grey" height="794" width="431"></rect>
+        <g class="init" transform="translate(902,59)" clip-path="url(#clip-38)">
+          <rect fill="grey" height="794" width="431" id="rect-37"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">init</text>
           <foreignObject x="5" y="30" width="100%" height="100%">
             <textarea style="width: 408px; height: 750px; font-family: 'Arial Narrow'; font-size: 15px;">() =&gt; {
@@ -143,9 +149,10 @@ orom.send(object_vtable, 'say-hello');
 console.log('Init finished');
 }</textarea>
           </foreignObject>
+          <clipPath id="clip-38"><use href="#rect-37"></use></clipPath>
         </g>
-        <g class="send" transform="translate(570,511)">
-          <rect fill="grey" height="108" width="323"></rect>
+        <g class="send" transform="translate(570,511)" clip-path="url(#clip-40)">
+          <rect fill="grey" height="108" width="323" id="rect-39"></rect>
           <text font-family="Arial Narrow" x="5" y="20" fill="white">send</text>
           <foreignObject x="5" y="30" width="100%" height="100%">
             <textarea style="width: 299px; height: 59px;">(rcv, selector, ...args) =&gt; {
@@ -153,12 +160,13 @@ console.log('Init finished');
   return impl(rcv, ...args);
 }</textarea>
           </foreignObject>
+          <clipPath id="clip-40"><use href="#rect-39"></use></clipPath>
         </g>
-        <g class="bind" transform="translate(485,629)">
-        <rect fill="grey" height="224" width="409"></rect>
-        <text font-family="Arial Narrow" x="5" y="20" fill="white">bind</text>
-        <foreignObject x="5" y="30" width="100%" height="100%">
-          <textarea style="width: 392px; height: 177px;">(rcv, selector) =&gt; {
+        <g class="bind" transform="translate(485,629)" clip-path="url(#clip-42)">
+          <rect fill="grey" height="224" width="409" id="rect-41"></rect>
+          <text font-family="Arial Narrow" x="5" y="20" fill="white">bind</text>
+          <foreignObject x="5" y="30" width="100%" height="100%">
+            <textarea style="width: 392px; height: 177px;">(rcv, selector) =&gt; {
   if (rcv === vtable_vtable
       &amp;&amp; selector === 'lookup') {
     return vtable_lookup(rcv, selector);
@@ -170,7 +178,9 @@ console.log('Init finished');
   }
 }</textarea>
           </foreignObject>
+          <clipPath id="clip-42"><use href="#rect-41"></use></clipPath>
         </g>
+        <clipPath id="clip-20"><use href="#rect-19"></use></clipPath>
       </g>
     </svg>
     <script src="orom-svg.js"></script>
