@@ -552,48 +552,55 @@ behaviors.box = {
 
     svg_parent = recv.svg.group;
 
-    let rect, rect_id, clip_path, clip_id, text;
+    let expect = (selector, conditions_fn, error_fn, create_fn, attr_keys) => {
+      let elem;
+      if (dom_tree === undefined) {
+        elem = create_fn();
+      } else {
+        elem = dom_tree.querySelector(selector);
+        if (!conditions_fn(elem) && abort(error_fn(elem))) return;
+      }
+      svg_userData(elem, recv);
+
+      let attr_vals = [];
+      for (let key of attr_keys) {
+        let val = attr(elem, key);
+        if (val === null && abort(error_fn(elem, key))) return;
+        attr_vals.push(val);
+      }
+
+      return [elem, ...attr_vals];
+    };
+
+    let expect_child = (tag, attr_keys, create_fn) => expect(
+      ':scope > '+tag, el => el, (el, attr) =>
+        `Expected ${attr? attr+' for ' : ''} <${tag}> in <g>`,
+      create_fn, attr_keys
+    );
+
+    let tmp;
 
     // ... containing a background <rect> ...
-    if (dom_tree === undefined) {
-      rect = svgel('rect', {fill: 'grey'});
-      rect_id = 'rect-'+gen_id();
-      attr(rect, 'id', rect_id);
-    } else {
-      rect = dom_tree.querySelector(':scope > rect');
-      if (!rect && abort('Expected <rect> in <g>')) return;
-
-      rect_id = attr(rect, 'id');
-      if (rect_id === null && abort('Expected ID for <rect> in <g>')) return;
-    }
-
-    svg_userData(rect, recv);
+    if (!(tmp = expect_child('rect', ['id'], () =>
+      svgel('rect', {fill: 'grey', id: 'rect-'+gen_id()}),
+    ))) return;
+    let [rect, rect_id] = tmp;
 
     // ... and a <clipPath>...
-    if (dom_tree === undefined) {
-      clip_path = svgel('clipPath', {});
-      svgel('use', {href: '#'+rect_id}, clip_path); // clip to box rect
-      clip_id = 'clip-'+gen_id();
-      attr(clip_path, 'id', clip_id);
-    } else {
-      clip_path = dom_tree.querySelector(':scope > clipPath');
-      if (!clip_path && abort('Expected <clipPath> in <g>')) return;
-
-      clip_id = attr(clip_path, 'id');
-      if (!clip_id && abort('Expected ID for <clipPath> in <g>')) return;
-    }
+    if (!(tmp = expect_child('clipPath', ['id'], () => {
+      let cp = svgel('clipPath', {id: 'clip-'+gen_id()});
+      svgel('use', {href: '#'+rect_id}, cp); // clip to box rect
+      return cp;
+    }))) return;
+    let [clip_path, clip_id] = tmp;
 
     attr(recv.svg.group, 'clip-path', `url(#${clip_id})`); // clip the <g>
 
-
     // ... and a title <text> ...
-    if (dom_tree === undefined) text = svgel('text', {
-      font_family: 'Arial Narrow', x: 5, y: 20, fill: 'white'
-    });
-    else text = dom_tree.querySelector(':scope > text');
-    if (!text && abort('Expected <text> in <g>')) return;
-
-    svg_userData(text, recv);
+    if (!(tmp = expect_child('text', [], () => svgel('text',
+      {font_family: 'Arial Narrow', x: 5, y: 20, fill: 'white'})
+    ))) return;
+    let [text] = tmp;
 
     // ...and optionally a <textarea> ...
     if (dom_tree !== undefined) {
