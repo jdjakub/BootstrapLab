@@ -1034,7 +1034,7 @@ behaviors.dom.g = {
 
 pointer = create.entity({}, behaviors.pointer);
 
-current_tool = 'move';
+current_tool = 'draw';
 
 /*
  *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT, POSITIONAL INPUT ***
@@ -1252,3 +1252,27 @@ root_change(br, [250, 200]);
 // send({to: ctrls, selector: 'rigid'});
 //root_change(c1.position, ([x,y]) => [x+20, y-20]);
 //root_change(c2.position, ([x,y]) => [x+20, y-20]);
+
+layout_text = () => {
+  let words = "The quick brown fox jumped over the lazy dog".split(" ");
+  svg_parent = path_lookup('text-wrapping-demo');
+
+  place_word = (string, top_left) => {
+    let ctls = create.rect_controls();
+    let parent = svg_parent;
+      let word = create.box();
+      change(user_data(word.svg.rect).controls, ctls);
+      root_change(ctls.top_left.position, top_left);
+      change(word.key_name, string);
+      bb = bbox(word.svg.text);
+      org = vadd(poll(ctls.top_left.position), [5,5]);
+      root_change(ctls.bot_right.position, vadd(org, props(bb, 'r', 'b')));
+    svg_parent = parent;
+    change(user_data(word.svg.rect).controls, undefined);
+    return vadd(poll(ctls.top_right.position), [5,0]);
+  }
+
+  let top_left = [50,500];
+  for (let word of words)
+    top_left = place_word(word, top_left);
+}
