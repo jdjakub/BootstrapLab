@@ -694,7 +694,8 @@ behaviors.box = {
           window.active_arrow = arrow;
         }
         change(text_destination, recv);
-      } else if (window.active_arrow !== undefined) {
+      }
+      if (window.active_arrow !== undefined && to === false) {
         let line = user_data(window.active_arrow.svg.arrow);
         unsubscribe(window.active_arrow.dest_pt.position, pointer_pos);
         window.active_arrow.dest_pt.svg.circle.style.visibility = null;
