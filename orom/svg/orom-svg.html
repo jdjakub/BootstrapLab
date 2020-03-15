@@ -14,6 +14,7 @@
       visibility: visible;
     }
     svg line.arrow {
+      pointer-events: none;
       visibility: visible;
     }
     svg rect {
@@ -37,7 +38,7 @@
   <body>
     <svg>
       <g id="box-1" class="root" transform="translate(0,0)" clip-path="url(#clip-20)">
-        <g id="next-id">46</g>
+        <g id="next-id">58</g>
         <rect fill="black" x="0" y="0" width="1463.22" height="963.27" id="rect-19"></rect>
         <text font-family="Arial Narrow" x="5" y="20" fill="white">root</text>
         <g id="box-2" class="vtable-vtable" transform="translate(21,55)" clip-path="url(#clip-22)">
@@ -181,10 +182,30 @@ console.log('Init finished');
           <clipPath id="clip-42"><use href="#rect-41"></use></clipPath>
         </g>
         <clipPath id="clip-20"><use href="#rect-19"></use></clipPath>
-        <g id="box-43" clip-path="url(#clip-45)" class="text-wrapping-demo" transform="translate(24,415)">
-          <rect fill="grey" id="rect-44" style="stroke-width: 2px;" height="345" width="447"></rect>
+        <g id="box-43" clip-path="url(#clip-45)" class="text-layout" transform="translate(24,415)">
+          <rect fill="grey" id="rect-44" style="" height="512" width="449"></rect>
           <clipPath id="clip-45"><use href="#rect-44"></use></clipPath>
-          <text font-family="Arial Narrow" x="5" y="20" fill="white">text-wrapping-demo</text>
+          <text font-family="Arial Narrow" x="5" y="20" fill="white">text-layout</text>
+          <g id="box-46" clip-path="url(#clip-48)" class="controls" transform="translate(12,40)">
+            <rect fill="grey" id="rect-47" style="" height="199" width="416"></rect>
+            <clipPath id="clip-48"><use href="#rect-47"></use></clipPath>
+            <text font-family="Arial Narrow" x="5" y="20" fill="white">controls</text>
+            <g id="box-52" clip-path="url(#clip-54)" class="word-1" transform="translate(18,40)">
+              <rect fill="grey" id="rect-53" style="stroke-width: 2px;" height="33" width="53"></rect>
+              <clipPath id="clip-54"><use href="#rect-53"></use></clipPath>
+              <text font-family="Arial Narrow" x="5" y="20" fill="white">word-1</text>
+            </g>
+            <g id="box-55" clip-path="url(#clip-57)" class="word-2" transform="translate(79,41)">
+              <rect fill="grey" id="rect-56" style="stroke-width: 2px;" height="31" width="54"></rect>
+              <clipPath id="clip-57"><use href="#rect-56"></use></clipPath>
+              <text font-family="Arial Narrow" x="5" y="20" fill="white">word-2</text>
+            </g>
+          </g>
+          <g id="box-49" clip-path="url(#clip-51)" class="demo" transform="translate(14,247)">
+            <rect fill="grey" id="rect-50" style="stroke-width: 2px;" height="248" width="415"></rect>
+            <clipPath id="clip-51"><use href="#rect-50"></use></clipPath>
+            <text font-family="Arial Narrow" x="5" y="20" fill="white">demo</text>
+          </g>
         </g>
       </g>
     </svg>

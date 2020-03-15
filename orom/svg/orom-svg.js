@@ -1255,8 +1255,43 @@ root_change(br, [250, 200]);
 //root_change(c2.position, ([x,y]) => [x+20, y-20]);
 
 layout_text = () => {
-  let words = "The quick brown fox jumped over the lazy dog".split(" ");
-  svg_parent = path_lookup('text-wrapping-demo');
+  let boxes = {
+    text_container: path_lookup('text-layout', 'demo'),
+    layout_ctls: path_lookup('text-layout', 'controls'),
+    first_word: path_lookup('text-layout', 'controls', 'word-1'),
+    second_word: path_lookup('text-layout', 'controls', 'word-2'),
+  };
+  let ctls = {
+    text_container: create.rect_controls(),
+    layout_ctls: create.rect_controls(),
+    first_word: create.rect_controls(),
+    second_word: create.rect_controls(),
+  };
+  change(user_data(svg_userData(boxes.text_container).svg.rect).controls, ctls.text_container);
+  change(user_data(svg_userData(boxes.layout_ctls).svg.rect).controls, ctls.layout_ctls);
+  change(user_data(svg_userData(boxes.first_word).svg.rect).controls, ctls.first_word);
+  change(user_data(svg_userData(boxes.second_word).svg.rect).controls, ctls.second_word);
+
+  let top_left = {
+    text_container: poll(ctls.text_container.top_left.position),
+    layout_ctls: poll(ctls.layout_ctls.top_left.position),
+    first_word: poll(ctls.first_word.top_left.position),
+    second_word: poll(ctls.second_word.top_left.position),
+  };
+
+  let top_right = {
+    first_word: poll(ctls.first_word.top_right.position),
+  };
+
+  let params = {
+    inter_word_space: vsub(top_left.second_word, top_right.first_word),
+  };
+
+  // clear existing work
+  boxes.text_container.querySelectorAll('g').forEach(n => n.remove());
+
+  // Layout afresh
+  svg_parent = boxes.text_container;
 
   place_word = (string, top_left) => {
     let ctls = create.rect_controls();
@@ -1270,10 +1305,20 @@ layout_text = () => {
       root_change(ctls.bot_right.position, vadd(org, props(bb, 'r', 'b')));
     svg_parent = parent;
     change(user_data(word.svg.rect).controls, undefined);
-    return vadd(poll(ctls.top_right.position), [5,0]);
+    return vadd(poll(ctls.top_right.position), [params.inter_word_space[0],0]);
   }
 
-  let top_left = [50,500];
+  top_left.initial_relative = vsub(top_left.first_word, top_left.layout_ctls);
+  top_left.initial_absolute = vadd(top_left.text_container, top_left.initial_relative);
+
+  let words = "The quick brown fox jumped over the lazy dog. Meanwhile, five or six big jet planes zoomed quickly by the new tower.".split(" ");
+  top_left.next_word = top_left.initial_absolute;
+
   for (let word of words)
-    top_left = place_word(word, top_left);
+    top_left.next_word = place_word(word, top_left.next_word);
+
+  change(user_data(svg_userData(boxes.text_container).svg.rect).controls, undefined);
+  change(user_data(svg_userData(boxes.layout_ctls).svg.rect).controls, undefined);
+  change(user_data(svg_userData(boxes.first_word).svg.rect).controls, undefined);
+  change(user_data(svg_userData(boxes.second_word).svg.rect).controls, undefined);
 }
