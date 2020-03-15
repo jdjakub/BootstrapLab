@@ -1260,31 +1260,43 @@ layout_text = () => {
     layout_ctls: path_lookup('text-layout', 'controls'),
     first_word: path_lookup('text-layout', 'controls', 'word-1'),
     second_word: path_lookup('text-layout', 'controls', 'word-2'),
+    new_line: path_lookup('text-layout', 'controls', 'new-line'),
+    text_source: path_lookup('text-layout', 'text-source'),
   };
   let ctls = {
     text_container: create.rect_controls(),
     layout_ctls: create.rect_controls(),
     first_word: create.rect_controls(),
     second_word: create.rect_controls(),
+    new_line: create.rect_controls(),
   };
   change(user_data(svg_userData(boxes.text_container).svg.rect).controls, ctls.text_container);
   change(user_data(svg_userData(boxes.layout_ctls).svg.rect).controls, ctls.layout_ctls);
   change(user_data(svg_userData(boxes.first_word).svg.rect).controls, ctls.first_word);
   change(user_data(svg_userData(boxes.second_word).svg.rect).controls, ctls.second_word);
+  change(user_data(svg_userData(boxes.new_line).svg.rect).controls, ctls.new_line);
 
   let top_left = {
     text_container: poll(ctls.text_container.top_left.position),
     layout_ctls: poll(ctls.layout_ctls.top_left.position),
     first_word: poll(ctls.first_word.top_left.position),
     second_word: poll(ctls.second_word.top_left.position),
+    new_line: poll(ctls.new_line.top_left.position),
   };
+  top_left.initial_relative = vsub(top_left.first_word, top_left.layout_ctls);
+  top_left.initial_absolute = vadd(top_left.text_container, top_left.initial_relative);
 
   let top_right = {
     first_word: poll(ctls.first_word.top_right.position),
   };
 
+  let bot_right = {
+    text_container: poll(ctls.text_container.bot_right.position),
+  };
+
   let params = {
     inter_word_space: vsub(top_left.second_word, top_right.first_word),
+    inter_line_space: vsub(top_left.new_line, top_left.first_word),
   };
 
   // clear existing work
@@ -1293,32 +1305,47 @@ layout_text = () => {
   // Layout afresh
   svg_parent = boxes.text_container;
 
-  place_word = (string, top_left) => {
+  place_word = (string) => {
     let ctls = create.rect_controls();
     let parent = svg_parent;
       let word = create.box();
       change(user_data(word.svg.rect).controls, ctls);
-      root_change(ctls.top_left.position, top_left);
+      root_change(ctls.top_left.position, top_left.next_word);
       change(word.key_name, string);
       bb = bbox(word.svg.text);
       org = vadd(poll(ctls.top_left.position), [5,5]);
       root_change(ctls.bot_right.position, vadd(org, props(bb, 'r', 'b')));
     svg_parent = parent;
     change(user_data(word.svg.rect).controls, undefined);
-    return vadd(poll(ctls.top_right.position), [params.inter_word_space[0],0]);
+    if (!params.first_of_line &&
+      poll(ctls.bot_right.position)[0] > bot_right.text_container[0]) {
+      word.svg.group.remove(); // oops
+      top_left.curr_line = vadd(top_left.curr_line, [0,params.inter_line_space[1]]);
+      top_left.next_word = top_left.curr_line;
+      params.first_of_line = true;
+      return place_word(string); // try again at new line
+    } else {
+      top_left.next_word = vadd(
+        poll(ctls.top_right.position), [params.inter_word_space[0], 0]
+      );
+      params.first_of_line = false;
+    }
   }
 
-  top_left.initial_relative = vsub(top_left.first_word, top_left.layout_ctls);
-  top_left.initial_absolute = vadd(top_left.text_container, top_left.initial_relative);
+  let words = svg_userData(boxes.text_source).svg.textarea.value
+              .split(" ").filter(w => w.length !== 0);
 
-  let words = "The quick brown fox jumped over the lazy dog. Meanwhile, five or six big jet planes zoomed quickly by the new tower.".split(" ");
   top_left.next_word = top_left.initial_absolute;
+  top_left.curr_line = top_left.initial_absolute;
+
+  params.first_of_line = true;
 
   for (let word of words)
-    top_left.next_word = place_word(word, top_left.next_word);
+    place_word(word);
 
   change(user_data(svg_userData(boxes.text_container).svg.rect).controls, undefined);
   change(user_data(svg_userData(boxes.layout_ctls).svg.rect).controls, undefined);
   change(user_data(svg_userData(boxes.first_word).svg.rect).controls, undefined);
   change(user_data(svg_userData(boxes.second_word).svg.rect).controls, undefined);
+  change(user_data(svg_userData(boxes.new_line).svg.rect).controls, undefined);
 }
