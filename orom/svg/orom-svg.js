@@ -764,6 +764,10 @@ behaviors.rect_controls = {
 
 create.rect_controls = () => create.entity({}, behaviors.rect_controls);
 
+let box_1 = document.getElementById('box-1');
+origin_from_svg = (elem) =>
+  props(svg.getCTM().inverse().multiply(elem.getCTM()), 'e', 'f');
+
 //      ---***   ARROW   ***---
 /*
  * Ref
@@ -812,7 +816,7 @@ behaviors.arrow = {
 
     change(user_data(recv.svg.group).global_origin_pt, recv.source_pt);
       if (dom_tree !== undefined)
-        source_pos = props(recv.svg.group.getCTM(), 'e', 'f');
+        source_pos = origin_from_svg(recv.svg.group);
       if (source_pos !== undefined)
         root_change(recv.source_pt.position, source_pos);
 
@@ -1017,10 +1021,10 @@ behaviors.dom.g = {
       }
       if (to !== undefined) {
         recv.parent_origin_pt = create.point( // create parent origin
-          props(recv.dom_node.parentElement.getCTM(), 'e', 'f')
+          origin_from_svg(recv.dom_node.parentElement)
         );
         recv.parent_origin_pt.svg.circle.style.visibility = 'hidden'; // hide it
-        let origin = props(recv.dom_node.getCTM(), 'e', 'f');
+        let origin = origin_from_svg(recv.dom_node);
         let origin_pt = to;
         // translate these two into relative offset from parent
         recv.from_parent_rod = create.rod(recv.parent_origin_pt, origin_pt);
@@ -1035,7 +1039,7 @@ behaviors.dom.g = {
 
 pointer = create.entity({}, behaviors.pointer);
 
-current_tool = 'draw';
+current_tool = 'move';
 
 /*
  *  *** "DEVICE DRIVERS" FOR BINARY-STATE INPUT, POSITIONAL INPUT ***
@@ -1043,7 +1047,7 @@ current_tool = 'draw';
 
 svg = body.querySelector('svg');
 svg.style.border = '2px dashed red';
-svg.getCTM = () => ({a: 0, b: 0, c: 0, d: 0, e: 0, f: 0}); // polyfill
+svg.getCTM = () => box_1.getCTM(); // polyfill
 svg_parent = svg;
 
 externalised_next_id = document.getElementById('next-id');
@@ -1076,10 +1080,14 @@ svg.onmouseup = e => {
 };
 
 // mousemove => pointer position changed
+// https://stackoverflow.com/a/42711775
+let pt = svg.createSVGPoint();
 svg.onmousemove = e => {
-  let r = svg.getBoundingClientRect();
-  let pos = vsub([e.clientX, e.clientY], [r.left, r.top]);
-  root_change(send({to: pointer, selector: 'position'}), pos);
+  pt.x = e.clientX; pt.y = e.clientY;
+  let pos = pt.matrixTransform(svg.getScreenCTM().inverse());
+  //let r = svg.getBoundingClientRect();
+  //let pos = vsub([e.clientX, e.clientY], [r.left, r.top]);
+  root_change(send({to: pointer, selector: 'position'}), [pos.x, pos.y]);
 };
 
 // mouseover => considering a new object
@@ -1263,36 +1271,18 @@ layout_text = () => {
     new_line: path_lookup('text-layout', 'controls', 'new-line'),
     text_source: path_lookup('text-layout', 'text-source'),
   };
-  let ctls = {
-    text_container: create.rect_controls(),
-    layout_ctls: create.rect_controls(),
-    first_word: create.rect_controls(),
-    second_word: create.rect_controls(),
-    new_line: create.rect_controls(),
-  };
-  change(user_data(svg_userData(boxes.text_container).svg.rect).controls, ctls.text_container);
-  change(user_data(svg_userData(boxes.layout_ctls).svg.rect).controls, ctls.layout_ctls);
-  change(user_data(svg_userData(boxes.first_word).svg.rect).controls, ctls.first_word);
-  change(user_data(svg_userData(boxes.second_word).svg.rect).controls, ctls.second_word);
-  change(user_data(svg_userData(boxes.new_line).svg.rect).controls, ctls.new_line);
+  let ctls = {}, top_left = {}, top_right = {}, bot_left = {}, bot_right = {};
+  Object.entries(boxes).forEach(([box_name, box]) => {
+    ctls[box_name] = create.rect_controls();
+    change(user_data(svg_userData(box).svg.rect).controls, ctls[box_name]);
+    top_left[box_name] = poll(ctls[box_name].top_left.position);
+    top_right[box_name] = poll(ctls[box_name].top_right.position);
+    bot_left[box_name] = poll(ctls[box_name].bot_left.position);
+    bot_right[box_name] = poll(ctls[box_name].bot_right.position);
+  });
 
-  let top_left = {
-    text_container: poll(ctls.text_container.top_left.position),
-    layout_ctls: poll(ctls.layout_ctls.top_left.position),
-    first_word: poll(ctls.first_word.top_left.position),
-    second_word: poll(ctls.second_word.top_left.position),
-    new_line: poll(ctls.new_line.top_left.position),
-  };
   top_left.initial_relative = vsub(top_left.first_word, top_left.layout_ctls);
   top_left.initial_absolute = vadd(top_left.text_container, top_left.initial_relative);
-
-  let top_right = {
-    first_word: poll(ctls.first_word.top_right.position),
-  };
-
-  let bot_right = {
-    text_container: poll(ctls.text_container.bot_right.position),
-  };
 
   let params = {
     inter_word_space: vsub(top_left.second_word, top_right.first_word),
@@ -1343,9 +1333,7 @@ layout_text = () => {
   for (let word of words)
     place_word(word);
 
-  change(user_data(svg_userData(boxes.text_container).svg.rect).controls, undefined);
-  change(user_data(svg_userData(boxes.layout_ctls).svg.rect).controls, undefined);
-  change(user_data(svg_userData(boxes.first_word).svg.rect).controls, undefined);
-  change(user_data(svg_userData(boxes.second_word).svg.rect).controls, undefined);
-  change(user_data(svg_userData(boxes.new_line).svg.rect).controls, undefined);
+  Object.values(boxes).forEach(box =>
+    change(user_data(svg_userData(box).svg.rect).controls, undefined)
+  );
 }
