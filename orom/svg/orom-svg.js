@@ -539,6 +539,16 @@ behaviors.box = {
 
     recv.svg = {};
 
+    /* Expected structure, with default attribute values. NNN = gen_id()
+    g id=box-NNN clip-path=url(#clip-NNN) class=unnamed
+    |  rect id=rect-NNN fill=grey
+    |  clipPath id=clip-NNN
+    |  |  use href=#rect-NNN
+    |  text x=5 y=20 fill=white font-family="Arial Narrow"
+    |  ?foreignObject x=5 y=30 width=100% height=100%
+    |  |  textarea
+    */
+
     if (dom_tree === undefined) recv.id = 'box-' + gen_id();
     else recv.id = attr(dom_tree, 'id');
 
@@ -781,6 +791,11 @@ behaviors.arrow = {
     }
 
     recv.svg = {};
+
+    /* Expected structure (NNN = gen_id(), DDD = destination circle ID)
+    g
+    |  circle id=circle-NNN fill=white r=10 stroke=black textContent=circle-DDD
+    */
 
     // Consists of a <g> ...
     if (dom_tree === undefined) recv.svg.group = svgel('g', {id: recv.id});
