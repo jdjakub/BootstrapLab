@@ -46,6 +46,21 @@ function clientToWorld(v) {
   return ndc;
 }
 
+/*
+screen -> ndc -> camera-local -> world
+screen vec: s0 s-org + s1 s-right + s2 s-down
+   ndc vec: n0 n-org + n1 n-right + n2 n-up
+
+s-org = n-org - n-right + n-up
+n-org = s-org + hw s-right - hw s-up
+
+s-right = n-right/hw
+n-right = hw s-right
+
+s-down = - n-up/hh
+n-up   = - hh s-down
+*/
+
 
 is_dragging = false;
 renderer.domElement.onmousedown = e => { is_dragging = true };
@@ -67,6 +82,56 @@ renderer.domElement.onmousemove = e => {
   }
 };
 
+/*
+curr := { basis: screen, 0: 1, 1: e.clientX, 2: e.clientY } # assembles to:
+main:
+ 1) l {}; s map2;
+ 3) l e; d; s map; l clientX; i; l map; d; s source; l map2; d; s map; l 1; s;
+16) l map; d; s map2;
+18) l e; d; s map; l clientY; i; l map; d; s source; l map2; d; s map; l 2; s;
+31) l screen; s source; l basis; s;
+35) l 1; s source; l 0; s;
+39) l 1; s source; l 0; s; (42 uops)
+
+      focus := regS  ===>  load regS; deref
+       regD := regS  ===>  focus := regS; store regD
+ regM[regK] := regS  ===>  map := regM; source := regS; focus := regK; store
+ regD := reg0.a.b.c  ===>  map := reg0; load a; index; load b; index; load c; index; regD := map
+
+tmp := { key: 1 }
+tmp.id = last_pointer thru
+  undefined: ref
+    last_delta := curr - last_pointer
+    jump to rejoin
+  _: ref @rejoin
+
+tmp := {}; tmp.key := 1;
+tmp.id := {undefined: { id: @branch }, _: { id: @rejoin }};
+tmp.id := tmp.id[last_pointer];
+next_instruction := tmp;
+
+ 1) l {}; s map; l @branch; s source; l id; s; l map; d; s map2;
+10) l {}; s map; l @rejoin; s source; l id; s; l map; d; s source;
+19) l {}; s map; l _; s; l map2; d; s source; l undefined; s;
+28) l last_pointer; d; i; l map; d; s source;
+34) l {}; s map; l id; s; l 1; s source; l key; s;
+42) l map; d; s next_instruction; (44 uops)
+
+rejoin:
+last_pointer := curr
+
+next_instruction :=
+  key: 1
+  id: is_dragging thru
+    false: ref @rejoin2
+    true: ref
+      delta_camera := last_delta in world
+      delta_camera.3 := 0
+      camera.position.sub(delta_camera)
+      r()
+      jump to rejoin2
+*/
+
 zoom_per_pixel = 0.95; // Every px of scroll shrinks view window to 95%
 
 renderer.domElement.onwheel = e => {
@@ -85,6 +150,8 @@ renderer.domElement.onwheel = e => {
   camera.position.add(delta);
   camera.updateProjectionMatrix();
   r();
+
+  e.preventDefault();
 };
 
 function r() {
