@@ -1,109 +1,187 @@
-//https://github.com/lmenezes/json-tree
-var JSONTree = (function() { // eslint-disable-line no-unused-vars
-  var escapeMap = {
+//https://github.com/lmenezes/json-tree, modified
+/*
+The MIT License (MIT)
+
+Copyright (c) 2013 Leonardo Menezes
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+JSONTree = { // eslint-disable-line no-unused-vars
+  escapeMap: {
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',
     '"': '', /* &quot; */
     '\'': '&#x27;',
     '/': '&#x2F;',
-  };
+  },
 
-  var internalId = 0;
-  var instances = 0;
+  internalId: 0,
+  instances: 0,
 
-  this.create = function(data, settings) {
-    instances += 1;
-    return '<div class="jstTree">' + _jsVal(data) + '</div>';
-  };
+  id_of_obj: new Map(),
+  last_highlighted: new Map(),
 
-  this.click = function(elem) {
-    if (elem.nextElementSibling.className !== 'jstHiddenBlock') {
-      var block = findNextWithClass(elem, 'jstBracket');
-      var siblings = _nextUntil(block, block.id + '_end');
-      _hide(elem, siblings);
-      elem.className = 'jstExpand';
-    } else {
-      var block = findNextWithClass(elem, 'jstBracket');
-      var hiddenElements = findNextWithClass(elem, 'jstHiddenBlock');
-      var children = hiddenElements.children;
-      for (var i = children.length; i > 0; i--) {
-        var child = children[i - 1];
-        block.after(child);
-      }
-      hiddenElements.remove();
-      elem.className = 'jstCollapse';
+  create: function(data) {
+    JSONTree.instances += 1;
+    return '<div class="jstTree">' + JSONTree._jsVal(data) + '</div>';
+  },
+
+  locate: function(obj, key) {
+    const id = JSONTree.id_of_obj.get(obj);
+    const jstList = document.getElementById(id); // property list
+    if (key === undefined) return jstList;
+
+    let jstItem = jstList.firstElementChild; // property entry
+    // Search for the key ... (not like there's a better way to do this >.>)
+    while (jstItem !== null) // '': make sure number keys e.g. 2 go to strings...
+      if (jstItem.querySelector('.jstProperty').textContent === ''+key) break;
+      else jstItem = jstItem.nextElementSibling;
+
+    return jstItem;
+  },
+
+  update: function(obj, key) {
+    const jstItem = JSONTree.locate(obj, key);
+
+    if (obj[key] === undefined) {
+      if (jstItem !== null) jstItem.remove();
+      return;
+    } else if (jstItem === null) { // Insert new one at the top
+      jstList.insertAdjacentHTML('afterbegin',
+        '<li class="jstItem">' + JSONTree._property(key, null) + '</li>');
+      jstItem = jstList.firstElementChild;
     }
-  };
+    // If collapsible, ensure control is there; otherwise, ensure it isn't
+    const c = jstItem.firstElementChild.className;
+    const control_present = c === 'jstCollapse' || c === 'jstExpand';
+    const collapsible = JSONTree._canCollapse(obj[key]);
+    if (collapsible && !control_present)
+      jstItem.insertAdjacentHTML('afterbegin', JSONTree._collapseElem());
+    else if (!collapsible && control_present)
+      jstItem.firstElementChild.remove();
 
-  var findNextWithClass = function(element, clazz) {
-    var next = element.nextElementSibling;
+    // Finally, splice in the value
+    let jstValue = jstItem.querySelector('.jstColon').nextElementSibling;
+    //if (jstValue.classList.contains('jstBracket')) jstValue = jstValue.nextElementSibling;
+    jstValue.outerHTML = JSONTree._jsVal(obj[key]);
+    if (c === 'jstExpand') // obj should be collapsed
+      jstValue.classList.toggle('jstHiddenBlock');
+  },
+
+  highlight: function(cssClass, obj, key) {
+    let jstPropOrList = JSONTree.locate(obj, key);
+    if (key === undefined)
+      jstPropOrList = jstPropOrList.parentElement;
+    else
+      jstPropOrList = jstPropOrList.querySelector('.jstProperty');
+
+    // Turn the old one off
+    let lastChanged = JSONTree.last_highlighted.get(cssClass);
+    if (lastChanged !== undefined)
+      lastChanged.classList.toggle(cssClass);
+
+    // Turn the new one on
+    jstPropOrList.classList.toggle(cssClass);
+    JSONTree.last_highlighted.set(cssClass, jstPropOrList);
+  },
+
+  click: function(jstCollapse) {
+    const jstList = jstCollapse.parentElement.querySelector('.jstList');
+    if (jstCollapse.className === 'jstCollapse')
+      jstCollapse.className = 'jstExpand'
+    else
+      jstCollapse.className = 'jstCollapse'
+    jstList.classList.toggle('jstHiddenBlock');
+  },
+
+  findNextWithClass: function(element, clazz) {
+    let next = element.nextElementSibling;
     while (true) {
       if (next.className === clazz) {
         return next;
       }
       next = next.nextElementSibling;
     }
-  };
+  },
 
-  var _id = function() {
-    return instances + '_' + internalId++;
-  };
+  _id: function() {
+    return JSONTree.instances + '_' + JSONTree.internalId++;
+  },
 
-  var _escape = function(text) {
+  _escape: function(text) {
     return text.replace(/[&<>'"]/g, function(c) {
-      return escapeMap[c];
+      return JSONTree.escapeMap[c];
     });
-  };
+  },
 
-  var _jsVal = function(value) {
-    var type = typeof value;
+  _jsVal: function(value) {
+    const type = typeof value;
     switch (type) {
       case 'boolean':
-        return _jsBool(value);
+        return JSONTree._jsBool(value);
       case 'number':
-        return _jsNum(value);
+        return JSONTree._jsNum(value);
       case 'string':
-        return _jsStr(value);
+        return JSONTree._jsStr(value);
       default:
         if (value === null) {
-          return _jsNull();
+          return JSONTree._jsNull();
         } else if (value instanceof Array) {
-          return _jsArr(value);
+          return JSONTree._jsArr(value);
         } else {
-          return _jsObj(value);
+          return JSONTree._jsObj(value);
         }
     }
-  };
+  },
 
-  var _jsObj = function(object) {
-    var id = _id();
-    var elements = [];
-    var keys = Object.keys(object);
-    keys.forEach(function(key, index) {
-      var html = [];
+  _jsObj: function(object, id) {
+    if (id === undefined) {
+      id = JSONTree._id();
+      JSONTree.id_of_obj.set(object, id);
+    }
+    const elements = [];
+    const keys = Object.keys(object);
+    keys.forEach((key, index) => {
+      const html = [];
       html.push('<li class="jstItem">');
-      if (_canCollapse(object[key])) {
-        html.push(_collapseElem());
+      if (JSONTree._canCollapse(object[key])) {
+        html.push(JSONTree._collapseElem());
       }
-      html.push(_property(key, object[key]));
+      html.push(JSONTree._property(key, object[key]));
       if (index !== keys.length - 1) {
-        html.push(_comma());
+        html.push(JSONTree._comma());
       }
       html.push('</li>');
       elements.push(html.join(''));
     });
-    var body = elements.join('');
-    return _collection(_open('{', id), body, _close('}', id));
-  };
+    const body = elements.join('');
+    return JSONTree._collection(JSONTree._open('{', id), body, JSONTree._close('}', id), id);
+  },
 
-  var _collapseElem = function() {
-    var onClick = 'onclick="JSONTree.click(this); return false;"';
+  _collapseElem: function() {
+    const onClick = 'onclick="JSONTree.click(this); return false;"';
     return '<span class="jstCollapse" ' + onClick + '></span>';
-  };
+  },
 
-  var _canCollapse = function(data) {
-    var type = typeof data;
+  _canCollapse: function(data) {
+    const type = typeof data;
     switch (type) {
       case 'boolean':
         return false;
@@ -120,13 +198,13 @@ var JSONTree = (function() { // eslint-disable-line no-unused-vars
           return Object.keys(data).length > 0;
         }
     }
-  };
+  },
 
-  var _collection = function(opening, data, closing) {
+  _collection: function(opening, data, closing, id) {
     if (data.length > 0) {
       return [
         opening,
-        '<ul class="jstList">',
+        '<ul class="jstList" id="'+ id +'">',
         data,
         '</ul>',
         closing,
@@ -134,76 +212,57 @@ var JSONTree = (function() { // eslint-disable-line no-unused-vars
     } else {
       return opening + closing;
     }
-  };
+  },
 
-  var _jsArr = function(array) {
-    var id = _id();
-    var elements = [];
-    array.forEach(function(element, index) {
+  _jsArr: function(array) {
+    const id = JSONTree._id();
+    const elements = [];
+    array.forEach((element, index) => {
       var html = ['<li class="jstItem">'];
-      if (_canCollapse(element)) {
-        html.push(_collapseElem());
+      if (JSONTree._canCollapse(element)) {
+        html.push(JSONTree._collapseElem());
       }
-      html.push(_jsVal(element));
+      html.push(JSONTree._jsVal(element));
       if (index !== array.length - 1) {
-        html.push(_comma());
+        html.push(JSONTree._comma());
       }
       html.push('</li>');
       elements.push(html.join(''));
     });
-    var body = elements.join('');
-    return _collection(_open('[', id), body, _close(']', id));
-  };
+    const body = elements.join('');
+    return JSONTree._collection(JSONTree._open('[', id), body, JSONTree._close(']', id));
+  },
 
-  var _jsStr = function(value) {
-    var jsonString = _escape(JSON.stringify(value));
-    return _element(jsonString, {class: 'jstStr'});
-  };
+  _jsStr: function(value) {
+    const jsonString = JSONTree._escape(JSON.stringify(value));
+    return JSONTree._element(jsonString, {class: 'jstStr'});
+  },
 
-  var _jsNum = function(value) {
-    return _element(value, {class: 'jstNum'});
-  };
+  _jsNum:  value => JSONTree._element(value, {class: 'jstNum'}),
+  _jsBool: value => JSONTree._element(value, {class: 'jstBool'}),
+  _jsNull:    () => JSONTree._element('null', {class: 'jstNull'}),
 
-  var _jsBool = function(value) {
-    return _element(value, {class: 'jstBool'});
-  };
+  _property: function(name, value) {
+    const escapedValue = JSONTree._escape(JSON.stringify(name));
+    const property = JSONTree._element(escapedValue, {class: 'jstProperty'});
+    const propertyValue = JSONTree._jsVal(value);
+    return [property +JSONTree._colon(), propertyValue].join('');
+  },
 
-  var _jsNull = function() {
-    return _element('null', {class: 'jstNull'});
-  };
+  _colon: () => JSONTree._element(': ', {class: 'jstColon'}),
+  _comma: () => JSONTree._element(',', {class: 'jstComma'}),
 
-  var _property = function(name, value) {
-    var escapedValue = _escape(JSON.stringify(name));
-    var property = _element(escapedValue, {class: 'jstProperty'});
-    var propertyValue = _jsVal(value);
-    return [property + _colon(), propertyValue].join('');
-  };
-
-  var _colon = function() {
-    return _element(': ', {class: 'jstColon'});
-  };
-
-  var _comma = function() {
-    return _element(',', {class: 'jstComma'});
-  };
-
-  var _element = function(content, attrs) {
-    var attrsStr = Object.keys(attrs).map(function(attr) {
-      return ' ' + attr + '="' + attrs[attr] + '"';
-    }).join('');
+  _element: function(content, attrs) {
+    const attrsStr = Object.keys(attrs).map(attr =>
+      ' ' + attr + '="' + attrs[attr] + '"').join('');
     return '<span' + attrsStr + '>' + content + '</span>';
-  };
+  },
 
-  var _open = function(sym, id) {
-    return _element(sym, {id: 'opening_' + id, class: 'jstBracket'});
-  };
+  _open:  (sym, id) => '',//JSONTree._element(sym, {id: 'opening_' + id, class: 'jstBracket'}),
+  _close: (sym, id) => '',//JSONTree._element(sym, {id: 'opening_' + id + '_end', class: 'jstBracket'}),
 
-  var _close = function(sym, id) {
-    return _element(sym, {id: 'opening_' + id + '_end', class: 'jstBracket'});
-  };
-
-  var _nextUntil = function(elem, id) {
-    var siblings = [];
+  _nextUntil: function(elem, id) {
+    const siblings = [];
     elem = elem.nextElementSibling;
     while (elem) {
       if (elem.id == id) {
@@ -213,16 +272,14 @@ var JSONTree = (function() { // eslint-disable-line no-unused-vars
       elem = elem.nextElementSibling;
     }
     return siblings;
-  };
+  },
 
-  var _hide = function(elem, siblings) {
-    var wrapper = document.createElement('div');
+  _hide: function(elem, siblings) {
+    const wrapper = document.createElement('div');
     wrapper.className = 'jstHiddenBlock';
     siblings.forEach(function(s) {
       wrapper.appendChild(s);
     });
     elem.after(wrapper);
-  };
-
-  return this;
-})();
+  },
+};

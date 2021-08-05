@@ -1,3 +1,4 @@
+DEBUG = () => { debugger; };
 last = (arr, n) => arr[arr.length-(n || 1)];
 log = (...args) => { console.log(...args); return last(args); };
 function forMat4(m) {
@@ -164,39 +165,6 @@ next_id = 0;
 jsobj_from_id = new Map();
 id_from_jsobj = new Map();
 
-function deref(id) {
-  if (typeof(id) === 'number') {
-    return jsobj_from_id.get(id);
-  } else {
-    const key = id.key;
-    id = id.id; // lol
-    return jsobj_from_id.get(id)[key];
-  }
-}
-
-function single_step() {
-  const inst = deref(ctx.next_instruction);
-  const op = inst.op;
-  ctx.next_instruction.key++;
-    // load: copy value to .focus register
-       if (op === 'load') ctx.focus = inst.value;
-    // store: copy value in .focus to the given reg (if included)
-    //        OR copy value in .source to .map[.focus] (if absent)
-  else if (op === 'store') {
-    if (inst.register === undefined) ctx.map[ctx.focus] = ctx.source;
-    else ctx[inst.register] = ctx.focus;
-    // deref: replace .focus with the value of the reg it references (if string)
-  } //        OR with the object with the specified id (otherwise)
-  else if (op === 'deref') {
-    if (typeof(ctx.focus) === 'string') ctx.focus = ctx[ctx.focus];
-    else ctx.focus = deref(ctx.focus);
-  } // index: index the .map with .focus as the key, replacing .map
-  else if (op === 'index') {
-    ctx.map = ctx.map[ctx.focus];
-  } // js: execute arbitrary JS code :P
-  else if (op === 'js') inst.func(ctx);
-}
-
 function new_map(map) {
   const id = next_id++;
   jsobj_from_id.set(id, map);
@@ -235,6 +203,7 @@ ctx = new_map({
       }
     }
   },
+  // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
   instructions: new_map({
      1: { op: 'load', value: 'lisp_stuff' },
      2: { op: 'deref' },
@@ -261,20 +230,75 @@ ctx.next_instruction = { id: id_from_jsobj.get(ctx.instructions), key: 1 }
 treeView = document.getElementById('treeview');
 document.body.appendChild(treeView);
 
-function rt() {
-  treeView.innerHTML = JSONTree.create(ctx/*{
-    foo: {
-      bar: 'foobar', baz: 'foobaz',
-      qux: { 1: { foobar: 'bar', foobaz: 'baz' } }
-    },
-    bar: {
-      1: {foo: 'barfoo'},
-      2: {qux: null}
-    },
-    qux: { 1: 'foo', 2: 'bar', 3: 'foobar' },
-    baz: true,
-    foobar: {1: 1, 2: 2, 3: 3}
-  }*/);
+treeView.innerHTML = JSONTree.create(ctx/*{
+  foo: {
+    bar: 'foobar', baz: 'foobaz',
+    qux: { 1: { foobar: 'bar', foobaz: 'baz' } }
+  },
+  bar: {
+    1: {foo: 'barfoo'},
+    2: {qux: null}
+  },
+  qux: { 1: 'foo', 2: 'bar', 3: 'foobar' },
+  baz: true,
+  foobar: {1: 1, 2: 2, 3: 3}
+}*/);
+
+current_domid = undefined;
+
+function deref(id) {
+  if (typeof(id) === 'number') {
+    return jsobj_from_id.get(id);
+  } else {
+    const key = id.key;
+    id = id.id; // lol
+    return jsobj_from_id.get(id)[key];
+  }
 }
 
-rt();
+function single_step(do_render_tree) {
+  const inst = deref(ctx.next_instruction);
+  // Cache values, before any modifications, for later
+  const op       = inst.op;
+  const focus    = ctx.focus;
+  const map      = ctx.map;
+  const source   = ctx.source;
+  const dest_reg = inst.register;
+
+  ctx.next_instruction.key++;
+
+  // Modify state according to instruction
+    // load: copy value to .focus register
+       if (op === 'load') ctx.focus = inst.value;
+    // store: copy value in .focus to the given reg (if included)
+    //        OR copy value in .source to .map[.focus] (if absent)
+  else if (op === 'store') {
+    if (inst.register === undefined) ctx.map[ctx.focus] = ctx.source;
+    else ctx[inst.register] = ctx.focus;
+    // deref: replace .focus with the value of the reg it references (if string)
+  } //        OR with the object with the specified id (otherwise)
+  else if (op === 'deref') {
+    if (typeof(ctx.focus) === 'string') ctx.focus = ctx[ctx.focus];
+    else ctx.focus = deref(ctx.focus);
+  } // index: index the .map with .focus as the key, replacing .map
+  else if (op === 'index') {
+    ctx.map = ctx.map[ctx.focus];
+  } // js: execute arbitrary JS code :P
+  else if (op === 'js') inst.func(ctx);
+
+  // Update visible tree
+  if (do_render_tree) {
+    let obj = ctx, key = 'focus'; // i.e. what changed?
+    if (op === 'store')
+      if (dest_reg === undefined) { obj = map; key = focus; }
+      else key = dest_reg;
+    else if (op === 'index') key = 'map';
+
+    JSONTree.update(obj, key);
+    JSONTree.update(ctx.next_instruction, 'key');
+    JSONTree.highlight('jstNextInstruction', deref(ctx.next_instruction));
+    JSONTree.highlight('jstLastChange', obj, key);
+  }
+}
+
+JSONTree.highlight('jstNextInstruction', deref(ctx.next_instruction));

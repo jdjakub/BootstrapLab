@@ -19,6 +19,14 @@ li.jstItem {
   color: #68bb97;
 }
 
+.jstLastChange {
+  background-color: yellow;
+}
+
+.jstNextInstruction {
+  background-color: #f4e8ff;
+}
+
 .jstBool {
   color: #1CA8DD;
 }
