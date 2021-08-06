@@ -45,21 +45,20 @@ JSONTree = { // eslint-disable-line no-unused-vars
 
   locate: function(obj, key) {
     const id = JSONTree.id_of_obj.get(obj);
-    const jstList = document.getElementById(id); // property list
-    if (key === undefined) return jstList;
+    const jstLists = Array.from(document.querySelectorAll('.object_'+id)); // property lists
+    if (key === undefined) return jstLists;
 
-    let jstItem = jstList.firstElementChild; // property entry
-    // Search for the key ... (not like there's a better way to do this >.>)
-    while (jstItem !== null) // '': make sure number keys e.g. 2 go to strings...
-      if (jstItem.querySelector('.jstProperty').textContent === ''+key) break;
-      else jstItem = jstItem.nextElementSibling;
-
-    return jstItem;
+    return jstLists.map(jstList => {
+      let jstItem = jstList.firstElementChild; // property entries
+      // Search for the key ... (not like there's a better way to do this >.>)
+      while (jstItem !== null) // '': make sure number keys e.g. 2 go to strings...
+        if (jstItem.querySelector('.jstProperty').textContent === ''+key) break;
+        else jstItem = jstItem.nextElementSibling;
+      return jstItem;
+    });
   },
 
-  update: function(obj, key) {
-    const jstItem = JSONTree.locate(obj, key);
-
+  update: (obj, key) => JSONTree.locate(obj, key).forEach(jstItem => {
     if (obj[key] === undefined) {
       if (jstItem !== null) jstItem.remove();
       return;
@@ -83,23 +82,23 @@ JSONTree = { // eslint-disable-line no-unused-vars
     jstValue.outerHTML = JSONTree._jsVal(obj[key]);
     if (c === 'jstExpand') // obj should be collapsed
       jstValue.classList.toggle('jstHiddenBlock');
-  },
+  }),
 
   highlight: function(cssClass, obj, key) {
-    let jstPropOrList = JSONTree.locate(obj, key);
+    let jstPropsOrLists = JSONTree.locate(obj, key);
     if (key === undefined)
-      jstPropOrList = jstPropOrList.parentElement;
+      jstPropsOrLists = jstPropsOrLists.map(e => e.parentElement);
     else
-      jstPropOrList = jstPropOrList.querySelector('.jstProperty');
+      jstPropsOrLists = jstPropsOrLists.map(e => e.querySelector('.jstProperty'));
 
     // Turn the old one off
     let lastChanged = JSONTree.last_highlighted.get(cssClass);
     if (lastChanged !== undefined)
-      lastChanged.classList.toggle(cssClass);
+      lastChanged.forEach(e => e.classList.toggle(cssClass));
 
     // Turn the new one on
-    jstPropOrList.classList.toggle(cssClass);
-    JSONTree.last_highlighted.set(cssClass, jstPropOrList);
+    jstPropsOrLists.forEach(e => e.classList.toggle(cssClass));
+    JSONTree.last_highlighted.set(cssClass, jstPropsOrLists);
   },
 
   click: function(jstCollapse) {
@@ -151,7 +150,8 @@ JSONTree = { // eslint-disable-line no-unused-vars
     }
   },
 
-  _jsObj: function(object, id) {
+  _jsObj: function(object) {
+    let id = JSONTree.id_of_obj.get(object);
     if (id === undefined) {
       id = JSONTree._id();
       JSONTree.id_of_obj.set(object, id);
@@ -204,7 +204,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     if (data.length > 0) {
       return [
         opening,
-        '<ul class="jstList" id="'+ id +'">',
+        '<ul class="jstList object_'+id+'">',
         data,
         '</ul>',
         closing,
