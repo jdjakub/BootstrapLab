@@ -1,4 +1,4 @@
-//https://github.com/lmenezes/json-tree, modified
+//https://github.com/lmenezes/json-tree, heavily modified
 /*
 The MIT License (MIT)
 
@@ -38,8 +38,9 @@ JSONTree = { // eslint-disable-line no-unused-vars
   id_of_obj: new Map(),
   last_highlighted: new Map(),
 
-  create: function(data) {
+  create: function(data, id_of_obj_map) {
     JSONTree.instances += 1;
+    JSONTree.id_of_obj = id_of_obj_map;
     return '<div class="jstTree">' + JSONTree._jsVal(data) + '</div>';
   },
 
@@ -143,7 +144,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
         if (value === null) {
           return JSONTree._jsNull();
         } else if (value instanceof Array) {
-          return JSONTree._jsArr(value);
+          return JSONTree._jsArr(value); // ARRAYS ARE JUST MAPS IN MAP-LAND!!
         } else {
           return JSONTree._jsObj(value);
         }
@@ -159,6 +160,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     const elements = [];
     const keys = Object.keys(object);
     keys.forEach((key, index) => {
+      if (object[key] === undefined) return;
       const html = [];
       html.push('<li class="jstItem">');
       if (JSONTree._canCollapse(object[key])) {
@@ -214,7 +216,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     }
   },
 
-  _jsArr: function(array) {
+  /*_jsArr: function(array) {
     const id = JSONTree._id();
     const elements = [];
     array.forEach((element, index) => {
@@ -231,7 +233,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     });
     const body = elements.join('');
     return JSONTree._collection(JSONTree._open('[', id), body, JSONTree._close(']', id));
-  },
+  },*/
 
   _jsStr: function(value) {
     const jsonString = JSONTree._escape(JSON.stringify(value));
@@ -272,14 +274,5 @@ JSONTree = { // eslint-disable-line no-unused-vars
       elem = elem.nextElementSibling;
     }
     return siblings;
-  },
-
-  _hide: function(elem, siblings) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'jstHiddenBlock';
-    siblings.forEach(function(s) {
-      wrapper.appendChild(s);
-    });
-    elem.after(wrapper);
   },
 };

@@ -16,7 +16,7 @@ e3 = THREE;
 renderer = new e3.WebGLRenderer({ antialias: true });
 document.body.appendChild(renderer.domElement);
 renderer.domElement.style.display = 'inline-block';
-const [rw, rh] = [window.innerWidth*.67, window.innerHeight*.99];
+const [rw, rh] = [window.innerWidth*.50, window.innerHeight*.99];
 renderer.setSize(rw, rh);
 const DPR = window.devicePixelRatio || 1;
 renderer.setPixelRatio(DPR);
@@ -172,79 +172,10 @@ function new_map(map) {
   return map;
 }
 
-ctx = new_map({
-  next_instruction: 0,
-  focus: 0,
-  map: 0,
-  source: 0,
-  lisp_stuff: {
-    type: 'apply',  proc_e: 'define',  args_e: {
-      name: 'fac',
-      value: {
-        type: 'apply',  proc_e: 'lambda',  args_e: {
-          pattern_e: { 1: 'n' },
-          body_e: {
-            1: {
-              type: 'apply',  proc_e: {
-                type: 'dict',  entries: {
-                  0: 1,  _: {
-                    type: 'apply',  proc_e: 'sub',  args_e: {
-                      1: 'fac',  2: {
-                        type: 'apply',  proc_e: 'sub',  args_e: { 1: 'n', 2: 1 }
-                      }
-                    }
-                  }
-                }
-              },
-              args_e: { 1: 'n' }
-            }
-          }
-        }
-      }
-    }
-  },
-  // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-  instructions: new_map({
-     1: { op: 'load', value: 'lisp_stuff' },
-     2: { op: 'deref' },
-     3: { op: 'store', register: 'map' },
-     4: { op: 'load', value: 'args_e' },
-     5: { op: 'index' },
-     6: { op: 'load', value: 'value' },
-     7: { op: 'index' },
-     8: { op: 'load', value: 'args_e' },
-     9: { op: 'index' },
-    10: { op: 'load', value: 'body_e' },
-    11: { op: 'index' },
-    12: { op: 'load', value: 1 },
-    13: { op: 'index' },
-    14: { op: 'load', value: 'foobar' },
-    15: { op: 'store', register: 'source' },
-    16: { op: 'load', value: 'type' },
-    17: { op: 'store' },
-  }),
-});
-
-ctx.next_instruction = { id: id_from_jsobj.get(ctx.instructions), key: 1 }
+ctx = {};
 
 treeView = document.getElementById('treeview');
-document.body.appendChild(treeView);
-
-treeView.innerHTML = JSONTree.create(ctx/*{
-  foo: {
-    bar: 'foobar', baz: 'foobaz',
-    qux: { 1: { foobar: 'bar', foobaz: 'baz' } }
-  },
-  bar: {
-    1: {foo: 'barfoo'},
-    2: {qux: null}
-  },
-  qux: { 1: 'foo', 2: 'bar', 3: 'foobar' },
-  baz: true,
-  foobar: {1: 1, 2: 2, 3: 3}
-}*/);
-
-current_domid = undefined;
+document.body.appendChild(treeView); // So that it's last
 
 function deref(id) {
   if (typeof(id) === 'number') {
@@ -257,7 +188,7 @@ function deref(id) {
 }
 
 function single_step(do_render_tree) {
-  const inst = deref(ctx.next_instruction);
+  const inst = ctx.next_instruction.value;
   // Cache values, before any modifications, for later
   const op       = inst.op;
   const focus    = ctx.focus;
@@ -265,7 +196,8 @@ function single_step(do_render_tree) {
   const source   = ctx.source;
   const dest_reg = inst.register;
 
-  ctx.next_instruction.key++;
+  ctx.next_instruction.ref.key++;
+  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
 
   // Modify state according to instruction
     // load: copy value to .focus register
@@ -295,10 +227,111 @@ function single_step(do_render_tree) {
     else if (op === 'index') key = 'map';
 
     JSONTree.update(obj, key);
-    JSONTree.update(ctx.next_instruction, 'key');
-    JSONTree.highlight('jstNextInstruction', deref(ctx.next_instruction));
+    JSONTree.update(ctx.next_instruction.ref, 'key');
+    JSONTree.update(ctx.next_instruction, 'value');
+    JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
     JSONTree.highlight('jstLastChange', obj, key);
   }
 }
 
-JSONTree.highlight('jstNextInstruction', deref(ctx.next_instruction));
+function assemble_code(str) {
+  const instructions = str.replaceAll('\n', '').split(';').map(s => {
+    s = s.toLowerCase().trim().split(' ');
+         if (s[0] === 'l') return { op: 'load', value: s[1] };
+    else if (s[0] === 's') return { op: 'store', register: s[1] };
+    else if (s[0] === 'd') return { op: 'deref' };
+    else if (s[0] === 'i') return { op: 'index' };
+    else return;
+  });
+  const o = {};
+  instructions.forEach((inst,n) => { o[n+1] = inst; });
+  return o;
+}
+
+function example_store_obj() {
+  ctx = new_map({
+    next_instruction: null,
+    focus: null,
+    map: null,
+    source: null,
+    lisp_stuff: {
+      type: 'apply',  proc_e: 'define',  args_e: {
+        name: 'fac',
+        value: {
+          type: 'apply',  proc_e: 'lambda',  args_e: {
+            pattern_e: { 1: 'n' },
+            body_e: {
+              1: {
+                type: 'apply',  proc_e: {
+                  type: 'dict',  entries: {
+                    0: 1,  _: {
+                      type: 'apply',  proc_e: 'sub',  args_e: {
+                        1: 'fac',  2: {
+                          type: 'apply',  proc_e: 'sub',  args_e: { 1: 'n', 2: 1 }
+                        }
+                      }
+                    }
+                  }
+                },
+                args_e: { 1: 'n' }
+              }
+            }
+          }
+        }
+      }
+    },
+    // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
+    instructions: new_map(assemble_code(
+      'l lisp_stuff; d; s map; l args_e; i; l value; i; l args_e; i;'
+      + 'l body_e; i; l 1; i; l foobar; s source; l type; s'
+    )),
+  });
+
+  ctx.next_instruction = {
+    ref: { id: id_from_jsobj.get(ctx.instructions), key: 1 },
+  };
+  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+
+  treeView.innerHTML = JSONTree.create(ctx/*{
+    foo: {
+      bar: 'foobar', baz: 'foobaz',
+      qux: { 1: { foobar: 'bar', foobaz: 'baz' } }
+    },
+    bar: {
+      1: {foo: 'barfoo'},
+      2: {qux: null}
+    },
+    qux: { 1: 'foo', 2: 'bar', 3: 'foobar' },
+    baz: true,
+    foobar: {1: 1, 2: 2, 3: 3}
+  }*/, id_from_jsobj);
+  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+}
+
+function example_move_shape() {
+  ctx = new_map({
+    next_instruction: null,
+    focus: null,
+    map: null,
+    source: null,
+    pointer: {
+      position: { basis: 'screen-pt', right: 200, down: 300 },
+      delta: { basis: 'screen-vec', right: -2, down: 1 },
+    },
+    camera: {
+      position: { basis: 'world-pt', right: 1, up: 2, forward: 3 }
+    },
+    // ???
+    instructions: new_map({}),
+  });
+
+  ctx.next_instruction = {
+    ref: { id: id_from_jsobj.get(ctx.instructions), key: 1 },
+  };
+  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+
+  treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
+  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+}
+
+example_store_obj();
