@@ -165,6 +165,7 @@ next_id = 0;
 jsobj_from_id = new Map();
 id_from_jsobj = new Map();
 
+// In-universe, we call objs / dicts "maps"
 function new_map(map) {
   const id = next_id++;
   jsobj_from_id.set(id, map);
@@ -178,7 +179,7 @@ treeView = document.getElementById('treeview');
 document.body.appendChild(treeView); // So that it's last
 
 function deref(id) {
-  if (typeof(id) === 'number') {
+  if (typeof id === 'number') {
     return jsobj_from_id.get(id);
   } else {
     const key = id.key;
@@ -187,13 +188,20 @@ function deref(id) {
   }
 }
 
-function single_step(do_render_tree) {
-  const inst = ctx.next_instruction.value;
+function ref(obj) {
+  if (typeof obj === 'object') {
+    if (!id_from_jsobj.has(obj)) new_map(obj);
+    return { id: id_from_jsobj.get(obj) };
+  } else return null;
+}
+
+function single_step() {
+  const inst = ctx.next_instruction.value; // i.e. Instruction Pointer
   // Cache values, before any modifications, for later
-  const op       = inst.op;
-  const focus    = ctx.focus;
-  const map      = ctx.map;
-  const source   = ctx.source;
+  const op       = inst.op;    // i.e. opcode
+  const focus    = ctx.focus;  // i.e. accumulator / bottleneck / map key register
+  const map      = ctx.map;    // i.e. "map to read to / write from" register
+  const source   = ctx.source; // i.e. register to copy to write destination
   const dest_reg = inst.register;
 
   ctx.next_instruction.ref.key++;
@@ -210,28 +218,51 @@ function single_step(do_render_tree) {
     // deref: replace .focus with the value of the reg it references (if string)
   } //        OR with the object with the specified id (otherwise)
   else if (op === 'deref') {
-    if (typeof(ctx.focus) === 'string') ctx.focus = ctx[ctx.focus];
+    if (typeof ctx.focus === 'string') ctx.focus = ctx[ctx.focus];
     else ctx.focus = deref(ctx.focus);
+  } // ref: replace .focus with the wrapped ID of the object in .map, or null
+  else if (op === 'ref') {
+    ctx.focus = ref(ctx.map);
   } // index: index the .map with .focus as the key, replacing .map
   else if (op === 'index') {
     ctx.map = ctx.map[ctx.focus];
   } // js: execute arbitrary JS code :P
   else if (op === 'js') inst.func(ctx);
 
-  // Update visible tree
-  if (do_render_tree) {
-    let obj = ctx, key = 'focus'; // i.e. what changed?
-    if (op === 'store')
-      if (dest_reg === undefined) { obj = map; key = focus; }
-      else key = dest_reg;
-    else if (op === 'index') key = 'map';
+  let obj = ctx, key = 'focus'; // i.e. what changed?
+  if (op === 'store')
+    if (dest_reg === undefined) { obj = map; key = focus; }
+    else key = dest_reg;
+  else if (op === 'index') key = 'map';
 
-    JSONTree.update(obj, key);
-    JSONTree.update(ctx.next_instruction.ref, 'key');
-    JSONTree.update(ctx.next_instruction, 'value');
-    JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
-    JSONTree.highlight('jstLastChange', obj, key);
+  // Return changeset
+  return [
+    [obj, key], [ctx.next_instruction.ref, 'key'], [ctx.next_instruction, 'value']
+  ].map(([o, k]) => [ref(o).id, k]);
+}
+
+function run_and_render(num_steps=1) {
+  const changes = new Map();
+
+  for (let i=0; i<num_steps; i++) {
+    const [id, key] = single_step()[0];
+    if (!changes.has(id)) changes.set(id, new Set()); // lazy init
+    changes.get(id).add(key);
   }
+
+  let last_change;
+  changes.forEach((keys,id) => keys.forEach(key => {
+    const obj = deref(id);
+    last_change = [obj, key];
+    JSONTree.update(...last_change);
+  }));
+  // Highlight the most recent change in the tree
+  JSONTree.highlight('jstLastChange', ...last_change);
+
+  // We know these will have changed
+  JSONTree.update(ctx.next_instruction.ref, 'key');
+  JSONTree.update(ctx.next_instruction, 'value');
+  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
 }
 
 function assemble_code(str) {
@@ -240,6 +271,7 @@ function assemble_code(str) {
          if (s[0] === 'l') return { op: 'load', value: s[1] };
     else if (s[0] === 's') return { op: 'store', register: s[1] };
     else if (s[0] === 'd') return { op: 'deref' };
+    else if (s[0] === 'r') return { op: 'ref' };
     else if (s[0] === 'i') return { op: 'index' };
     else return;
   });
@@ -283,7 +315,7 @@ function example_store_obj() {
     // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
     instructions: new_map(assemble_code(
       'l lisp_stuff; d; s map; l args_e; i; l value; i; l args_e; i;'
-      + 'l body_e; i; l 1; i; l foobar; s source; l type; s'
+      + 'l body_e; i; l 1; i; l foobar; s source; l type; s; r'
     )),
   });
 

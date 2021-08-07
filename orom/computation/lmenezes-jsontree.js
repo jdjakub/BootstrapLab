@@ -152,11 +152,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
   },
 
   _jsObj: function(object) {
-    let id = JSONTree.id_of_obj.get(object);
-    if (id === undefined) {
-      id = JSONTree._id();
-      JSONTree.id_of_obj.set(object, id);
-    }
+    let { id } = ref(object);
     const elements = [];
     const keys = Object.keys(object);
     keys.forEach((key, index) => {
