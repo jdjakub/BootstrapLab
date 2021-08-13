@@ -22,25 +22,27 @@ li.jstItem {
 .jstLastChange {
   background-color: yellow;
 }
-
 .jstNextInstruction {
   background-color: #f4e8ff;
+}
+.jstExternalChange {
+  background-color: #abffab;
 }
 
 .jstBool {
   color: #1CA8DD;
 }
-
 .jstNum {
   color: #9F85FF;
 }
-
 .jstNull {
   color: #D0D0D0;
 }
-
 .jstStr {
   color: #9cc966;
+}
+.jstFunc { /* TODO max width */
+  color: #0003ca;
 }
 
 .jstComma {

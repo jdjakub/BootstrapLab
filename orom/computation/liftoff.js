@@ -64,8 +64,21 @@ n-up   = - hh s-down
 
 
 is_dragging = false;
-renderer.domElement.onmousedown = e => { is_dragging = true };
-renderer.domElement.onmouseup   = e => { is_dragging = false };
+// Warning: forward refs to tree stuff
+renderer.domElement.onmousedown = e => {
+  is_dragging = true;
+  if (ctx.pointer === undefined) return; // Smell: demo-dependence
+  const tmp = ctx.pointer.pressed_at; tmp.right = e.clientX; tmp.down = e.clientY;
+  JSONTree.update(ctx.pointer, 'pressed_at');
+  JSONTree.highlight('jstExternalChange', tmp);
+};
+renderer.domElement.onmouseup = e => {
+  is_dragging = false
+  if (ctx.pointer === undefined) return; // Smell: demo-dependence
+  const tmp = ctx.pointer.released_at; tmp.right = e.clientX; tmp.down = e.clientY;
+  JSONTree.update(ctx.pointer, 'released_at');
+  JSONTree.highlight('jstExternalChange', tmp);
+};
 
 last_pointer = undefined;
 last_delta = new e3.Vector3();
@@ -78,8 +91,8 @@ renderer.domElement.onmousemove = e => {
   if (is_dragging) {
     const delta_camera = clientToWorld(last_delta);
     delta_camera.z = 0;
-    camera.position.sub(delta_camera);
-    r();
+    //camera.position.sub(delta_camera);
+    //r();
   }
 };
 
@@ -92,7 +105,7 @@ main:
 18) l e; d; s map; l clientY; i; l map; d; s source; l map2; d; s map; l 2; s;
 31) l screen; s source; l basis; s;
 35) l 1; s source; l 0; s;
-39) l 1; s source; l 0; s; (42 uops)
+39) l 1; s source; l 0; s; (42 uops) // was this a dupe by mistake?
 
       focus := regS  ===>  load regS; deref
        regD := regS  ===>  focus := regS; store regD
@@ -189,10 +202,18 @@ function deref(id) {
 }
 
 function ref(obj) {
-  if (typeof obj === 'object') {
+  if (typeof obj === 'object' || typeof obj === 'function') {
     if (!id_from_jsobj.has(obj)) new_map(obj);
     return { id: id_from_jsobj.get(obj) };
   } else return null;
+}
+
+function fetch() {
+  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+  // Duped from run_and_render
+  JSONTree.update(ctx.next_instruction.ref, 'key');
+  JSONTree.update(ctx.next_instruction, 'value');
+  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
 }
 
 function single_step() {
@@ -205,13 +226,14 @@ function single_step() {
   const dest_reg = inst.register;
 
   ctx.next_instruction.ref.key++;
-  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+  fetch();
 
   // Modify state according to instruction
     // load: copy value to .focus register
-       if (op === 'load') ctx.focus = inst.value;
+  if      (op === 'load') {
+    ctx.focus = typeof inst.value === 'object' ? { ...inst.value } : inst.value;
     // store: copy value in .focus to the given reg (if included)
-    //        OR copy value in .source to .map[.focus] (if absent)
+  } //        OR copy value in .source to .map[.focus] (if absent)
   else if (op === 'store') {
     if (inst.register === undefined) ctx.map[ctx.focus] = ctx.source;
     else ctx[inst.register] = ctx.focus;
@@ -226,8 +248,23 @@ function single_step() {
   } // index: index the .map with .focus as the key, replacing .map
   else if (op === 'index') {
     ctx.map = ctx.map[ctx.focus];
-  } // js: execute arbitrary JS code :P
-  else if (op === 'js') inst.func(ctx);
+  } // js: execute arbitrary JS code :P TODO return changeset
+  else if (op === 'js') {
+    inst.func(inst);
+  } // vsub: subtract vectors TODO smell
+  else if (op === 'vsub') {
+    const vf = ctx.vec_from;
+    const vt = ctx.vec_to;
+    if (!vf.basis === vt.basis) throw `TODO: convert one of ${vf.basis}, ${vt.basis} to match`;
+    ctx.focus = {};
+    Object.keys(vf).forEach(k => { ctx.focus[k] = vt[k] - vf[k]; });
+    ctx.focus.basis = vf.basis; // TODO: pt -> vec
+  }
+  else if (op === 'in') {
+    if (inst.basis !== 'world' || focus.basis !== 'screen-pt') throw "TODO: only screen->world supported";
+    const v = clientToWorld(new e3.Vector3(focus.right, focus.down, 0));
+    ctx.focus = { basis: 'world-vec', right: v.x, up: v.y, forward: v.z };
+  }
 
   let obj = ctx, key = 'focus'; // i.e. what changed?
   if (op === 'store')
@@ -265,16 +302,27 @@ function run_and_render(num_steps=1) {
   JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
 }
 
-function assemble_code(str) {
-  const instructions = str.replaceAll('\n', '').split(';').map(s => {
-    s = s.toLowerCase().trim().split(' ');
-         if (s[0] === 'l') return { op: 'load', value: s[1] };
-    else if (s[0] === 's') return { op: 'store', register: s[1] };
-    else if (s[0] === 'd') return { op: 'deref' };
-    else if (s[0] === 'r') return { op: 'ref' };
-    else if (s[0] === 'i') return { op: 'index' };
-    else return;
-  });
+function typed(str) {
+  if (str === '{}') return {};
+  const n = +str;
+  if (isNaN(n)) return str;
+  else return n;
+}
+
+function assemble_code(...blocks) {
+  let instructions = blocks.map(block => typeof block !== 'string' ? block :
+    block.replaceAll('\n', '').split(';').map(s => {
+      s = s.trim().split(' ');
+      s[0] = s[0].toLowerCase();
+           if (s[0] === 'l') return { op: 'load', value: typed(s[1]) };
+      else if (s[0] === 's') return { op: 'store', register: s[1] };
+      else if (s[0] === 'd') return { op: 'deref' };
+      else if (s[0] === 'r') return { op: 'ref' };
+      else if (s[0] === 'i') return { op: 'index' };
+      else return;
+    })
+  );
+  instructions = instructions.flat();
   const o = {};
   instructions.forEach((inst,n) => { o[n+1] = inst; });
   return o;
@@ -341,20 +389,52 @@ function example_store_obj() {
 }
 
 function example_move_shape() {
+
   ctx = new_map({
     next_instruction: null,
     focus: null,
     map: null,
+    map2: null,
     source: null,
+    vec_from: null,
+    vec_to: null,
     pointer: {
-      position: { basis: 'screen-pt', right: 200, down: 300 },
-      delta: { basis: 'screen-vec', right: -2, down: 1 },
+      pressed_at: { basis: 'screen-pt', right: 0, down: 0 },
+      released_at: { basis: 'screen-pt', right: 0, down: 0 },
+      //position: { basis: 'screen-pt', right: 200, down: 300 },
+      //delta: { basis: 'screen-vec', right: -2, down: 1 },
     },
     camera: {
       position: { basis: 'world-pt', right: 1, up: 2, forward: 3 }
     },
-    // ???
-    instructions: new_map({}),
+    /* last_delta = pointer.(released_at - pressed_at)
+     * camera.position.sub(last_delta in world with z=0)
+     * ---
+     * vec_from := pointer.pressed_at; vec_to := pointer.released_at;
+     * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
+     * sub; camera.position := focus
+     */
+     instructions: new_map(assemble_code(
+      { op: 'js', func: () => {
+        const cp = camera.position;
+        const ccp = ctx.camera.position;
+        ccp.right = cp.x; ccp.up = cp.y; ccp.forward = cp.z;
+        JSONTree.update(ctx.camera, 'position');
+      }},
+      `l pointer; d; s map; l pressed_at; i; l map; d; s vec_from;
+      l pointer; d; s map; l released_at; i; l map; d; s vec_to`,
+      { op: 'vsub' }, { op: 'in', basis: 'world' },
+      `s map; l 0; s source; l forward; s; l map; d; s vec_from;
+      l camera; d; s map; l position; i; l map; d; s vec_to`,
+      { op: 'vsub' },
+      `s source; l camera; d; s map; l position; s`,
+      { op: 'js', func: () => {
+        const cp = camera.position;
+        const ccp = ctx.camera.position;
+        cp.set(ccp.right, ccp.up, ccp.forward);
+        r();
+      } },
+     )),
   });
 
   ctx.next_instruction = {
@@ -366,4 +446,5 @@ function example_move_shape() {
   JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
 }
 
-example_store_obj();
+//example_store_obj();
+example_move_shape();

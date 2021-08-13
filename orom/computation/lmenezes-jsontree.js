@@ -55,11 +55,11 @@ JSONTree = { // eslint-disable-line no-unused-vars
       while (jstItem !== null) // '': make sure number keys e.g. 2 go to strings...
         if (jstItem.querySelector('.jstProperty').textContent === ''+key) break;
         else jstItem = jstItem.nextElementSibling;
-      return jstItem;
+      return [jstList, jstItem];
     });
   },
 
-  update: (obj, key) => JSONTree.locate(obj, key).forEach(jstItem => {
+  update: (obj, key) => JSONTree.locate(obj, key).forEach(([jstList, jstItem]) => {
     if (obj[key] === undefined) {
       if (jstItem !== null) jstItem.remove();
       return;
@@ -86,11 +86,12 @@ JSONTree = { // eslint-disable-line no-unused-vars
   }),
 
   highlight: function(cssClass, obj, key) {
+    const f = x => x instanceof Array ? x[1] : x; // TODO: HORRIBLE SMELL
     let jstPropsOrLists = JSONTree.locate(obj, key);
     if (key === undefined)
-      jstPropsOrLists = jstPropsOrLists.map(e => e.parentElement);
+      jstPropsOrLists = jstPropsOrLists.map(x => f(x).parentElement);
     else
-      jstPropsOrLists = jstPropsOrLists.map(e => e.querySelector('.jstProperty'));
+      jstPropsOrLists = jstPropsOrLists.map(x => f(x).querySelector('.jstProperty'));
 
     // Turn the old one off
     let lastChanged = JSONTree.last_highlighted.get(cssClass);
@@ -140,6 +141,8 @@ JSONTree = { // eslint-disable-line no-unused-vars
         return JSONTree._jsNum(value);
       case 'string':
         return JSONTree._jsStr(value);
+      case 'function':
+        return JSONTree._jsFunc(value);
       default:
         if (value === null) {
           return JSONTree._jsNull();
@@ -173,6 +176,11 @@ JSONTree = { // eslint-disable-line no-unused-vars
     return JSONTree._collection(JSONTree._open('{', id), body, JSONTree._close('}', id), id);
   },
 
+  _jsFunc: function(func) {
+    const jsonString = JSONTree._escape(func.toString());
+    return JSONTree._element(jsonString, {class: 'jstFunc'});
+  },
+
   _collapseElem: function() {
     const onClick = 'onclick="JSONTree.click(this); return false;"';
     return '<span class="jstCollapse" ' + onClick + '></span>';
@@ -199,7 +207,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
   },
 
   _collection: function(opening, data, closing, id) {
-    if (data.length > 0) {
+    //if (data.length > 0) {
       return [
         opening,
         '<ul class="jstList object_'+id+'">',
@@ -207,9 +215,9 @@ JSONTree = { // eslint-disable-line no-unused-vars
         '</ul>',
         closing,
       ].join('');
-    } else {
+    /*} else {
       return opening + closing;
-    }
+    }*/
   },
 
   /*_jsArr: function(array) {
