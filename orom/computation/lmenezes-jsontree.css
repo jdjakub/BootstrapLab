@@ -9,10 +9,16 @@ li.jstItem {
   list-style: none;
 }
 
+#treeview {
+  overflow: scroll;
+  max-height: 100vh;
+}
+
 .jstTree {
   font-size: 12px;
   font-weight: 400;
   font-family: monospace;
+  width: 50vw;
 }
 
 .jstProperty {
@@ -41,8 +47,8 @@ li.jstItem {
 .jstStr {
   color: #9cc966;
 }
-.jstFunc { /* TODO max width */
-  color: #0003ca;
+.jstFunc {
+  color: #5b5caa;
 }
 
 .jstComma {
@@ -53,7 +59,8 @@ li.jstItem {
 
 .jstCollapse {
   margin-left: -15px;
-  position: absolute;
+  margin-right: 3px;
+  /*position: absolute;*/
   -webkit-user-select: none;
   user-select: none;
   text-decoration: none;

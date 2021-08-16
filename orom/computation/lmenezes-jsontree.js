@@ -47,7 +47,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
   locate: function(obj, key) {
     const id = JSONTree.id_of_obj.get(obj);
     const jstLists = Array.from(document.querySelectorAll('.object_'+id)); // property lists
-    if (key === undefined) return jstLists;
+    if (key === undefined) return jstLists.map(l => [l, null]);
 
     return jstLists.map(jstList => {
       let jstItem = jstList.firstElementChild; // property entries
@@ -86,12 +86,11 @@ JSONTree = { // eslint-disable-line no-unused-vars
   }),
 
   highlight: function(cssClass, obj, key) {
-    const f = x => x instanceof Array ? x[1] : x; // TODO: HORRIBLE SMELL
     let jstPropsOrLists = JSONTree.locate(obj, key);
-    if (key === undefined)
-      jstPropsOrLists = jstPropsOrLists.map(x => f(x).parentElement);
-    else
-      jstPropsOrLists = jstPropsOrLists.map(x => f(x).querySelector('.jstProperty'));
+    if (key === undefined) // Highlight the entire jstItem containing the jstList
+      jstPropsOrLists = jstPropsOrLists.map(([jstList,_]) => jstList.parentElement);
+    else // Highlight the key name in the jstItem 
+      jstPropsOrLists = jstPropsOrLists.map(([_,jstItem]) => jstItem.querySelector('.jstProperty'));
 
     // Turn the old one off
     let lastChanged = JSONTree.last_highlighted.get(cssClass);
