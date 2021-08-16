@@ -20,31 +20,75 @@ const [rw, rh] = [window.innerWidth*.50, window.innerHeight*.99];
 renderer.setSize(rw, rh);
 const DPR = window.devicePixelRatio || 1;
 renderer.setPixelRatio(DPR);
-scene = new e3.Scene();
+scene = new e3.Scene(); scene.name = 'scene';
 aspect = rw / rh;
 camera = new e3.OrthographicCamera( -aspect, +aspect, +1, -1, 0, 1000);
-scene.add(camera);
+camera.name = 'camera'; scene.add(camera);
 
 geom = new e3.PlaneGeometry(2, 2);
 mat = new e3.MeshBasicMaterial({ color: 0xff00ff, side: e3.DoubleSide });
 mesh = new e3.Mesh(geom, mat);
-scene.add(mesh);
+mesh.name = 'rect'; scene.add(mesh);
 mesh.translateZ(-100);
 
-function clientToWorld(v) {
-  const center = new e3.Vector2(); renderer.getSize(center);
-  const [xe, ye] = [center.x/2, center.y/2];
-  // 2D hom z component encodes vec/pt distinction; promote to 3D w component
-  // Pixels -> Normalized Device Coords
-  const ndc = new e3.Vector4(v.x, v.y, 0, v.z).applyMatrix4(new e3.Matrix4().set(
+function leastCommonAncestor(_3obj1, _3obj2) {
+  const nodes = [_3obj1, _3obj2];
+  const opp = x => 1-x; // 0 <-> 1
+  const visited = [new Set([_3obj1]), new Set([_3obj2])];
+  let curr = 0;
+  while (!visited[opp(curr)].has(nodes[curr])) { // current node not in other set
+    visited[curr].add(nodes[curr]); // mark current node as visited
+    const parent = nodes[curr].parent;
+    if (parent !== null) nodes[curr] = parent; // climb up
+    curr = opp(curr); // alternate between three1's and three2's path
+  }
+  return nodes[curr];
+}
+
+function coordMatrixFromTo(from3obj /* A */, to3obj /* E */) {
+  /*      C         We desire [A->E] = [E<-A]
+   *     / \        = [E<-D][D<-C][C<-B][B<-A]
+   *    B   D        each .matrix means [local->parent] = [parent<-local] coords
+   *   /     \        so [E<-A] = E' D' B ' = (E' D')(B A) = [DOWN] [UP]
+   *  A       E
+   */
+  const common = leastCommonAncestor(from3obj, to3obj); // C
+  const up_mat = new e3.Matrix4();
+  const tmp = new e3.Matrix4();
+  while (from3obj !== common) { // go up from A to C
+    // 3JS "pre"-multiply means LEFT-multiply - NOT "transform happens before"...
+    up_mat.premultiply(from3obj.matrix); // go local->parent coords
+    from3obj = from3obj.parent;
+  }
+  const down_mat = new e3.Matrix4();
+  while (to3obj !== common) { // go up from E to C
+    // 3JS "post"-multiply does NOT mean "transform happens after" - but RIGHT >:(
+    down_mat.multiply(tmp.copy(to3obj.matrix).invert()); // build up [DOWN] left-to-right
+    to3obj = to3obj.parent;
+  }
+  return down_mat.multiply(up_mat);
+}
+
+ndc = new e3.Object3D(); ndc.name = 'ndc';
+camera.add(ndc);
+ndc.matrix.copy(camera.projectionMatrixInverse); // Needs sync
+ndc.matrixAutoUpdate = false;
+
+screen = new e3.Object3D(); screen.name = 'screen';
+ndc.add(screen);
+(() => {
+  const [xe,ye] = [rw/2, rh/2];
+  screen.matrix.set(
     1/xe,     0, 0, -1,    // 0----xe--->..........
        0, -1/ye, 0, +1,    // |-------x------>
-       0,     0, 0,  0,    // 0-----x/xe-----> = 1.5
+       0,     0, 1,  0,    // 0-----x/xe-----> = 1.5
        0,     0, 0,  1,    // |         |---->   1.5 - 1 = 0.5
-  ));
-  ndc.applyMatrix4(camera.projectionMatrixInverse); // NDC -> camera
-  ndc.applyMatrix4(camera.matrixWorld); // camera -> world
-  return ndc;
+  );
+  screen.matrixAutoUpdate = false;
+})();
+
+function clientToWorld(v) {
+  return new e3.Vector4(v.x, v.y, 0, v.z).applyMatrix4(coordMatrixFromTo(screen, scene));
 }
 
 /*
@@ -163,6 +207,7 @@ renderer.domElement.onwheel = e => {
   const delta = focus.clone().sub(new_focus);
   camera.position.add(delta);
   camera.updateProjectionMatrix();
+  ndc.matrix.copy(camera.projectionMatrixInverse);
   r();
 
   e.preventDefault();
