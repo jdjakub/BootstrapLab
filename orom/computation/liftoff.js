@@ -20,7 +20,7 @@ const [rw, rh] = [window.innerWidth*.50, window.innerHeight*.99];
 renderer.setSize(rw, rh);
 const DPR = window.devicePixelRatio || 1;
 renderer.setPixelRatio(DPR);
-scene = new e3.Scene(); scene.name = 'scene';
+scene = new e3.Scene(); scene.name = 'world';
 aspect = rw / rh;
 camera = new e3.OrthographicCamera( -aspect, +aspect, +1, -1, 0, 1000);
 camera.name = 'camera'; scene.add(camera);
@@ -271,7 +271,6 @@ function single_step() {
   const dest_reg = inst.register;
 
   ctx.next_instruction.ref.key++;
-  fetch();
 
   // Modify state according to instruction
     // load: copy value to .focus register
@@ -292,7 +291,10 @@ function single_step() {
     ctx.focus = ref(ctx.map);
   } // index: index the .map with .focus as the key, replacing .map
   else if (op === 'index') {
-    ctx.map = ctx.map[ctx.focus];
+    let tmp = ctx.map[ctx.focus];
+    // Maps can include the _ key as "default", "else" or "otherwise"
+    if (tmp === undefined) tmp = ctx.map._; // TODO smell: risky?
+    ctx.map = tmp;
   } // js: execute arbitrary JS code :P TODO return changeset
   else if (op === 'js') {
     inst.func(inst);
@@ -310,6 +312,8 @@ function single_step() {
     const v = clientToWorld(new e3.Vector3(focus.right, focus.down, 0));
     ctx.focus = { basis: 'world-vec', right: v.x, up: v.y, forward: v.z };
   }
+
+  fetch(); // This goes here in case the instruction changed next_instruction
 
   let obj = ctx, key = 'focus'; // i.e. what changed?
   if (op === 'store')
@@ -491,5 +495,63 @@ function example_move_shape() {
   JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
 }
 
+function example_conditional() {
+  ctx = new_map({
+    next_instruction: null,
+    focus: null,
+    map: null,
+    source: null,
+    weather: 'cold',
+    conclusion: null,
+    finished: false,
+    // Set .conclusion based on .weather, and then mark .finished
+    instructions: {
+      start: new_map(assemble_code(
+        'l instructions; d; s map; l branch1; i; l weather; d; i; l map; d; r;' +
+        's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
+        'd; s map; l ref; s' // essentially, JMP = 13 uops
+      )),
+      branch1: {
+        warm: assemble_code(
+          { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
+          's conclusion; l instructions; d; s map; l finish; i; l map; d; r;' +
+          's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
+          'd; s map; l ref; s'
+        ),
+        cold: assemble_code(
+          { op: 'load', value: "it's cold" },
+          's conclusion; l instructions; d; s map; l finish; i; l map; d; r;' +
+          's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
+          'd; s map; l ref; s' // DUPED - ARGH
+        ),
+        _: assemble_code(
+          { op: 'load', value: "it's neither!" },
+          's conclusion; l instructions; d; s map; l finish; i; l map; d; r;' +
+          's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
+          'd; s map; l ref; s' // DUPED - ARGH
+        ),
+      },
+      finish: assemble_code(
+        'l true; s finished'
+      ),
+    },
+  });
+
+  ctx.next_instruction = {
+    ref: { id: id_from_jsobj.get(ctx.instructions.start), key: 1 },
+  };
+  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+
+  treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
+  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+}
+
+function upd(o, k, v) {
+  o[k] = v;
+  JSONTree.update(o, k);
+  JSONTree.highlight('jstLastChange', o, k);
+}
+
 //example_store_obj();
-example_move_shape();
+//example_move_shape();
+example_conditional();

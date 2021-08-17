@@ -70,7 +70,8 @@ li.jstItem {
 
 .jstExpand {
   margin-left: -15px;
-  position: absolute;
+  margin-right: 3px;
+  /*position: absolute;*/
   -webkit-user-select: none;
   user-select: none;
   text-decoration: none;
