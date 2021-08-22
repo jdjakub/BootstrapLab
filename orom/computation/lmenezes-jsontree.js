@@ -89,7 +89,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     let jstPropsOrLists = JSONTree.locate(obj, key);
     if (key === undefined) // Highlight the entire jstItem containing the jstList
       jstPropsOrLists = jstPropsOrLists.map(([jstList,_]) => jstList.parentElement);
-    else // Highlight the key name in the jstItem 
+    else // Highlight the key name in the jstItem
       jstPropsOrLists = jstPropsOrLists.map(([_,jstItem]) => jstItem.querySelector('.jstProperty'));
 
     // Turn the old one off
@@ -101,6 +101,10 @@ JSONTree = { // eslint-disable-line no-unused-vars
     jstPropsOrLists.forEach(e => e.classList.toggle(cssClass));
     JSONTree.last_highlighted.set(cssClass, jstPropsOrLists);
   },
+
+  toggle: (obj) => JSONTree.locate(obj).forEach(([jstList, jstItem]) => {
+    JSONTree.click(jstList.parentElement.firstElementChild);
+  }),
 
   click: function(jstCollapse) {
     const jstList = jstCollapse.parentElement.querySelector('.jstList');

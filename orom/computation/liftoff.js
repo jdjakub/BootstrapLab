@@ -26,10 +26,26 @@ camera = new e3.OrthographicCamera( -aspect, +aspect, +1, -1, 0, 1000);
 camera.name = 'camera'; scene.add(camera);
 
 geom = new e3.PlaneGeometry(2, 2);
-mat = new e3.MeshBasicMaterial({ color: 0xff00ff, side: e3.DoubleSide });
+mat = new e3.MeshBasicMaterial({ color: 0x770077, side: e3.DoubleSide });
 mesh = new e3.Mesh(geom, mat);
-mesh.name = 'rect'; scene.add(mesh);
+mesh.name = 'shapes'; scene.add(mesh);
 mesh.translateZ(-100);
+
+shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x999900, side: e3.DoubleSide }));
+mesh.add(shape);
+shape.translateX(-1.75); shape.translateY(1.75); shape.translateZ(-1);
+
+shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x009999, side: e3.DoubleSide }));
+mesh.add(shape);
+shape.translateX(1.75); shape.translateY(-3); shape.translateZ(-1);
+
+origin = new e3.Vector3();
+dir = new e3.Vector3(1,0,0);
+x_helper = new e3.ArrowHelper(dir, origin, 5/4, 0xff0000);
+scene.add(x_helper);
+dir = new e3.Vector3(0,1,0);
+y_helper = new e3.ArrowHelper(dir, origin, 5/4, 0x00ff00);
+scene.add(y_helper);
 
 function leastCommonAncestor(_3obj1, _3obj2) {
   const nodes = [_3obj1, _3obj2];
@@ -111,14 +127,14 @@ is_dragging = false;
 // Warning: forward refs to tree stuff
 renderer.domElement.onmousedown = e => {
   is_dragging = true;
-  if (ctx.pointer === undefined) return; // Smell: demo-dependence
+  if (ctx.pointer === undefined || !ctx.dragging_in_system) return; // Smell: demo-dependence
   const tmp = ctx.pointer.pressed_at; tmp.right = e.clientX; tmp.down = e.clientY;
   JSONTree.update(ctx.pointer, 'pressed_at');
   JSONTree.highlight('jstExternalChange', tmp);
 };
 renderer.domElement.onmouseup = e => {
   is_dragging = false
-  if (ctx.pointer === undefined) return; // Smell: demo-dependence
+  if (ctx.pointer === undefined || !ctx.dragging_in_system) return; // Smell: demo-dependence
   const tmp = ctx.pointer.released_at; tmp.right = e.clientX; tmp.down = e.clientY;
   JSONTree.update(ctx.pointer, 'released_at');
   JSONTree.highlight('jstExternalChange', tmp);
@@ -135,8 +151,10 @@ renderer.domElement.onmousemove = e => {
   if (is_dragging) {
     const delta_camera = clientToWorld(last_delta);
     delta_camera.z = 0;
-    //camera.position.sub(delta_camera);
-    //r();
+    if (!ctx.dragging_in_system) {
+      camera.position.sub(delta_camera);
+      r();
+    }
   }
 };
 
@@ -254,7 +272,14 @@ function ref(obj) {
 }
 
 function fetch() {
-  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+  const ref = ctx.next_instruction.ref;
+  let next_inst = ref.map[ref.key];
+  if (next_inst === undefined && ctx.pointer !== undefined) { // smell: demo dependence!
+    ref.key = 1; // Return to beginning
+    next_inst = ref.map[ref.key];
+  }
+  ctx.next_instruction.value = next_inst;
+
   // Duped from run_and_render
   JSONTree.update(ctx.next_instruction.ref, 'key');
   JSONTree.update(ctx.next_instruction, 'value');
@@ -328,20 +353,30 @@ function single_step() {
 }
 
 function run_and_render(num_steps=1) {
-  const changes = new Map();
-
+  const in_order = [];
   for (let i=0; i<num_steps; i++) {
     const [id, key] = single_step()[0];
-    if (!changes.has(id)) changes.set(id, new Set()); // lazy init
-    changes.get(id).add(key);
+    in_order.push([deref(id), key]); // add it to the end
   }
 
+  const changes = new Map();
+  const no_repeats = [];
+  for (let i=in_order.length-1; i>=0; i--) {
+    const [id, key] = in_order[i];
+    if (!changes.has(id)) changes.set(id, new Set()); // lazy init
+    if (!changes.get(id).has(key)) {
+      no_repeats.push(in_order[i]); // Save most recent occurrence
+      changes.get(id).add(key);
+    }
+  }
+
+  no_repeats.reverse();
+
   let last_change;
-  changes.forEach((keys,id) => keys.forEach(key => {
-    const obj = deref(id);
+  no_repeats.forEach(([obj, key]) => {
     last_change = [obj, key];
     JSONTree.update(...last_change);
-  }));
+  });
   // Highlight the most recent change in the tree
   JSONTree.highlight('jstLastChange', ...last_change);
 
@@ -358,7 +393,7 @@ function typed(str) {
   else return n;
 }
 
-function assemble_code(...blocks) {
+function assemble_code(blocks, obj={}, start_i=1) {
   let instructions = blocks.map(block => typeof block !== 'string' ? block :
     block.replaceAll('\n', '').split(';').map(s => {
       s = s.trim().split(' ');
@@ -372,9 +407,8 @@ function assemble_code(...blocks) {
     })
   );
   instructions = instructions.flat();
-  const o = {};
-  instructions.forEach((inst,n) => { o[n+1] = inst; });
-  return o;
+  instructions.forEach((inst,n) => { obj[start_i+n] = inst; });
+  return obj;
 }
 
 function example_store_obj() {
@@ -410,16 +444,12 @@ function example_store_obj() {
       }
     },
     // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-    instructions: new_map(assemble_code(
+    instructions: new_map(assemble_code([
       'l lisp_stuff; d; s map; l args_e; i; l value; i; l args_e; i;'
-      + 'l body_e; i; l 1; i; l foobar; s source; l type; s; r'
-    )),
+      + 'l body_e; i; l 1; i; l foobar; s source; l type; s'
+    ])),
   });
-
-  ctx.next_instruction = {
-    ref: { id: id_from_jsobj.get(ctx.instructions), key: 1 },
-  };
-  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+  ctx.next_instruction = { ref: { map: ctx.instructions, key: 1 } };
 
   treeView.innerHTML = JSONTree.create(ctx/*{
     foo: {
@@ -434,11 +464,11 @@ function example_store_obj() {
     baz: true,
     foobar: {1: 1, 2: 2, 3: 3}
   }*/, id_from_jsobj);
-  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+  JSONTree.toggle(ctx.next_instruction.ref.map);
+  fetch();
 }
 
 function example_move_shape() {
-
   ctx = new_map({
     next_instruction: null,
     focus: null,
@@ -456,6 +486,7 @@ function example_move_shape() {
     camera: {
       position: { basis: 'world-pt', right: 1, up: 2, forward: 3 }
     },
+    dragging_in_system: false,
     /* last_delta = pointer.(released_at - pressed_at)
      * camera.position.sub(last_delta in world with z=0)
      * ---
@@ -463,7 +494,7 @@ function example_move_shape() {
      * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
      * sub; camera.position := focus
      */
-     instructions: new_map(assemble_code(
+     instructions: new_map(assemble_code([
       { op: 'js', func: () => {
         const cp = camera.position;
         const ccp = ctx.camera.position;
@@ -483,16 +514,13 @@ function example_move_shape() {
         cp.set(ccp.right, ccp.up, ccp.forward);
         r();
       } },
-     )),
+    ])),
   });
-
-  ctx.next_instruction = {
-    ref: { id: id_from_jsobj.get(ctx.instructions), key: 1 },
-  };
-  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+  ctx.next_instruction = { ref: { map: ctx.instructions, key: 1 } };
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+  JSONTree.toggle(ctx.next_instruction.ref.map);
+  fetch();
 }
 
 function example_conditional() {
@@ -506,44 +534,48 @@ function example_conditional() {
     finished: false,
     // Set .conclusion based on .weather, and then mark .finished
     instructions: {
-      start: new_map(assemble_code(
-        'l instructions; d; s map; l branch1; i; l weather; d; i; l map; d; r;' +
-        's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
-        'd; s map; l ref; s' // essentially, JMP = 13 uops
-      )),
+      start: new_map(assemble_code([
+        'l instructions; d; s map; l branch1; i; l weather; d; i;' +
+        'l map; d; s source', { op: 'load', value: { map: null, key: null } },
+        's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
+        'l next_instruction; d; s map; l ref; s' // essentially, JMP = 19 uops
+      ])),
       branch1: {
-        warm: assemble_code(
+        warm: assemble_code([
           { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
-          's conclusion; l instructions; d; s map; l finish; i; l map; d; r;' +
-          's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
-          'd; s map; l ref; s'
-        ),
-        cold: assemble_code(
+          's conclusion; l instructions; d; s map; l finish; i;' +
+          'l map; d; s source', { op: 'load', value: { map: null, key: null } },
+          's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
+          'l next_instruction; d; s map; l ref; s'
+        ]),
+        cold: assemble_code([
           { op: 'load', value: "it's cold" },
-          's conclusion; l instructions; d; s map; l finish; i; l map; d; r;' +
-          's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
-          'd; s map; l ref; s' // DUPED - ARGH
-        ),
-        _: assemble_code(
+          's conclusion; l instructions; d; s map; l finish; i;' +
+          'l map; d; s source', { op: 'load', value: { map: null, key: null } },
+          's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
+          'l next_instruction; d; s map; l ref; s' // DUPED - ARGH
+        ]),
+        _: assemble_code([
           { op: 'load', value: "it's neither!" },
-          's conclusion; l instructions; d; s map; l finish; i; l map; d; r;' +
-          's map; l 1; s source; l key; s; l map; d; s source; l next_instruction;' +
-          'd; s map; l ref; s' // DUPED - ARGH
-        ),
+          's conclusion; l instructions; d; s map; l finish; i;' +
+          'l map; d; s source', { op: 'load', value: { map: null, key: null } },
+          's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
+          'l next_instruction; d; s map; l ref; s' // DUPED - ARGH
+        ]),
       },
-      finish: assemble_code(
+      finish: assemble_code([
         'l true; s finished'
-      ),
+      ]),
     },
   });
-
-  ctx.next_instruction = {
-    ref: { id: id_from_jsobj.get(ctx.instructions.start), key: 1 },
-  };
-  ctx.next_instruction.value = deref(ctx.next_instruction.ref);
+  ctx.next_instruction = { ref: { map: ctx.instructions.start, key: 1 } };
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+  JSONTree.toggle(ctx.next_instruction.ref.map);
+  JSONTree.toggle(ctx.instructions.branch1.warm);
+  JSONTree.toggle(ctx.instructions.branch1.cold);
+  JSONTree.toggle(ctx.instructions.branch1._);
+  fetch();
 }
 
 function upd(o, k, v) {
@@ -552,6 +584,6 @@ function upd(o, k, v) {
   JSONTree.highlight('jstLastChange', o, k);
 }
 
-//example_store_obj();
+example_store_obj();
+//example_conditional();
 //example_move_shape();
-example_conditional();
