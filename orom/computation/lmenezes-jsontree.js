@@ -60,29 +60,34 @@ JSONTree = { // eslint-disable-line no-unused-vars
   },
 
   update: (obj, key) => JSONTree.locate(obj, key).forEach(([jstList, jstItem]) => {
-    if (obj[key] === undefined) {
+    if (obj[key] === undefined) { // "set to undefined" means "remove it"
       if (jstItem !== null) jstItem.remove();
       return;
-    } else if (jstItem === null) { // Insert new one at the top
+    } else if (jstItem === null) { // New entry - insert it at the top
       jstList.insertAdjacentHTML('afterbegin',
         '<li class="jstItem">' + JSONTree._property(key, null) + '</li>');
       jstItem = jstList.firstElementChild;
     }
     // If collapsible, ensure control is there; otherwise, ensure it isn't
-    const c = jstItem.firstElementChild.className;
+    let c = jstItem.firstElementChild.className;
     const control_present = c === 'jstCollapse' || c === 'jstExpand';
     const collapsible = JSONTree._canCollapse(obj[key]);
-    if (collapsible && !control_present)
-      jstItem.insertAdjacentHTML('afterbegin', JSONTree._collapseElem());
-    else if (!collapsible && control_present)
+    if (collapsible && !control_present) {
+      jstItem.insertAdjacentHTML('afterbegin', JSONTree._expandElem()); // new items start collapsed
+      c = 'jstExpand';
+    } else if (!collapsible && control_present) {
       jstItem.firstElementChild.remove();
+      c = undefined;
+    }
 
     // Finally, splice in the value
-    let jstValue = jstItem.querySelector('.jstColon').nextElementSibling;
+    const jstColon = jstItem.querySelector('.jstColon');
+    let jstValue = jstColon.nextElementSibling;
     //if (jstValue.classList.contains('jstBracket')) jstValue = jstValue.nextElementSibling;
     jstValue.outerHTML = JSONTree._jsVal(obj[key]);
+    jstValue = jstColon.nextElementSibling;
     if (c === 'jstExpand') // obj should be collapsed
-      jstValue.classList.toggle('jstHiddenBlock');
+      jstValue.classList.add('jstHiddenBlock');
   }),
 
   highlight: function(cssClass, obj, key) {
@@ -187,6 +192,11 @@ JSONTree = { // eslint-disable-line no-unused-vars
   _collapseElem: function() {
     const onClick = 'onclick="JSONTree.click(this); return false;"';
     return '<span class="jstCollapse" ' + onClick + '></span>';
+  },
+
+  _expandElem: function() {
+    const onClick = 'onclick="JSONTree.click(this); return false;"';
+    return '<span class="jstExpand" ' + onClick + '></span>';
   },
 
   _canCollapse: function(data) {

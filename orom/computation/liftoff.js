@@ -27,17 +27,17 @@ camera.name = 'camera'; scene.add(camera);
 
 geom = new e3.PlaneGeometry(2, 2);
 mat = new e3.MeshBasicMaterial({ color: 0x770077, side: e3.DoubleSide });
-mesh = new e3.Mesh(geom, mat);
-mesh.name = 'shapes'; scene.add(mesh);
-mesh.translateZ(-100);
+shapes = new e3.Mesh(geom, mat);
+shapes.name = 'shapes'; scene.add(shapes);
+shapes.translateZ(-100);
 
-shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x999900, side: e3.DoubleSide }));
-mesh.add(shape);
-shape.translateX(-1.75); shape.translateY(1.75); shape.translateZ(-1);
+yellow_shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x999900, side: e3.DoubleSide }));
+shapes.add(yellow_shape);
+yellow_shape.translateX(-1.75); yellow_shape.translateY(1.75); yellow_shape.translateZ(-1);
 
-shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x009999, side: e3.DoubleSide }));
-mesh.add(shape);
-shape.translateX(1.75); shape.translateY(-3); shape.translateZ(-1);
+blue_shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x009999, side: e3.DoubleSide }));
+shapes.add(blue_shape);
+blue_shape.translateX(1.75); blue_shape.translateY(-3); blue_shape.translateZ(-1);
 
 origin = new e3.Vector3();
 dir = new e3.Vector3(1,0,0);
@@ -149,11 +149,27 @@ renderer.domElement.onmousemove = e => {
   last_pointer = curr;
 
   if (is_dragging) {
-    const delta_camera = clientToWorld(last_delta);
-    delta_camera.z = 0;
-    if (!ctx.dragging_in_system) {
-      camera.position.sub(delta_camera);
-      r();
+    const selected_shape = ctx.selected_shape;
+    if (selected_shape === undefined) {
+      const delta_camera = clientToWorld(last_delta);
+      delta_camera.z = 0;
+      if (!ctx.dragging_in_system) {
+        camera.position.sub(delta_camera);
+        r();
+      }
+    } else { // SMELL hapoc demo dependence
+      const d = last_delta;
+      const delta_shape = new e3.Vector4(d.x, d.y, 0, d.z).applyMatrix4(coordMatrixFromTo(screen, shapes));
+      delta_shape.z = 0;
+      if (selected_shape === ctx.scene.shapes.children.yellow_shape) { // ALL HORRIBLE
+        yellow_shape.position.add(delta_shape);
+        Object.assign(selected_shape.position, {
+          right: yellow_shape.position.x.toPrecision(2), up: yellow_shape.position.y.toPrecision(2),
+        });
+        JSONTree.update(selected_shape, 'position');
+        JSONTree.highlight('jstLastChange', selected_shape, 'position');
+        r();
+      }
     }
   }
 };
@@ -274,8 +290,25 @@ function ref(obj) {
 function fetch() {
   const ref = ctx.next_instruction.ref;
   let next_inst = ref.map[ref.key];
-  if (next_inst === undefined && ctx.pointer !== undefined) { // smell: demo dependence!
-    ref.key = 1; // Return to beginning
+  if (next_inst === undefined) {
+    let continue_to = ref.map.continue_to; // check current block's continue addr
+    if (!continue_to) continue_to = ctx.continue_to; // fall back to register
+    if (continue_to) {
+      if (continue_to.map) {
+        ref.map = continue_to.map;
+        JSONTree.update(ctx.next_instruction.ref, 'map');
+      }
+      if (continue_to.key) ref.key = continue_to.key;
+      else ref.key = 1; // beginning of new basic block
+    } else { // check return_to SMELL just do this with continue_to?
+      const return_to = ctx.return_to;
+      if (return_to) { // pop and restore prev execution point
+        ref.map = return_to.map; ref.key = return_to.key;
+        ctx.return_to = return_to.next;
+        JSONTree.update(ref, 'map');
+        JSONTree.update(ctx, 'return_to');
+      }
+    }
     next_inst = ref.map[ref.key];
   }
   ctx.next_instruction.value = next_inst;
@@ -304,8 +337,13 @@ function single_step() {
     // store: copy value in .focus to the given reg (if included)
   } //        OR copy value in .source to .map[.focus] (if absent)
   else if (op === 'store') {
-    if (inst.register === undefined) ctx.map[ctx.focus] = ctx.source;
-    else ctx[inst.register] = ctx.focus;
+    if (inst.register === undefined) {
+      ctx.map[ctx.focus] = ctx.source;
+      // HORRIBLE SMELL hapoc demo dependence
+      if (ctx.scene && ctx.map === ctx.scene.shapes.children.blue_shape.position) {
+        blue_shape.position.x = ctx.source; r();
+      }
+    } else ctx[inst.register] = ctx.focus;
     // deref: replace .focus with the value of the reg it references (if string)
   } //        OR with the object with the specified id (otherwise)
   else if (op === 'deref') {
@@ -336,6 +374,12 @@ function single_step() {
     if (inst.basis !== 'world' || focus.basis !== 'screen-pt') throw "TODO: only screen->world supported";
     const v = clientToWorld(new e3.Vector3(focus.right, focus.down, 0));
     ctx.focus = { basis: 'world-vec', right: v.x, up: v.y, forward: v.z };
+  } // no op field: assume nested instruction list
+  else if (op === undefined) {
+    const ref = ctx.next_instruction.ref;
+    const prev_return_pt = ctx.return_to;
+    ctx.return_to = { ...ref, next: prev_return_pt }; // Push current execution point
+    ref.map = inst; ref.key = 1; // Dive in
   }
 
   fetch(); // This goes here in case the instruction changed next_instruction
@@ -345,6 +389,7 @@ function single_step() {
     if (dest_reg === undefined) { obj = map; key = focus; }
     else key = dest_reg;
   else if (op === 'index') key = 'map';
+  else if (op === undefined) key = 'return_to';
 
   // Return changeset
   return [
@@ -444,10 +489,33 @@ function example_store_obj() {
       }
     },
     // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-    instructions: new_map(assemble_code([
-      'l lisp_stuff; d; s map; l args_e; i; l value; i; l args_e; i;'
-      + 'l body_e; i; l 1; i; l foobar; s source; l type; s'
-    ])),
+    instructions: new_map({
+      // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
+      // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
+      1: {
+        1: {op:"load",value:"lisp_stuff"},
+        2: {op:"deref"},
+        3: {op:"store",register:"map"},
+      },
+      2: {
+        1:{op:"load",value:"args_e"},
+        2:{op:"index"},
+        3:{op:"load",value:"value"},
+        4:{op:"index"},
+        5:{op:"load",value:"args_e"},
+        6:{op:"index"},
+        7:{op:"load",value:"body_e"},
+        8:{op:"index"},
+        9:{op:"load",value:1},
+        10:{op:"index"},
+      },
+      3: {
+        1:{op:"load",value:"foobar"},
+        2:{op:"store",register:"source"},
+        3:{op:"load",value:"type"},
+        4:{op:"store"}
+      }
+    }),
   });
   ctx.next_instruction = { ref: { map: ctx.instructions, key: 1 } };
 
@@ -526,6 +594,7 @@ function example_move_shape() {
 function example_conditional() {
   ctx = new_map({
     next_instruction: null,
+    continue_to: null,
     focus: null,
     map: null,
     source: null,
@@ -536,31 +605,19 @@ function example_conditional() {
     instructions: {
       start: new_map(assemble_code([
         'l instructions; d; s map; l branch1; i; l weather; d; i;' +
-        'l map; d; s source', { op: 'load', value: { map: null, key: null } },
-        's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
-        'l next_instruction; d; s map; l ref; s' // essentially, JMP = 19 uops
+        'l map; d; s source', { op: 'load', value: { map: null } },
+        's map; l map; s; d; s continue_to' // essentially, conditional jump = 9 uops
       ])),
       branch1: {
         warm: assemble_code([
           { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
-          's conclusion; l instructions; d; s map; l finish; i;' +
-          'l map; d; s source', { op: 'load', value: { map: null, key: null } },
-          's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
-          'l next_instruction; d; s map; l ref; s'
+          's conclusion'
         ]),
         cold: assemble_code([
-          { op: 'load', value: "it's cold" },
-          's conclusion; l instructions; d; s map; l finish; i;' +
-          'l map; d; s source', { op: 'load', value: { map: null, key: null } },
-          's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
-          'l next_instruction; d; s map; l ref; s' // DUPED - ARGH
+          { op: 'load', value: "it's cold" }, 's conclusion'
         ]),
         _: assemble_code([
-          { op: 'load', value: "it's neither!" },
-          's conclusion; l instructions; d; s map; l finish; i;' +
-          'l map; d; s source', { op: 'load', value: { map: null, key: null } },
-          's map; l map; s; l 1; s source; l key; s; l map; d; s source;' +
-          'l next_instruction; d; s map; l ref; s' // DUPED - ARGH
+          { op: 'load', value: "it's neither!" }, 's conclusion'
         ]),
       },
       finish: assemble_code([
@@ -568,13 +625,66 @@ function example_conditional() {
       ]),
     },
   });
-  ctx.next_instruction = { ref: { map: ctx.instructions.start, key: 1 } };
+  const instrs = ctx.instructions;
+  const common_exit = { map: instrs.finish };
+  instrs.branch1.warm.continue_to = common_exit;
+  instrs.branch1.cold.continue_to = common_exit;
+  instrs.branch1._.continue_to = common_exit;
+  ctx.next_instruction = { ref: { map: instrs.start, key: 1 } };
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
   JSONTree.toggle(ctx.next_instruction.ref.map);
-  JSONTree.toggle(ctx.instructions.branch1.warm);
-  JSONTree.toggle(ctx.instructions.branch1.cold);
-  JSONTree.toggle(ctx.instructions.branch1._);
+  JSONTree.toggle(instrs.branch1.warm);
+  JSONTree.toggle(instrs.branch1.cold);
+  JSONTree.toggle(instrs.branch1._);
+  fetch();
+}
+
+function example_hapoc() {
+  ctx = new_map({
+    next_instruction: null,
+    continue_to: null,
+    focus: null,
+    map: null,
+    source: null,
+    instructions: {
+      1: { op: 'load', value: -3 },
+      2: { op: 'store', register: 'source' },
+      3: { op: 'load', value: 'right' },
+      4: { op: 'store' },
+    },
+    selected_shape: null,
+    scene: {
+      camera: {
+        position: { basis: 'world-pt', right: 0, up: 0, forward: 0 },
+      },
+      shapes: {
+        children: {
+          yellow_shape: {
+            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
+          },
+          blue_shape: {
+            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
+          },
+        }
+      }
+    },
+  });
+  const instrs = ctx.instructions;
+  ctx.next_instruction = { ref: { map: instrs, key: 1 } };
+  ctx.map = ctx.scene.shapes.children.blue_shape.position;
+
+  const ch = ctx.scene.shapes.children;
+  ['yellow_shape', 'blue_shape'].forEach(name => {
+    const s = ch[name].position;
+    const j = window[name].position;
+    s.right = j.x.toPrecision(2);
+    s.up = j.y.toPrecision(2);
+  });
+
+
+  treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
+  JSONTree.toggle(ctx.next_instruction.ref.map);
   fetch();
 }
 
@@ -587,3 +697,4 @@ function upd(o, k, v) {
 example_store_obj();
 //example_conditional();
 //example_move_shape();
+//example_hapoc();
