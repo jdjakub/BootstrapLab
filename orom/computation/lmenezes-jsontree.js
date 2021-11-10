@@ -257,7 +257,9 @@ JSONTree = { // eslint-disable-line no-unused-vars
     return JSONTree._element(jsonString, {class: 'jstStr'});
   },
 
-  _jsNum:  value => JSONTree._element(value, {class: 'jstNum'}),
+  _jsNum:  value => JSONTree._element(
+    Number.isInteger(value) ? value : value.toPrecision(4), {class: 'jstNum'}
+  ),
   _jsBool: value => JSONTree._element(value, {class: 'jstBool'}),
   _jsNull:    () => JSONTree._element('null', {class: 'jstNull'}),
 

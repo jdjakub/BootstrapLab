@@ -47,6 +47,27 @@ dir = new e3.Vector3(0,1,0);
 y_helper = new e3.ArrowHelper(dir, origin, 5/4, 0x00ff00);
 scene.add(y_helper);
 
+/*
+proxies = new Map();
+const unit_plane_geom = new e3.PlaneGeometry(1,1);
+
+function obj3d_proxy(obj_name, obj3d, map) {
+  if (obj3d === undefined) {
+    return new e3.Mesh();
+  }
+  proxies.set(map, (key, val) => {
+    if (key === 'children') {
+      if (typeof val === 'object') proxies.set(val, (ch_name, child)) => {
+        obj3d.add(obj3d_proxy(ch_name, child));
+      }
+      else proxies.delete(map[key]);
+    }
+  });
+}
+
+scene_proxy = map => obj3d_proxy('scene', scene, map);
+*/
+
 function leastCommonAncestor(_3obj1, _3obj2) {
   const nodes = [_3obj1, _3obj2];
   const opp = x => 1-x; // 0 <-> 1
@@ -391,10 +412,17 @@ function single_step() {
   else if (op === 'index') key = 'map';
   else if (op === undefined) key = 'return_to';
 
+  // Check if the map being changed is a proxy for some JS thing
+  update_relevant_proxy_objs(obj, key);
+
   // Return changeset
   return [
     [obj, key], [ctx.next_instruction.ref, 'key'], [ctx.next_instruction, 'value']
   ].map(([o, k]) => [ref(o).id, k]);
+}
+
+function update_relevant_proxy_objs(obj, key) {
+
 }
 
 function run_and_render(num_steps=1) {
@@ -456,12 +484,125 @@ function assemble_code(blocks, obj={}, start_i=1) {
   return obj;
 }
 
-function example_store_obj() {
+function load_state() {
   ctx = new_map({
     next_instruction: null,
+    continue_to: null,
     focus: null,
     map: null,
+    vec_from: null,
+    vec_to: null,
     source: null,
+    instructions: {
+      // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
+      example_store_obj: new_map({
+        // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
+        // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
+        1: {
+          1: {op:"load",value:"lisp_stuff"},
+          2: {op:"deref"},
+          3: {op:"store",register:"map"},
+        },
+        2: {
+          1:{op:"load",value:"args_e"},
+          2:{op:"index"},
+          3:{op:"load",value:"value"},
+          4:{op:"index"},
+          5:{op:"load",value:"args_e"},
+          6:{op:"index"},
+          7:{op:"load",value:"body_e"},
+          8:{op:"index"},
+          9:{op:"load",value:1},
+          10:{op:"index"},
+        },
+        3: {
+          1:{op:"load",value:"foobar"},
+          2:{op:"store",register:"source"},
+          3:{op:"load",value:"type"},
+          4:{op:"store"}
+        }
+      }),
+      /* last_delta = pointer.(released_at - pressed_at)
+       * camera.position.sub(last_delta in world with z=0)
+       * ---
+       * vec_from := pointer.pressed_at; vec_to := pointer.released_at;
+       * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
+       * sub; camera.position := focus
+       */
+      example_move_shape: new_map(assemble_code([
+        { op: 'js', func: () => {
+          const cp = camera.position;
+          const ccp = ctx.scene.camera.position;
+          ccp.right = cp.x; ccp.up = cp.y; ccp.forward = cp.z;
+          JSONTree.update(ctx.scene.camera, 'position');
+        }},
+        `l pointer; d; s map; l pressed_at; i; l map; d; s vec_from;
+        l pointer; d; s map; l released_at; i; l map; d; s vec_to`,
+        { op: 'vsub' }, { op: 'in', basis: 'world' },
+        `s map; l 0; s source; l forward; s; l map; d; s vec_from;
+        l scene; d; s map; l camera; i; l position; i; l map; d; s vec_to`,
+        { op: 'vsub' },
+        `s source; l scene; d; s map; l camera; i; l position; s`,
+        { op: 'js', func: () => {
+          const cp = camera.position;
+          const ccp = ctx.scene.camera.position;
+          cp.set(ccp.right, ccp.up, ccp.forward);
+          r();
+        } },
+      ])),
+      // Set .conclusion based on .weather, and then mark .finished
+      example_conditional: {
+        start: new_map(assemble_code([
+          'l instructions; d; s map; l example_conditional; i; l branch1; i; l weather; d; i;' +
+          'l map; d; s source', { op: 'load', value: { map: null } },
+          's map; l map; s; d; s continue_to' // essentially, conditional jump = 9 uops
+        ])),
+        branch1: {
+          warm: assemble_code([
+            { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
+            's conclusion'
+          ]),
+          cold: assemble_code([ { op: 'load', value: "it's cold" }, 's conclusion' ]),
+          _:    assemble_code([ { op: 'load', value: "it's neither!" }, 's conclusion' ]),
+        },
+        finish: assemble_code(['l true; s finished']),
+      },
+      hapoc_demo: {
+        1: { op: 'load', value: -3 },
+        2: { op: 'store', register: 'source' },
+        3: { op: 'load', value: 'right' },
+        4: { op: 'store' },
+      }
+    },
+    selected_shape: null,
+    dragging_in_system: false,
+    pointer: {
+      pressed_at: { basis: 'screen-pt', right: 0, down: 0 },
+      released_at: { basis: 'screen-pt', right: 0, down: 0 },
+      //position: { basis: 'screen-pt', right: 200, down: 300 },
+      //delta: { basis: 'screen-vec', right: -2, down: 1 },
+    },
+    camera: {
+      position: { basis: 'world-pt', right: 1, up: 2, forward: 3 }
+    },
+    scene: {
+      camera: {
+        position: { basis: 'world-pt', right: 0, up: 0, forward: 0 },
+      },
+      shapes: {
+        children: {
+          yellow_shape: {
+            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
+          },
+          blue_shape: {
+            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
+          },
+        }
+      }
+    },
+    weather: 'cold',
+    conclusion: null,
+    finished: false,
     lisp_stuff: {
       type: 'apply',  proc_e: 'define',  args_e: {
         name: 'fac',
@@ -488,190 +629,9 @@ function example_store_obj() {
         }
       }
     },
-    // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-    instructions: new_map({
-      // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
-      // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
-      1: {
-        1: {op:"load",value:"lisp_stuff"},
-        2: {op:"deref"},
-        3: {op:"store",register:"map"},
-      },
-      2: {
-        1:{op:"load",value:"args_e"},
-        2:{op:"index"},
-        3:{op:"load",value:"value"},
-        4:{op:"index"},
-        5:{op:"load",value:"args_e"},
-        6:{op:"index"},
-        7:{op:"load",value:"body_e"},
-        8:{op:"index"},
-        9:{op:"load",value:1},
-        10:{op:"index"},
-      },
-      3: {
-        1:{op:"load",value:"foobar"},
-        2:{op:"store",register:"source"},
-        3:{op:"load",value:"type"},
-        4:{op:"store"}
-      }
-    }),
-  });
-  ctx.next_instruction = { ref: { map: ctx.instructions, key: 1 } };
-
-  treeView.innerHTML = JSONTree.create(ctx/*{
-    foo: {
-      bar: 'foobar', baz: 'foobaz',
-      qux: { 1: { foobar: 'bar', foobaz: 'baz' } }
-    },
-    bar: {
-      1: {foo: 'barfoo'},
-      2: {qux: null}
-    },
-    qux: { 1: 'foo', 2: 'bar', 3: 'foobar' },
-    baz: true,
-    foobar: {1: 1, 2: 2, 3: 3}
-  }*/, id_from_jsobj);
-  JSONTree.toggle(ctx.next_instruction.ref.map);
-  fetch();
-}
-
-function example_move_shape() {
-  ctx = new_map({
-    next_instruction: null,
-    focus: null,
-    map: null,
-    map2: null,
-    source: null,
-    vec_from: null,
-    vec_to: null,
-    pointer: {
-      pressed_at: { basis: 'screen-pt', right: 0, down: 0 },
-      released_at: { basis: 'screen-pt', right: 0, down: 0 },
-      //position: { basis: 'screen-pt', right: 200, down: 300 },
-      //delta: { basis: 'screen-vec', right: -2, down: 1 },
-    },
-    camera: {
-      position: { basis: 'world-pt', right: 1, up: 2, forward: 3 }
-    },
-    dragging_in_system: false,
-    /* last_delta = pointer.(released_at - pressed_at)
-     * camera.position.sub(last_delta in world with z=0)
-     * ---
-     * vec_from := pointer.pressed_at; vec_to := pointer.released_at;
-     * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
-     * sub; camera.position := focus
-     */
-     instructions: new_map(assemble_code([
-      { op: 'js', func: () => {
-        const cp = camera.position;
-        const ccp = ctx.camera.position;
-        ccp.right = cp.x; ccp.up = cp.y; ccp.forward = cp.z;
-        JSONTree.update(ctx.camera, 'position');
-      }},
-      `l pointer; d; s map; l pressed_at; i; l map; d; s vec_from;
-      l pointer; d; s map; l released_at; i; l map; d; s vec_to`,
-      { op: 'vsub' }, { op: 'in', basis: 'world' },
-      `s map; l 0; s source; l forward; s; l map; d; s vec_from;
-      l camera; d; s map; l position; i; l map; d; s vec_to`,
-      { op: 'vsub' },
-      `s source; l camera; d; s map; l position; s`,
-      { op: 'js', func: () => {
-        const cp = camera.position;
-        const ccp = ctx.camera.position;
-        cp.set(ccp.right, ccp.up, ccp.forward);
-        r();
-      } },
-    ])),
-  });
-  ctx.next_instruction = { ref: { map: ctx.instructions, key: 1 } };
-
-  treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.toggle(ctx.next_instruction.ref.map);
-  fetch();
-}
-
-function example_conditional() {
-  ctx = new_map({
-    next_instruction: null,
-    continue_to: null,
-    focus: null,
-    map: null,
-    source: null,
-    weather: 'cold',
-    conclusion: null,
-    finished: false,
-    // Set .conclusion based on .weather, and then mark .finished
-    instructions: {
-      start: new_map(assemble_code([
-        'l instructions; d; s map; l branch1; i; l weather; d; i;' +
-        'l map; d; s source', { op: 'load', value: { map: null } },
-        's map; l map; s; d; s continue_to' // essentially, conditional jump = 9 uops
-      ])),
-      branch1: {
-        warm: assemble_code([
-          { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
-          's conclusion'
-        ]),
-        cold: assemble_code([
-          { op: 'load', value: "it's cold" }, 's conclusion'
-        ]),
-        _: assemble_code([
-          { op: 'load', value: "it's neither!" }, 's conclusion'
-        ]),
-      },
-      finish: assemble_code([
-        'l true; s finished'
-      ]),
-    },
   });
   const instrs = ctx.instructions;
-  const common_exit = { map: instrs.finish };
-  instrs.branch1.warm.continue_to = common_exit;
-  instrs.branch1.cold.continue_to = common_exit;
-  instrs.branch1._.continue_to = common_exit;
-  ctx.next_instruction = { ref: { map: instrs.start, key: 1 } };
-
-  treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.toggle(ctx.next_instruction.ref.map);
-  JSONTree.toggle(instrs.branch1.warm);
-  JSONTree.toggle(instrs.branch1.cold);
-  JSONTree.toggle(instrs.branch1._);
-  fetch();
-}
-
-function example_hapoc() {
-  ctx = new_map({
-    next_instruction: null,
-    continue_to: null,
-    focus: null,
-    map: null,
-    source: null,
-    instructions: {
-      1: { op: 'load', value: -3 },
-      2: { op: 'store', register: 'source' },
-      3: { op: 'load', value: 'right' },
-      4: { op: 'store' },
-    },
-    selected_shape: null,
-    scene: {
-      camera: {
-        position: { basis: 'world-pt', right: 0, up: 0, forward: 0 },
-      },
-      shapes: {
-        children: {
-          yellow_shape: {
-            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
-          },
-          blue_shape: {
-            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
-          },
-        }
-      }
-    },
-  });
-  const instrs = ctx.instructions;
-  ctx.next_instruction = { ref: { map: instrs, key: 1 } };
+  ctx.next_instruction = { ref: { map: instrs.hapoc_demo, key: 1 } };
   ctx.map = ctx.scene.shapes.children.blue_shape.position;
 
   const ch = ctx.scene.shapes.children;
@@ -682,19 +642,29 @@ function example_hapoc() {
     s.up = j.y.toPrecision(2);
   });
 
+  const cond_instrs = ctx.instructions.example_conditional;
+  const common_exit = { map: cond_instrs.finish };
+  cond_instrs.branch1.warm.continue_to = common_exit;
+  cond_instrs.branch1.cold.continue_to = common_exit;
+  cond_instrs.branch1._.continue_to = common_exit;
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
   JSONTree.toggle(ctx.next_instruction.ref.map);
+  JSONTree.toggle(ctx.instructions.example_store_obj);
+  JSONTree.toggle(ctx.lisp_stuff);
+  JSONTree.toggle(ctx.instructions.example_move_shape);
+  JSONTree.toggle(cond_instrs);
+  JSONTree.toggle(cond_instrs.branch1.warm);
+  JSONTree.toggle(cond_instrs.branch1.cold);
+  JSONTree.toggle(cond_instrs.branch1._);
   fetch();
 }
 
 function upd(o, k, v) {
   o[k] = v;
   JSONTree.update(o, k);
-  JSONTree.highlight('jstLastChange', o, k);
+  if (v !== undefined)
+    JSONTree.highlight('jstLastChange', o, k);
 }
 
-example_store_obj();
-//example_conditional();
-//example_move_shape();
-//example_hapoc();
+load_state();
