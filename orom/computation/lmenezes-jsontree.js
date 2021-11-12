@@ -59,8 +59,10 @@ JSONTree = { // eslint-disable-line no-unused-vars
     });
   },
 
-  update: (obj, key) => JSONTree.locate(obj, key).forEach(([jstList, jstItem]) => {
-    if (obj[key] === undefined) { // "set to undefined" means "remove it"
+  update: (obj, key) => {
+    const value = map_get(obj, key);
+    return JSONTree.locate(obj, key).forEach(([jstList, jstItem]) => {
+    if (value === undefined) { // "set to undefined" means "remove it"
       if (jstItem !== null) jstItem.remove();
       return;
     } else if (jstItem === null) { // New entry - insert it at the top
@@ -71,7 +73,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     // If collapsible, ensure control is there; otherwise, ensure it isn't
     let c = jstItem.firstElementChild.className;
     const control_present = c === 'jstCollapse' || c === 'jstExpand';
-    const collapsible = JSONTree._canCollapse(obj[key]);
+    const collapsible = JSONTree._canCollapse(value);
     if (collapsible && !control_present) {
       jstItem.insertAdjacentHTML('afterbegin', JSONTree._expandElem()); // new items start collapsed
       c = 'jstExpand';
@@ -84,11 +86,11 @@ JSONTree = { // eslint-disable-line no-unused-vars
     const jstColon = jstItem.querySelector('.jstColon');
     let jstValue = jstColon.nextElementSibling;
     //if (jstValue.classList.contains('jstBracket')) jstValue = jstValue.nextElementSibling;
-    jstValue.outerHTML = JSONTree._jsVal(obj[key]);
+    jstValue.outerHTML = JSONTree._jsVal(value);
     jstValue = jstColon.nextElementSibling;
     if (c === 'jstExpand') // obj should be collapsed
       jstValue.classList.add('jstHiddenBlock');
-  }),
+  });},
 
   highlight: function(cssClass, obj, key) {
     let jstPropsOrLists = JSONTree.locate(obj, key);
@@ -118,16 +120,6 @@ JSONTree = { // eslint-disable-line no-unused-vars
     else
       jstCollapse.className = 'jstCollapse'
     jstList.classList.toggle('jstHiddenBlock');
-  },
-
-  findNextWithClass: function(element, clazz) {
-    let next = element.nextElementSibling;
-    while (true) {
-      if (next.className === clazz) {
-        return next;
-      }
-      next = next.nextElementSibling;
-    }
   },
 
   _id: function() {
@@ -165,18 +157,17 @@ JSONTree = { // eslint-disable-line no-unused-vars
   _jsObj: function(object) {
     let { id } = ref(object);
     const elements = [];
-    const keys = Object.keys(object);
-    keys.forEach((key, index) => {
-      if (object[key] === undefined) return;
+    map_iter(object, (key, value) => {
+      if (value === undefined) return;
       const html = [];
       html.push('<li class="jstItem">');
       if (JSONTree._canCollapse(object[key])) {
         html.push(JSONTree._collapseElem());
       }
       html.push(JSONTree._property(key, object[key]));
-      if (index !== keys.length - 1) {
-        html.push(JSONTree._comma());
-      }
+      //if (index !== keys.length - 1) {
+      html.push(JSONTree._comma());
+      //}
       html.push('</li>');
       elements.push(html.join(''));
     });
@@ -211,10 +202,10 @@ JSONTree = { // eslint-disable-line no-unused-vars
       default:
         if (data === null) {
           return false;
-        } else if (data instanceof Array) {
-          return data.length > 0;
+        //} else if (data instanceof Array) {
+        //  return data.length > 0;
         } else {
-          return Object.keys(data).length > 0;
+          return map_num_entries(data) > 0;
         }
     }
   },
@@ -232,25 +223,6 @@ JSONTree = { // eslint-disable-line no-unused-vars
       return opening + closing;
     }*/
   },
-
-  /*_jsArr: function(array) {
-    const id = JSONTree._id();
-    const elements = [];
-    array.forEach((element, index) => {
-      var html = ['<li class="jstItem">'];
-      if (JSONTree._canCollapse(element)) {
-        html.push(JSONTree._collapseElem());
-      }
-      html.push(JSONTree._jsVal(element));
-      if (index !== array.length - 1) {
-        html.push(JSONTree._comma());
-      }
-      html.push('</li>');
-      elements.push(html.join(''));
-    });
-    const body = elements.join('');
-    return JSONTree._collection(JSONTree._open('[', id), body, JSONTree._close(']', id));
-  },*/
 
   _jsStr: function(value) {
     const jsonString = JSONTree._escape(JSON.stringify(value));
@@ -282,7 +254,26 @@ JSONTree = { // eslint-disable-line no-unused-vars
   _open:  (sym, id) => '',//JSONTree._element(sym, {id: 'opening_' + id, class: 'jstBracket'}),
   _close: (sym, id) => '',//JSONTree._element(sym, {id: 'opening_' + id + '_end', class: 'jstBracket'}),
 
-  _nextUntil: function(elem, id) {
+  /*_jsArr: function(array) {
+    const id = JSONTree._id();
+    const elements = [];
+    array.forEach((element, index) => {
+      var html = ['<li class="jstItem">'];
+      if (JSONTree._canCollapse(element)) {
+        html.push(JSONTree._collapseElem());
+      }
+      html.push(JSONTree._jsVal(element));
+      if (index !== array.length - 1) {
+        html.push(JSONTree._comma());
+      }
+      html.push('</li>');
+      elements.push(html.join(''));
+    });
+    const body = elements.join('');
+    return JSONTree._collection(JSONTree._open('[', id), body, JSONTree._close(']', id));
+  },*/
+
+  /*_nextUntil: function(elem, id) {
     const siblings = [];
     elem = elem.nextElementSibling;
     while (elem) {
@@ -293,5 +284,15 @@ JSONTree = { // eslint-disable-line no-unused-vars
       elem = elem.nextElementSibling;
     }
     return siblings;
-  },
+  },*/
+
+  /*findNextWithClass: function(element, clazz) {
+    let next = element.nextElementSibling;
+    while (true) {
+      if (next.className === clazz) {
+        return next;
+      }
+      next = next.nextElementSibling;
+    }
+  },*/
 };

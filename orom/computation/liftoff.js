@@ -1,4 +1,4 @@
-DEBUG = () => { debugger; };
+DEBUG = (x) => { debugger; return x; };
 last = (arr, n) => arr[arr.length-(n || 1)];
 log = (...args) => { console.log(...args); return last(args); };
 function forMat4(m) {
@@ -278,19 +278,6 @@ next_id = 0;
 jsobj_from_id = new Map();
 id_from_jsobj = new Map();
 
-// In-universe, we call objs / dicts "maps"
-function new_map(map) {
-  const id = next_id++;
-  jsobj_from_id.set(id, map);
-  id_from_jsobj.set(map, id);
-  return map;
-}
-
-ctx = {};
-
-treeView = document.getElementById('treeview');
-document.body.appendChild(treeView); // So that it's last
-
 function deref(id) {
   if (typeof id === 'number') {
     return jsobj_from_id.get(id);
@@ -303,104 +290,131 @@ function deref(id) {
 
 function ref(obj) {
   if (typeof obj === 'object' || typeof obj === 'function') {
-    if (!id_from_jsobj.has(obj)) new_map(obj);
+    if (!id_from_jsobj.has(obj)) {
+      const id = next_id++;
+      jsobj_from_id.set(id, obj);
+      id_from_jsobj.set(obj, id);
+    };
     return { id: id_from_jsobj.get(obj) };
   } else return null;
 }
 
+// In-universe, we call objs / dicts "maps"
+
+// TODO change to wrapped maps
+function map_new(o) {
+  if (o === undefined) return {}; else return o;
+}
+function map_get(o, ...path) {
+  path.forEach(k => o = o[k]); return o;
+}
+function map_set(o, ...args) {
+  if (args.length === 1) { o[args[1]] = undefined; return; }
+  let k = args.shift(); const v = args.pop();
+  args.forEach(a => { o = o[k]; k = a; });
+  o[k] = v;
+}
+function map_set_rel(o, ...args) {
+  let k = args.shift(); const f = args.pop();
+  args.forEach(a => { o = o[k]; k = a; });
+  o[k] = f(o[k]);
+}
+map_iter = (o, f) => Object.entries(o).forEach(([k,v],i) => f(k,v,i));
+map_num_entries = (o) => Object.keys(o).length;
+
+ctx = {};
+
+treeView = document.getElementById('treeview');
+document.body.appendChild(treeView); // So that it's last
+
 function fetch() {
-  const ref = ctx.next_instruction.ref;
-  let next_inst = ref.map[ref.key];
+  const ref = map_get(ctx, 'next_instruction', 'ref');
+  let next_inst = map_get(ref, 'map', map_get(ref, 'key'));
   if (next_inst === undefined) {
-    let continue_to = ref.map.continue_to; // check current block's continue addr
-    if (!continue_to) continue_to = ctx.continue_to; // fall back to register
+    let continue_to = map_get(ref, 'map', 'continue_to'); // check current block's continue addr
+    if (!continue_to) continue_to = map_get(ctx, 'continue_to'); // fall back to register
     if (continue_to) {
-      if (continue_to.map) {
-        ref.map = continue_to.map;
-        JSONTree.update(ctx.next_instruction.ref, 'map');
+      if (map_get(continue_to, 'map')) {
+        map_set(ref, 'map', map_get(continue_to, 'map'));
+        JSONTree.update(map_get(ctx, 'next_instruction', 'ref'), 'map');
       }
-      if (continue_to.key) ref.key = continue_to.key;
-      else ref.key = 1; // beginning of new basic block
+      if (map_get(continue_to, 'key')) map_set(ref, 'key', map_get(continue_to, 'key'));
+      else map_set(ref, 'key', 1); // beginning of new basic block
     } else { // check return_to SMELL just do this with continue_to?
-      const return_to = ctx.return_to;
+      const return_to = map_get(ctx, 'return_to');
       if (return_to) { // pop and restore prev execution point
-        ref.map = return_to.map; ref.key = return_to.key;
-        ctx.return_to = return_to.next;
+        map_set(ref, 'map', map_get(return_to, 'map'));
+        map_set(ref, 'key', map_get(return_to, 'key'));
+        map_set(ctx, 'return_to', map_get(return_to, 'next'));
         JSONTree.update(ref, 'map');
         JSONTree.update(ctx, 'return_to');
       }
     }
-    next_inst = ref.map[ref.key];
+    next_inst = map_get(ref, 'map', map_get(ref, 'key'));
   }
-  ctx.next_instruction.value = next_inst;
+  map_set(ctx, 'next_instruction', 'value', next_inst);
 
   // Duped from run_and_render
-  JSONTree.update(ctx.next_instruction.ref, 'key');
-  JSONTree.update(ctx.next_instruction, 'value');
-  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+  JSONTree.update(map_get(ctx, 'next_instruction', 'ref'), 'key');
+  JSONTree.update(map_get(ctx, 'next_instruction'), 'value');
+  JSONTree.highlight('jstNextInstruction', map_get(ctx, 'next_instruction', 'value'));
 }
 
 function single_step() {
-  const inst = ctx.next_instruction.value; // i.e. Instruction Pointer
+  const inst = map_get(ctx, 'next_instruction', 'value'); // i.e. Instruction Pointer
   // Cache values, before any modifications, for later
-  const op       = inst.op;    // i.e. opcode
-  const focus    = ctx.focus;  // i.e. accumulator / bottleneck / map key register
-  const map      = ctx.map;    // i.e. "map to read to / write from" register
-  const source   = ctx.source; // i.e. register to copy to write destination
-  const dest_reg = inst.register;
+  const op       = map_get(inst, 'op');    // i.e. opcode
+  const focus    = map_get(ctx, 'focus');  // i.e. accumulator / bottleneck / map key register
+  const map      = map_get(ctx, 'map');    // i.e. "map to read to / write from" register
+  const source   = map_get(ctx, 'source'); // i.e. register to copy to write destination
+  const dest_reg = map_get(inst, 'register');
 
-  ctx.next_instruction.ref.key++;
+  map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
 
   // Modify state according to instruction
     // load: copy value to .focus register
   if      (op === 'load') {
-    ctx.focus = typeof inst.value === 'object' ? { ...inst.value } : inst.value;
+    const value = map_get(inst, 'value');
+    map_set(ctx, 'focus', typeof value === 'object' ? { ...value } : value);
     // store: copy value in .focus to the given reg (if included)
   } //        OR copy value in .source to .map[.focus] (if absent)
   else if (op === 'store') {
-    if (inst.register === undefined) {
-      ctx.map[ctx.focus] = ctx.source;
-      // HORRIBLE SMELL hapoc demo dependence
-      if (ctx.scene && ctx.map === ctx.scene.shapes.children.blue_shape.position) {
-        blue_shape.position.x = ctx.source; r();
-      }
-    } else ctx[inst.register] = ctx.focus;
-    // deref: replace .focus with the value of the reg it references (if string)
-  } //        OR with the object with the specified id (otherwise)
+    if (dest_reg === undefined) {
+      map_set(ctx, 'map', focus, source);
+    } else map_set(ctx, dest_reg, focus);
+  } // deref: replace .focus with the value of the reg it references
   else if (op === 'deref') {
-    if (typeof ctx.focus === 'string') ctx.focus = ctx[ctx.focus];
-    else ctx.focus = deref(ctx.focus);
-  } // ref: replace .focus with the wrapped ID of the object in .map, or null
-  else if (op === 'ref') {
-    ctx.focus = ref(ctx.map);
+    map_set(ctx, 'focus', map_get(ctx, focus));
   } // index: index the .map with .focus as the key, replacing .map
   else if (op === 'index') {
-    let tmp = ctx.map[ctx.focus];
+    let tmp = map_get(ctx, 'map', focus);
     // Maps can include the _ key as "default", "else" or "otherwise"
-    if (tmp === undefined) tmp = ctx.map._; // TODO smell: risky?
-    ctx.map = tmp;
+    if (tmp === undefined) tmp = map_get(ctx, 'map', '_'); // TODO smell: risky?
+    map_set(ctx, 'map', tmp);
   } // js: execute arbitrary JS code :P TODO return changeset
   else if (op === 'js') {
-    inst.func(inst);
+    map_get(inst, 'func')(inst);
   } // vsub: subtract vectors TODO smell
   else if (op === 'vsub') {
-    const vf = ctx.vec_from;
-    const vt = ctx.vec_to;
-    if (!vf.basis === vt.basis) throw `TODO: convert one of ${vf.basis}, ${vt.basis} to match`;
-    ctx.focus = {};
-    Object.keys(vf).forEach(k => { ctx.focus[k] = vt[k] - vf[k]; });
-    ctx.focus.basis = vf.basis; // TODO: pt -> vec
+    const vf = map_get(ctx, 'vec_from');
+    const vt = map_get(ctx, 'vec_to');
+    if (map_get(vf, 'basis') !== map_get(vt, 'basis'))
+      throw `TODO: convert one of ${vf.basis}, ${vt.basis} to match`;
+    map_set(ctx, 'focus', map_new());
+    map_iter(vf, (k,x) => { map_set(ctx, 'focus', k, map_get(vt, k) - x); });
+    map_set(ctx, 'focus', 'basis', map_get(vf, 'basis')); // TODO: pt -> vec
   }
   else if (op === 'in') {
-    if (inst.basis !== 'world' || focus.basis !== 'screen-pt') throw "TODO: only screen->world supported";
-    const v = clientToWorld(new e3.Vector3(focus.right, focus.down, 0));
-    ctx.focus = { basis: 'world-vec', right: v.x, up: v.y, forward: v.z };
+    if (map_get(inst, 'basis') !== 'world' || map_get(focus, 'basis') !== 'screen-pt')
+      throw "TODO: only screen->world supported";
+    const v = clientToWorld(new e3.Vector3(map_get(focus, 'right'), map_get(focus, 'down'), 0));
+    map_set(ctx, 'focus', map_new({ basis: 'world-vec', right: v.x, up: v.y, forward: v.z }));
   } // no op field: assume nested instruction list
   else if (op === undefined) {
-    const ref = ctx.next_instruction.ref;
-    const prev_return_pt = ctx.return_to;
-    ctx.return_to = { ...ref, next: prev_return_pt }; // Push current execution point
-    ref.map = inst; ref.key = 1; // Dive in
+    const ref = map_get(ctx, 'next_instruction', 'ref');
+    const prev_return_pt = map_get(ctx, 'return_to');
+    map_set(ctx, 'return_to', map_new({ ...ref, next: prev_return_pt })); // Push current execution point
+    map_set(ref, 'map', inst); map_set(ref, 'key', 1); // Dive in
   }
 
   fetch(); // This goes here in case the instruction changed next_instruction
@@ -412,17 +426,72 @@ function single_step() {
   else if (op === 'index') key = 'map';
   else if (op === undefined) key = 'return_to';
 
-  // Check if the map being changed is a proxy for some JS thing
-  update_relevant_proxy_objs(obj, key);
+  // Check if the map being changed is a proxy for some 3JS thing
+  //update_relevant_proxy_objs(obj, key);
 
   // Return changeset
   return [
-    [obj, key], [ctx.next_instruction.ref, 'key'], [ctx.next_instruction, 'value']
+    [obj, key], [map_get(ctx, 'next_instruction', 'ref'), 'key'], [map_get(ctx, 'next_instruction'), 'value']
   ].map(([o, k]) => [ref(o).id, k]);
 }
 
 function update_relevant_proxy_objs(obj, key) {
+  let f;
+  if (obj.isChildrenFor !== undefined) f = sync_3js_children;
+  else if (obj.isPositionFor !== undefined) f = sync_3js_pos;
+  else f = sync_3js_obj;
+  const val = map_get(obj, key);
+  f(obj)(key, val);
+}
 
+sync_3js_children = (children) => (ch_name, child) => {
+  const parent = children.isChildrenFor;
+  map_iter(child, (key, val) => sync_3js_proxy(child, key, val));
+  child._3js_proxy.name = ch_name; // set name in 3js
+  parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
+}
+
+square_geom = new e3.PlaneGeometry(1, 1);
+need_rerender = false;
+
+function sync_3js_proxy(obj, key, val) {
+  if (key === 'children') {
+    val.isChildrenFor = obj;
+    map_iter(val, sync_3js_children(val));
+  } else if (key === 'color' && val !== undefined) {
+    init_3js_mat(obj); obj._3js_mat.color.setHex(parseInt(val));
+    obj._3js_mat.needsUpdate = true;
+  } else if (key === 'width') { // TODO: rect ontologies
+    init_3js_rect(obj); obj._3js_rect.scale.x = val;
+  } else if (key === 'height') {
+    init_3js_rect(obj); obj._3js_rect.scale.y = val;
+  } else if (key === 'top_left') {
+    init_3js_rect(obj); val.isPositionFor = obj._3js_proxy;
+    map_iter(val, sync_3js_pos(val));
+  }
+  need_rerender = true;
+}
+
+function init_3js_mat(obj) {
+  if (obj._3js_mat === undefined)
+    obj._3js_mat = new e3.MeshBasicMaterial({ color: 0xff00ff, side: e3.DoubleSide });
+}
+
+function init_3js_rect(obj) {
+  if (obj._3js_proxy === undefined) {
+    obj._3js_proxy = new e3.Group();
+    init_3js_mat(obj); obj._3js_rect = new e3.Mesh(square_geom, mat);
+    obj._3js_proxy.add(obj._3js_rect);
+    map_set(obj, 'width', 1); map_set(obj, 'height', 1);
+    const {x, y, z} = obj._3js_proxy.position;
+    const top_left = map_new({ right: x, up: y, forward: z });
+    top_left.isPositionFor = obj._3js_proxy;
+    map_set(obj, 'top_left', top_left);
+  }
+}
+
+sync_3js_pos = (obj) => (key, val) => {
+  obj.isPositionFor.position[key] = val;
 }
 
 function run_and_render(num_steps=1) {
@@ -454,9 +523,11 @@ function run_and_render(num_steps=1) {
   JSONTree.highlight('jstLastChange', ...last_change);
 
   // We know these will have changed
-  JSONTree.update(ctx.next_instruction.ref, 'key');
-  JSONTree.update(ctx.next_instruction, 'value');
-  JSONTree.highlight('jstNextInstruction', ctx.next_instruction.value);
+  JSONTree.update(map_get(ctx, 'next_instruction', 'ref'), 'key');
+  JSONTree.update(map_get(ctx, 'next_instruction'), 'value');
+  JSONTree.highlight('jstNextInstruction', map_get(ctx, 'next_instruction', 'value'));
+
+  if (need_rerender) r();
 }
 
 function typed(str) {
@@ -469,14 +540,15 @@ function typed(str) {
 function assemble_code(blocks, obj={}, start_i=1) {
   let instructions = blocks.map(block => typeof block !== 'string' ? block :
     block.replaceAll('\n', '').split(';').map(s => {
+      let ret;
       s = s.trim().split(' ');
       s[0] = s[0].toLowerCase();
-           if (s[0] === 'l') return { op: 'load', value: typed(s[1]) };
-      else if (s[0] === 's') return { op: 'store', register: s[1] };
-      else if (s[0] === 'd') return { op: 'deref' };
-      else if (s[0] === 'r') return { op: 'ref' };
-      else if (s[0] === 'i') return { op: 'index' };
-      else return;
+           if (s[0] === 'l') ret = { op: 'load', value: typed(s[1]) };
+      else if (s[0] === 's') ret = { op: 'store', register: s[1] };
+      else if (s[0] === 'd') ret = { op: 'deref' };
+      else if (s[0] === 'r') ret = { op: 'ref' };
+      else if (s[0] === 'i') ret = { op: 'index' };
+      return ret === undefined? udefined : map_new(ret);
     })
   );
   instructions = instructions.flat();
@@ -485,8 +557,8 @@ function assemble_code(blocks, obj={}, start_i=1) {
 }
 
 function load_state() {
-  ctx = new_map({
-    next_instruction: null,
+  ctx = map_new({
+    next_instruction: { ref: { map: null, key: 1 } },
     continue_to: null,
     focus: null,
     map: null,
@@ -495,7 +567,7 @@ function load_state() {
     source: null,
     instructions: {
       // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-      example_store_obj: new_map({
+      example_store_obj: map_new({
         // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
         // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
         1: {
@@ -529,12 +601,14 @@ function load_state() {
        * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
        * sub; camera.position := focus
        */
-      example_move_shape: new_map(assemble_code([
+      example_move_shape: map_new(assemble_code([
         { op: 'js', func: () => {
           const cp = camera.position;
-          const ccp = ctx.scene.camera.position;
-          ccp.right = cp.x; ccp.up = cp.y; ccp.forward = cp.z;
-          JSONTree.update(ctx.scene.camera, 'position');
+          const ccp = map_get(ctx, 'scene', 'camera', 'position');
+          map_set(ccp, 'right', cp.x);
+          map_set(ccp, 'up', cp.y);
+          map_set(ccp, 'forward', cp.z);
+          JSONTree.update(map_get(ctx, 'scene', 'camera'), 'position');
         }},
         `l pointer; d; s map; l pressed_at; i; l map; d; s vec_from;
         l pointer; d; s map; l released_at; i; l map; d; s vec_to`,
@@ -545,18 +619,18 @@ function load_state() {
         `s source; l scene; d; s map; l camera; i; l position; s`,
         { op: 'js', func: () => {
           const cp = camera.position;
-          const ccp = ctx.scene.camera.position;
-          cp.set(ccp.right, ccp.up, ccp.forward);
+          const ccp = map_get(ctx, 'scene', 'camera', 'position');
+          cp.set(map_get(ccp, 'right'), map_get(ccp, 'up'), map_get(ccp, 'forward'));
           r();
         } },
       ])),
       // Set .conclusion based on .weather, and then mark .finished
       example_conditional: {
-        start: new_map(assemble_code([
+        start: assemble_code([
           'l instructions; d; s map; l example_conditional; i; l branch1; i; l weather; d; i;' +
           'l map; d; s source', { op: 'load', value: { map: null } },
           's map; l map; s; d; s continue_to' // essentially, conditional jump = 9 uops
-        ])),
+        ]),
         branch1: {
           warm: assemble_code([
             { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
@@ -574,16 +648,12 @@ function load_state() {
         4: { op: 'store' },
       }
     },
-    selected_shape: null,
     dragging_in_system: false,
     pointer: {
       pressed_at: { basis: 'screen-pt', right: 0, down: 0 },
       released_at: { basis: 'screen-pt', right: 0, down: 0 },
       //position: { basis: 'screen-pt', right: 200, down: 300 },
       //delta: { basis: 'screen-vec', right: -2, down: 1 },
-    },
-    camera: {
-      position: { basis: 'world-pt', right: 1, up: 2, forward: 3 }
     },
     scene: {
       camera: {
@@ -630,38 +700,41 @@ function load_state() {
       }
     },
   });
-  const instrs = ctx.instructions;
-  ctx.next_instruction = { ref: { map: instrs.hapoc_demo, key: 1 } };
-  ctx.map = ctx.scene.shapes.children.blue_shape.position;
+  const instrs = map_get(ctx, 'instructions');
+  map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'hapoc_demo'));
+  map_set(ctx, 'map', map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape', 'position'));
 
-  const ch = ctx.scene.shapes.children;
+  const ch = map_get(ctx, 'scene', 'shapes', 'children');
   ['yellow_shape', 'blue_shape'].forEach(name => {
-    const s = ch[name].position;
+    const s = map_get(ch, name, 'position');
     const j = window[name].position;
-    s.right = j.x.toPrecision(2);
-    s.up = j.y.toPrecision(2);
+    map_set(s, 'right', j.x);
+    map_set(s, 'up', j.y);
   });
 
-  const cond_instrs = ctx.instructions.example_conditional;
-  const common_exit = { map: cond_instrs.finish };
-  cond_instrs.branch1.warm.continue_to = common_exit;
-  cond_instrs.branch1.cold.continue_to = common_exit;
-  cond_instrs.branch1._.continue_to = common_exit;
+  const cond_instrs = map_get(ctx, 'instructions', 'example_conditional');
+  const common_exit = map_new({ map: map_get(cond_instrs, 'finish') });
+  map_set(cond_instrs, 'branch1', 'warm', 'continue_to', common_exit);
+  map_set(cond_instrs, 'branch1', 'cold', 'continue_to', common_exit);
+  map_set(cond_instrs, 'branch1', '_', 'continue_to', common_exit);
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.toggle(ctx.next_instruction.ref.map);
-  JSONTree.toggle(ctx.instructions.example_store_obj);
-  JSONTree.toggle(ctx.lisp_stuff);
-  JSONTree.toggle(ctx.instructions.example_move_shape);
+  JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
+  JSONTree.toggle(map_get(ctx, 'instructions', 'example_store_obj'));
+  JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
+  JSONTree.toggle(map_get(ctx, 'instructions', 'example_move_shape'));
   JSONTree.toggle(cond_instrs);
-  JSONTree.toggle(cond_instrs.branch1.warm);
-  JSONTree.toggle(cond_instrs.branch1.cold);
-  JSONTree.toggle(cond_instrs.branch1._);
+  JSONTree.toggle(map_get(cond_instrs, 'branch1', 'warm'));
+  JSONTree.toggle(map_get(cond_instrs, 'branch1', 'cold'));
+  JSONTree.toggle(map_get(cond_instrs, 'branch1', '_'));
   fetch();
 }
 
-function upd(o, k, v) {
-  o[k] = v;
+function upd(o, ...args) {
+  const v = args.pop();
+  const k = args.pop();
+  o = map_get(o, ...args);
+  map_set(o, k, v);
   JSONTree.update(o, k);
   if (v !== undefined)
     JSONTree.highlight('jstLastChange', o, k);
