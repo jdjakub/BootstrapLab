@@ -161,10 +161,10 @@ JSONTree = { // eslint-disable-line no-unused-vars
       if (value === undefined) return;
       const html = [];
       html.push('<li class="jstItem">');
-      if (JSONTree._canCollapse(object[key])) {
+      if (JSONTree._canCollapse(value)) {
         html.push(JSONTree._collapseElem());
       }
-      html.push(JSONTree._property(key, object[key]));
+      html.push(JSONTree._property(key, value));
       //if (index !== keys.length - 1) {
       html.push(JSONTree._comma());
       //}
@@ -198,6 +198,8 @@ JSONTree = { // eslint-disable-line no-unused-vars
       case 'number':
         return false;
       case 'string':
+        return false;
+      case 'function':
         return false;
       default:
         if (data === null) {

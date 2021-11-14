@@ -301,8 +301,33 @@ function ref(obj) {
 
 // In-universe, we call objs / dicts "maps"
 
-// TODO change to wrapped maps
-function map_new(o) {
+function maps_init(o) { // REWRITES o
+  const map = { entries: o };
+  Object.entries(o).forEach(([k,v]) => { // Traverse TREE (no cycles!)
+    if (typeof v === 'object' && v !== null) o[k] = maps_init(v);
+  });
+  return map;
+}
+function map_new(o={}) {
+  return { entries: o };
+}
+function map_get(o, ...path) {
+  path.forEach(k => o = o.entries[k]); return o;
+}
+function map_set(o, ...args) {
+  if (args.length === 1) { o.entries[args[1]] = undefined; return; }
+  let k = args.shift(); const v = args.pop();
+  args.forEach(a => { o = o.entries[k]; k = a; });
+  o.entries[k] = v;
+}
+function map_set_rel(o, ...args) {
+  let k = args.shift(); const f = args.pop();
+  args.forEach(a => { o = o.entries[k]; k = a; });
+  o.entries[k] = f(o.entries[k]);
+}
+map_iter = (o, f) => Object.entries(o.entries).forEach(([k,v],i) => f(k,v,i));
+map_num_entries = (o) => Object.keys(o.entries).length;
+/*function map_new(o) {
   if (o === undefined) return {}; else return o;
 }
 function map_get(o, ...path) {
@@ -320,7 +345,7 @@ function map_set_rel(o, ...args) {
   o[k] = f(o[k]);
 }
 map_iter = (o, f) => Object.entries(o).forEach(([k,v],i) => f(k,v,i));
-map_num_entries = (o) => Object.keys(o).length;
+map_num_entries = (o) => Object.keys(o).length;*/
 
 ctx = {};
 
@@ -540,15 +565,14 @@ function typed(str) {
 function assemble_code(blocks, obj={}, start_i=1) {
   let instructions = blocks.map(block => typeof block !== 'string' ? block :
     block.replaceAll('\n', '').split(';').map(s => {
-      let ret;
       s = s.trim().split(' ');
       s[0] = s[0].toLowerCase();
-           if (s[0] === 'l') ret = { op: 'load', value: typed(s[1]) };
-      else if (s[0] === 's') ret = { op: 'store', register: s[1] };
-      else if (s[0] === 'd') ret = { op: 'deref' };
-      else if (s[0] === 'r') ret = { op: 'ref' };
-      else if (s[0] === 'i') ret = { op: 'index' };
-      return ret === undefined? udefined : map_new(ret);
+           if (s[0] === 'l') return { op: 'load', value: typed(s[1]) };
+      else if (s[0] === 's') return { op: 'store', register: s[1] };
+      else if (s[0] === 'd') return { op: 'deref' };
+      else if (s[0] === 'r') return { op: 'ref' };
+      else if (s[0] === 'i') return { op: 'index' };
+      return;
     })
   );
   instructions = instructions.flat();
@@ -557,7 +581,7 @@ function assemble_code(blocks, obj={}, start_i=1) {
 }
 
 function load_state() {
-  ctx = map_new({
+  ctx = maps_init({
     next_instruction: { ref: { map: null, key: 1 } },
     continue_to: null,
     focus: null,
@@ -567,7 +591,7 @@ function load_state() {
     source: null,
     instructions: {
       // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-      example_store_obj: map_new({
+      example_store_obj: {
         // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
         // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
         1: {
@@ -593,7 +617,7 @@ function load_state() {
           3:{op:"load",value:"type"},
           4:{op:"store"}
         }
-      }),
+      },
       /* last_delta = pointer.(released_at - pressed_at)
        * camera.position.sub(last_delta in world with z=0)
        * ---
@@ -601,7 +625,7 @@ function load_state() {
        * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
        * sub; camera.position := focus
        */
-      example_move_shape: map_new(assemble_code([
+      example_move_shape: assemble_code([
         { op: 'js', func: () => {
           const cp = camera.position;
           const ccp = map_get(ctx, 'scene', 'camera', 'position');
@@ -623,7 +647,7 @@ function load_state() {
           cp.set(map_get(ccp, 'right'), map_get(ccp, 'up'), map_get(ccp, 'forward'));
           r();
         } },
-      ])),
+      ]),
       // Set .conclusion based on .weather, and then mark .finished
       example_conditional: {
         start: assemble_code([
