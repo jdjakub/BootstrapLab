@@ -12,6 +12,7 @@ function forMat4(m) {
 }
 lr = n => n.toPrecision(2) + (n < 0 ? ' left' : ' right');
 ud = n => n.toPrecision(2) + (n < 0 ? ' down' : ' up');
+ruf = (o) => ({ right: o.x, up: o.y, forward: o.z });
 e3 = THREE;
 renderer = new e3.WebGLRenderer({ antialias: true });
 document.body.appendChild(renderer.domElement);
@@ -23,7 +24,7 @@ renderer.setPixelRatio(DPR);
 scene = new e3.Scene(); scene.name = 'world';
 aspect = rw / rh;
 camera = new e3.OrthographicCamera( -aspect, +aspect, +1, -1, 0, 1000);
-camera.name = 'camera'; scene.add(camera);
+//camera.name = 'camera'; scene.add(camera);
 
 geom = new e3.PlaneGeometry(2, 2);
 mat = new e3.MeshBasicMaterial({ color: 0x770077, side: e3.DoubleSide });
@@ -47,27 +48,6 @@ dir = new e3.Vector3(0,1,0);
 y_helper = new e3.ArrowHelper(dir, origin, 5/4, 0x00ff00);
 scene.add(y_helper);
 
-/*
-proxies = new Map();
-const unit_plane_geom = new e3.PlaneGeometry(1,1);
-
-function obj3d_proxy(obj_name, obj3d, map) {
-  if (obj3d === undefined) {
-    return new e3.Mesh();
-  }
-  proxies.set(map, (key, val) => {
-    if (key === 'children') {
-      if (typeof val === 'object') proxies.set(val, (ch_name, child)) => {
-        obj3d.add(obj3d_proxy(ch_name, child));
-      }
-      else proxies.delete(map[key]);
-    }
-  });
-}
-
-scene_proxy = map => obj3d_proxy('scene', scene, map);
-*/
-
 function leastCommonAncestor(_3obj1, _3obj2) {
   const nodes = [_3obj1, _3obj2];
   const opp = x => 1-x; // 0 <-> 1
@@ -77,6 +57,9 @@ function leastCommonAncestor(_3obj1, _3obj2) {
     visited[curr].add(nodes[curr]); // mark current node as visited
     const parent = nodes[curr].parent;
     if (parent !== null) nodes[curr] = parent; // climb up
+    else if (nodes[opp(curr)].parent === null)
+      if (nodes[0] === nodes[1]) return nodes[0];
+      else throw ["Coord frames live in disjoint trees: ", _3obj1.name, _3obj2.name];
     curr = opp(curr); // alternate between three1's and three2's path
   }
   return nodes[curr];
@@ -144,21 +127,20 @@ n-up   = - hh s-down
 */
 
 
-is_dragging = false;
 // Warning: forward refs to tree stuff
 renderer.domElement.onmousedown = e => {
-  is_dragging = true;
-  if (ctx.pointer === undefined || !ctx.dragging_in_system) return; // Smell: demo-dependence
+  upd(ctx, 'pointer', 'is_dragging', true);
+  /*if (!ctx.dragging_in_system) return; // Smell: demo-dependence
   const tmp = ctx.pointer.pressed_at; tmp.right = e.clientX; tmp.down = e.clientY;
   JSONTree.update(ctx.pointer, 'pressed_at');
-  JSONTree.highlight('jstExternalChange', tmp);
+  JSONTree.highlight('jstExternalChange', tmp);*/
 };
 renderer.domElement.onmouseup = e => {
-  is_dragging = false
-  if (ctx.pointer === undefined || !ctx.dragging_in_system) return; // Smell: demo-dependence
+  upd(ctx, 'pointer', 'is_dragging', false);
+  /*if (ctx.pointer === undefined || !ctx.dragging_in_system) return; // Smell: demo-dependence
   const tmp = ctx.pointer.released_at; tmp.right = e.clientX; tmp.down = e.clientY;
   JSONTree.update(ctx.pointer, 'released_at');
-  JSONTree.highlight('jstExternalChange', tmp);
+  JSONTree.highlight('jstExternalChange', tmp);*/
 };
 
 last_pointer = undefined;
@@ -169,14 +151,14 @@ renderer.domElement.onmousemove = e => {
     last_delta.subVectors(curr, last_pointer);
   last_pointer = curr;
 
-  if (is_dragging) {
-    const selected_shape = ctx.selected_shape;
+  if (map_get(ctx, 'pointer', 'is_dragging')) {
+    const selected_shape = map_get(ctx, 'selected_shape');
     if (selected_shape === undefined) {
       const delta_camera = clientToWorld(last_delta);
       delta_camera.z = 0;
-      if (!ctx.dragging_in_system) {
+      if (!map_get(ctx, 'dragging_in_system')) {
         camera.position.sub(delta_camera);
-        r();
+        upd(ctx, 'scene', 'camera', 'position', map_new(ruf(camera.position)));
       }
     } else { // SMELL hapoc demo dependence
       const d = last_delta;
@@ -195,56 +177,6 @@ renderer.domElement.onmousemove = e => {
   }
 };
 
-/*
-curr := { basis: screen, 0: 1, 1: e.clientX, 2: e.clientY } # assembles to:
-main:
- 1) l {}; s map2;
- 3) l e; d; s map; l clientX; i; l map; d; s source; l map2; d; s map; l 1; s;
-16) l map; d; s map2;
-18) l e; d; s map; l clientY; i; l map; d; s source; l map2; d; s map; l 2; s;
-31) l screen; s source; l basis; s;
-35) l 1; s source; l 0; s;
-39) l 1; s source; l 0; s; (42 uops) // was this a dupe by mistake?
-
-      focus := regS  ===>  load regS; deref
-       regD := regS  ===>  focus := regS; store regD
- regM[regK] := regS  ===>  map := regM; source := regS; focus := regK; store
- regD := reg0.a.b.c  ===>  map := reg0; load a; index; load b; index; load c; index; regD := map
-
-tmp := { key: 1 }
-tmp.id = last_pointer thru
-  undefined: ref
-    last_delta := curr - last_pointer
-    jump to rejoin
-  _: ref @rejoin
-
-tmp := {}; tmp.key := 1;
-tmp.id := {undefined: { id: @branch }, _: { id: @rejoin }};
-tmp.id := tmp.id[last_pointer];
-next_instruction := tmp;
-
- 1) l {}; s map; l @branch; s source; l id; s; l map; d; s map2;
-10) l {}; s map; l @rejoin; s source; l id; s; l map; d; s source;
-19) l {}; s map; l _; s; l map2; d; s source; l undefined; s;
-28) l last_pointer; d; i; l map; d; s source;
-34) l {}; s map; l id; s; l 1; s source; l key; s;
-42) l map; d; s next_instruction; (44 uops)
-
-rejoin:
-last_pointer := curr
-
-next_instruction :=
-  key: 1
-  id: is_dragging thru
-    false: ref @rejoin2
-    true: ref
-      delta_camera := last_delta in world
-      delta_camera.3 := 0
-      camera.position.sub(delta_camera)
-      r()
-      jump to rejoin2
-*/
-
 zoom_per_pixel = 0.95; // Every px of scroll shrinks view window to 95%
 
 renderer.domElement.onwheel = e => {
@@ -256,20 +188,20 @@ renderer.domElement.onwheel = e => {
 
   const change_factor = e.deltaY > 0 ? 1/zoom_per_pixel : zoom_per_pixel;
   camera.zoom *= change_factor;
+  upd(ctx, 'scene', 'camera', 'zoom', camera.zoom);
   new_focus.divideScalar(change_factor); new_focus.w = 1;
   new_focus.applyMatrix4(camera.matrixWorld);
 
   const delta = focus.clone().sub(new_focus);
   camera.position.add(delta);
-  camera.updateProjectionMatrix();
-  ndc.matrix.copy(camera.projectionMatrixInverse);
-  r();
+  upd(ctx, 'scene', 'camera', 'position', map_new(ruf(camera.position)));
 
   e.preventDefault();
 };
 
 function r() {
   renderer.render(scene, camera);
+  need_rerender = false;
 }
 
 r();
@@ -433,7 +365,7 @@ function single_step() {
     if (map_get(inst, 'basis') !== 'world' || map_get(focus, 'basis') !== 'screen-pt')
       throw "TODO: only screen->world supported";
     const v = clientToWorld(new e3.Vector3(map_get(focus, 'right'), map_get(focus, 'down'), 0));
-    map_set(ctx, 'focus', map_new({ basis: 'world-vec', right: v.x, up: v.y, forward: v.z }));
+    map_set(ctx, 'focus', map_new({ basis: 'world-vec', ...ruf(v) }));
   } // no op field: assume nested instruction list
   else if (op === undefined) {
     const ref = map_get(ctx, 'next_instruction', 'ref');
@@ -452,7 +384,7 @@ function single_step() {
   else if (op === undefined) key = 'return_to';
 
   // Check if the map being changed is a proxy for some 3JS thing
-  //update_relevant_proxy_objs(obj, key);
+  update_relevant_proxy_objs(obj, key);
 
   // Return changeset
   return [
@@ -464,22 +396,25 @@ function update_relevant_proxy_objs(obj, key) {
   let f;
   if (obj.isChildrenFor !== undefined) f = sync_3js_children;
   else if (obj.isPositionFor !== undefined) f = sync_3js_pos;
-  else f = sync_3js_obj;
+  else if (obj._3js_proxy !== undefined) f = sync_3js_proxy;
+  else return;
   const val = map_get(obj, key);
   f(obj)(key, val);
 }
 
 sync_3js_children = (children) => (ch_name, child) => {
   const parent = children.isChildrenFor;
-  map_iter(child, (key, val) => sync_3js_proxy(child, key, val));
-  child._3js_proxy.name = ch_name; // set name in 3js
-  parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
+  map_iter(child, sync_3js_proxy(child));
+  if (child._3js_proxy) {
+    child._3js_proxy.name = ch_name; // set name in 3js
+    parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
+  }
 }
 
 square_geom = new e3.PlaneGeometry(1, 1);
 need_rerender = false;
 
-function sync_3js_proxy(obj, key, val) {
+sync_3js_proxy = (obj) => (key, val) => {
   if (key === 'children') {
     val.isChildrenFor = obj;
     map_iter(val, sync_3js_children(val));
@@ -490,8 +425,12 @@ function sync_3js_proxy(obj, key, val) {
     init_3js_rect(obj); obj._3js_rect.scale.x = val;
   } else if (key === 'height') {
     init_3js_rect(obj); obj._3js_rect.scale.y = val;
-  } else if (key === 'top_left') {
-    init_3js_rect(obj); val.isPositionFor = obj._3js_proxy;
+  } else if (key === 'zoom' && obj._3js_proxy.isCamera) {
+    obj._3js_proxy.zoom = val;
+    camera.updateProjectionMatrix();
+    ndc.matrix.copy(camera.projectionMatrixInverse);
+  } else if (key === 'top_left' || key === 'position') {
+    val.isPositionFor = obj._3js_proxy;
     map_iter(val, sync_3js_pos(val));
   }
   need_rerender = true;
@@ -516,7 +455,10 @@ function init_3js_rect(obj) {
 }
 
 sync_3js_pos = (obj) => (key, val) => {
-  obj.isPositionFor.position[key] = val;
+  let k = { right: 'x', up: 'y', forward: 'z' }[key];
+  if (k === undefined) k = key;
+  obj.isPositionFor.position[k] = val;
+  need_rerender = true;
 }
 
 function run_and_render(num_steps=1) {
@@ -674,6 +616,7 @@ function load_state() {
     },
     dragging_in_system: false,
     pointer: {
+      is_dragging: false,
       pressed_at: { basis: 'screen-pt', right: 0, down: 0 },
       released_at: { basis: 'screen-pt', right: 0, down: 0 },
       //position: { basis: 'screen-pt', right: 200, down: 300 },
@@ -681,15 +624,16 @@ function load_state() {
     },
     scene: {
       camera: {
-        position: { basis: 'world-pt', right: 0, up: 0, forward: 0 },
+        position: { ...ruf(camera.position) },
       },
       shapes: {
+        position: { ...ruf(shapes.position) },
         children: {
           yellow_shape: {
-            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
+            position: { ...ruf(yellow_shape.position) },
           },
           blue_shape: {
-            position: { basis: 'shapes-pt', right: 0, up: 0, forward: 0 },
+            position: { ...ruf(blue_shape.position) },
           },
         }
       }
@@ -736,6 +680,12 @@ function load_state() {
     map_set(s, 'up', j.y);
   });
 
+  map_get(ctx, 'scene', 'camera')._3js_proxy = camera;
+  map_get(ctx, 'scene', 'shapes')._3js_proxy = shapes;
+  map_get(ctx, 'scene', 'shapes', 'children', 'yellow_shape')._3js_proxy = yellow_shape;
+  map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape')._3js_proxy = blue_shape;
+  sync_3js_proxy({ _3js_proxy: scene })('children', map_get(ctx, 'scene'));
+
   const cond_instrs = map_get(ctx, 'instructions', 'example_conditional');
   const common_exit = map_new({ map: map_get(cond_instrs, 'finish') });
   map_set(cond_instrs, 'branch1', 'warm', 'continue_to', common_exit);
@@ -759,9 +709,11 @@ function upd(o, ...args) {
   const k = args.pop();
   o = map_get(o, ...args);
   map_set(o, k, v);
+  update_relevant_proxy_objs(o, k);
   JSONTree.update(o, k);
   if (v !== undefined)
-    JSONTree.highlight('jstLastChange', o, k);
+    JSONTree.highlight('jstExternalChange', o, k);
+  if (need_rerender) r();
 }
 
 load_state();
