@@ -12,6 +12,7 @@ function forMat4(m) {
 }
 lr = n => n.toPrecision(2) + (n < 0 ? ' left' : ' right');
 ud = n => n.toPrecision(2) + (n < 0 ? ' down' : ' up');
+xyz = (o) => new e3.Vector3(o.right, o.up, o.forward);
 ruf = (o) => ({ right: o.x, up: o.y, forward: o.z });
 e3 = THREE;
 renderer = new e3.WebGLRenderer({ antialias: true });
@@ -31,14 +32,6 @@ mat = new e3.MeshBasicMaterial({ color: 0x770077, side: e3.DoubleSide });
 shapes = new e3.Mesh(geom, mat);
 shapes.name = 'shapes'; scene.add(shapes);
 shapes.translateZ(-100);
-
-yellow_shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x999900, side: e3.DoubleSide }));
-shapes.add(yellow_shape);
-yellow_shape.translateX(-1.75); yellow_shape.translateY(1.75); yellow_shape.translateZ(-1);
-
-blue_shape = new e3.Mesh(geom, new e3.MeshBasicMaterial({ color: 0x009999, side: e3.DoubleSide }));
-shapes.add(blue_shape);
-blue_shape.translateX(1.75); blue_shape.translateY(-3); blue_shape.translateZ(-1);
 
 origin = new e3.Vector3();
 dir = new e3.Vector3(1,0,0);
@@ -164,15 +157,8 @@ renderer.domElement.onmousemove = e => {
       const d = last_delta;
       const delta_shape = new e3.Vector4(d.x, d.y, 0, d.z).applyMatrix4(coordMatrixFromTo(screen, shapes));
       delta_shape.z = 0;
-      if (selected_shape === ctx.scene.shapes.children.yellow_shape) { // ALL HORRIBLE
-        yellow_shape.position.add(delta_shape);
-        Object.assign(selected_shape.position, {
-          right: yellow_shape.position.x.toPrecision(2), up: yellow_shape.position.y.toPrecision(2),
-        });
-        JSONTree.update(selected_shape, 'position');
-        JSONTree.highlight('jstLastChange', selected_shape, 'position');
-        r();
-      }
+      delta_shape.add(selected_shape._3js_proxy.position);
+      upd(selected_shape, 'center', map_new(ruf(delta_shape)));
     }
   }
 };
@@ -353,10 +339,10 @@ function single_step() {
     map_get(inst, 'func')(inst);
   } // vsub: subtract vectors TODO smell
   else if (op === 'vsub') {
-    const vf = map_get(ctx, 'vec_from');
-    const vt = map_get(ctx, 'vec_to');
-    if (map_get(vf, 'basis') !== map_get(vt, 'basis'))
-      throw `TODO: convert one of ${vf.basis}, ${vt.basis} to match`;
+    const vf = map_get(ctx, 'vec_from'), vt = map_get(ctx, 'vec_to');
+    const bf = map_get(vf, 'basis'), bt = map_get(vt, 'basis');
+    if (bf !== bt)
+      throw `TODO: convert one of ${bf}, ${bt} to match`;
     map_set(ctx, 'focus', map_new());
     map_iter(vf, (k,x) => { map_set(ctx, 'focus', k, map_get(vt, k) - x); });
     map_set(ctx, 'focus', 'basis', map_get(vf, 'basis')); // TODO: pt -> vec
@@ -419,8 +405,7 @@ sync_3js_proxy = (obj) => (key, val) => {
     val.isChildrenFor = obj;
     map_iter(val, sync_3js_children(val));
   } else if (key === 'color' && val !== undefined) {
-    init_3js_mat(obj); obj._3js_mat.color.setHex(parseInt(val));
-    obj._3js_mat.needsUpdate = true;
+    init_3js_rect(obj); obj._3js_rect.material.color.setHex(parseInt(val));
   } else if (key === 'width') { // TODO: rect ontologies
     init_3js_rect(obj); obj._3js_rect.scale.x = val;
   } else if (key === 'height') {
@@ -429,28 +414,20 @@ sync_3js_proxy = (obj) => (key, val) => {
     obj._3js_proxy.zoom = val;
     camera.updateProjectionMatrix();
     ndc.matrix.copy(camera.projectionMatrixInverse);
-  } else if (key === 'top_left' || key === 'position') {
+  } else if (key === 'center' || key === 'position') {
+    if (key === 'center') init_3js_rect(obj);
     val.isPositionFor = obj._3js_proxy;
     map_iter(val, sync_3js_pos(val));
   }
   need_rerender = true;
 }
 
-function init_3js_mat(obj) {
-  if (obj._3js_mat === undefined)
-    obj._3js_mat = new e3.MeshBasicMaterial({ color: 0xff00ff, side: e3.DoubleSide });
-}
-
 function init_3js_rect(obj) {
   if (obj._3js_proxy === undefined) {
     obj._3js_proxy = new e3.Group();
-    init_3js_mat(obj); obj._3js_rect = new e3.Mesh(square_geom, mat);
+    const mat = new e3.MeshBasicMaterial({ color: 0xff00ff, side: e3.DoubleSide });
+    obj._3js_rect = new e3.Mesh(square_geom, mat);
     obj._3js_proxy.add(obj._3js_rect);
-    map_set(obj, 'width', 1); map_set(obj, 'height', 1);
-    const {x, y, z} = obj._3js_proxy.position;
-    const top_left = map_new({ right: x, up: y, forward: z });
-    top_left.isPositionFor = obj._3js_proxy;
-    map_set(obj, 'top_left', top_left);
   }
 }
 
@@ -568,14 +545,6 @@ function load_state() {
        * sub; camera.position := focus
        */
       example_move_shape: assemble_code([
-        { op: 'js', func: () => {
-          const cp = camera.position;
-          const ccp = map_get(ctx, 'scene', 'camera', 'position');
-          map_set(ccp, 'right', cp.x);
-          map_set(ccp, 'up', cp.y);
-          map_set(ccp, 'forward', cp.z);
-          JSONTree.update(map_get(ctx, 'scene', 'camera'), 'position');
-        }},
         `l pointer; d; s map; l pressed_at; i; l map; d; s vec_from;
         l pointer; d; s map; l released_at; i; l map; d; s vec_to`,
         { op: 'vsub' }, { op: 'in', basis: 'world' },
@@ -583,12 +552,6 @@ function load_state() {
         l scene; d; s map; l camera; i; l position; i; l map; d; s vec_to`,
         { op: 'vsub' },
         `s source; l scene; d; s map; l camera; i; l position; s`,
-        { op: 'js', func: () => {
-          const cp = camera.position;
-          const ccp = map_get(ctx, 'scene', 'camera', 'position');
-          cp.set(map_get(ccp, 'right'), map_get(ccp, 'up'), map_get(ccp, 'forward'));
-          r();
-        } },
       ]),
       // Set .conclusion based on .weather, and then mark .finished
       example_conditional: {
@@ -607,12 +570,6 @@ function load_state() {
         },
         finish: assemble_code(['l true; s finished']),
       },
-      hapoc_demo: {
-        1: { op: 'load', value: -3 },
-        2: { op: 'store', register: 'source' },
-        3: { op: 'load', value: 'right' },
-        4: { op: 'store' },
-      }
     },
     dragging_in_system: false,
     pointer: {
@@ -624,16 +581,19 @@ function load_state() {
     },
     scene: {
       camera: {
+        zoom: camera.zoom,
         position: { ...ruf(camera.position) },
       },
       shapes: {
         position: { ...ruf(shapes.position) },
         children: {
           yellow_shape: {
-            position: { ...ruf(yellow_shape.position) },
+            color: '0x999900', width: 2, height: 2,
+            center: { right: -1.75, up: 1.75, forward: -1 },
           },
           blue_shape: {
-            position: { ...ruf(blue_shape.position) },
+            color: '0x009999', width: 2, height: 2,
+            center: { right: 1.75, up: -3, forward: -1 },
           },
         }
       }
@@ -669,21 +629,11 @@ function load_state() {
     },
   });
   const instrs = map_get(ctx, 'instructions');
-  map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'hapoc_demo'));
+  map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'example_move_shape'));
   map_set(ctx, 'map', map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape', 'position'));
-
-  const ch = map_get(ctx, 'scene', 'shapes', 'children');
-  ['yellow_shape', 'blue_shape'].forEach(name => {
-    const s = map_get(ch, name, 'position');
-    const j = window[name].position;
-    map_set(s, 'right', j.x);
-    map_set(s, 'up', j.y);
-  });
 
   map_get(ctx, 'scene', 'camera')._3js_proxy = camera;
   map_get(ctx, 'scene', 'shapes')._3js_proxy = shapes;
-  map_get(ctx, 'scene', 'shapes', 'children', 'yellow_shape')._3js_proxy = yellow_shape;
-  map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape')._3js_proxy = blue_shape;
   sync_3js_proxy({ _3js_proxy: scene })('children', map_get(ctx, 'scene'));
 
   const cond_instrs = map_get(ctx, 'instructions', 'example_conditional');
@@ -693,7 +643,7 @@ function load_state() {
   map_set(cond_instrs, 'branch1', '_', 'continue_to', common_exit);
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
+  //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
   JSONTree.toggle(map_get(ctx, 'instructions', 'example_store_obj'));
   JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
   JSONTree.toggle(map_get(ctx, 'instructions', 'example_move_shape'));
