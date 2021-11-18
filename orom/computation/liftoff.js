@@ -100,6 +100,11 @@ ndc.add(screen);
   screen.matrixAutoUpdate = false;
 })();
 
+function vecInBasis(v, isPoint, currBasis, targBasis) {
+  return new e3.Vector4(v.x, v.y, v.z, isPoint? 1 : 0)
+             .applyMatrix4(coordMatrixFromTo(currBasis, targBasis));
+}
+
 function clientToWorld(v) {
   return new e3.Vector4(v.x, v.y, 0, v.z).applyMatrix4(coordMatrixFromTo(screen, scene));
 }
@@ -119,6 +124,12 @@ s-down = - n-up/hh
 n-up   = - hh s-down
 */
 
+function bl_vec_from_3js(_3obj, propName) {
+  const vec = _3obj[propName];
+  if (propName === 'position') {
+    return map_new({ basis: _3obj.parent.name, ...ruf(vec) });
+  }
+}
 
 // Warning: forward refs to tree stuff
 renderer.domElement.onmousedown = e => {
@@ -151,14 +162,14 @@ renderer.domElement.onmousemove = e => {
       delta_camera.z = 0;
       if (!map_get(ctx, 'dragging_in_system')) {
         camera.position.sub(delta_camera);
-        upd(ctx, 'scene', 'camera', 'position', map_new(ruf(camera.position)));
+        upd(ctx, 'scene', 'camera', 'position', bl_vec_from_3js(camera, 'position'));
       }
     } else { // SMELL hapoc demo dependence
       const d = last_delta;
       const delta_shape = new e3.Vector4(d.x, d.y, 0, d.z).applyMatrix4(coordMatrixFromTo(screen, shapes));
       delta_shape.z = 0;
-      delta_shape.add(selected_shape._3js_proxy.position);
-      upd(selected_shape, 'center', map_new(ruf(delta_shape)));
+      selected_shape._3js_proxy.position.add(delta_shape);
+      upd(selected_shape, 'center', bl_vec_from_3js(selected_shape._3js_proxy, 'position'));
     }
   }
 };
@@ -180,7 +191,7 @@ renderer.domElement.onwheel = e => {
 
   const delta = focus.clone().sub(new_focus);
   camera.position.add(delta);
-  upd(ctx, 'scene', 'camera', 'position', map_new(ruf(camera.position)));
+  upd(ctx, 'scene', 'camera', 'position', bl_vec_from_3js(camera, 'position'));
 
   e.preventDefault();
 };
@@ -245,25 +256,6 @@ function map_set_rel(o, ...args) {
 }
 map_iter = (o, f) => Object.entries(o.entries).forEach(([k,v],i) => f(k,v,i));
 map_num_entries = (o) => Object.keys(o.entries).length;
-/*function map_new(o) {
-  if (o === undefined) return {}; else return o;
-}
-function map_get(o, ...path) {
-  path.forEach(k => o = o[k]); return o;
-}
-function map_set(o, ...args) {
-  if (args.length === 1) { o[args[1]] = undefined; return; }
-  let k = args.shift(); const v = args.pop();
-  args.forEach(a => { o = o[k]; k = a; });
-  o[k] = v;
-}
-function map_set_rel(o, ...args) {
-  let k = args.shift(); const f = args.pop();
-  args.forEach(a => { o = o[k]; k = a; });
-  o[k] = f(o[k]);
-}
-map_iter = (o, f) => Object.entries(o).forEach(([k,v],i) => f(k,v,i));
-map_num_entries = (o) => Object.keys(o).length;*/
 
 ctx = {};
 
@@ -388,19 +380,21 @@ function update_relevant_proxy_objs(obj, key) {
   f(obj)(key, val);
 }
 
+square_geom = new e3.PlaneGeometry(1, 1);
+need_rerender = false;
+bases = {};
+
 sync_3js_children = (children) => (ch_name, child) => {
   const parent = children.isChildrenFor;
-  map_iter(child, sync_3js_proxy(child));
+  map_iter(child, sync_3js_proxy(child, parent));
   if (child._3js_proxy) {
     child._3js_proxy.name = ch_name; // set name in 3js
     parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
+    if (bases[ch_name] === undefined) bases[ch_name] = child; // SMELL unique names
   }
 }
 
-square_geom = new e3.PlaneGeometry(1, 1);
-need_rerender = false;
-
-sync_3js_proxy = (obj) => (key, val) => {
+sync_3js_proxy = (obj, parent) => (key, val) => {
   if (key === 'children') {
     val.isChildrenFor = obj;
     map_iter(val, sync_3js_children(val));
@@ -418,6 +412,19 @@ sync_3js_proxy = (obj) => (key, val) => {
     if (key === 'center') init_3js_rect(obj);
     val.isPositionFor = obj._3js_proxy;
     map_iter(val, sync_3js_pos(val));
+    let curr_basis = map_get(val, 'basis');
+    let targ_basis = parent? parent._3js_proxy.name : val.isPositionFor.parent.name;
+    if (curr_basis !== targ_basis) {
+      curr_basis = bases[curr_basis]; targ_basis = bases[targ_basis];
+      const v = val.isPositionFor.position;
+      if (obj._3js_proxy.isCamera) { // keep cameras at z=0 world
+        v.copy(vecInBasis(v, true, curr_basis._3js_proxy, scene));
+        v.z = 0;
+        if (targ_basis._3js_proxy !== scene)
+          v.copy(vecInBasis(v, true, scene, targ_basis._3js_proxy));
+      } else
+        v.copy(vecInBasis(v, true, curr_basis._3js_proxy, targ_basis._3js_proxy));
+    }
   }
   need_rerender = true;
 }
@@ -433,7 +440,7 @@ function init_3js_rect(obj) {
 
 sync_3js_pos = (obj) => (key, val) => {
   let k = { right: 'x', up: 'y', forward: 'z' }[key];
-  if (k === undefined) k = key;
+  if (k === undefined) return;
   obj.isPositionFor.position[k] = val;
   need_rerender = true;
 }
@@ -582,18 +589,25 @@ function load_state() {
     scene: {
       camera: {
         zoom: camera.zoom,
-        position: { ...ruf(camera.position) },
+        position: { basis: 'world', ...ruf(camera.position) },
+        children: {
+          ndc: {
+            children: {
+              screen: {},
+            }
+          }
+        },
       },
       shapes: {
-        position: { ...ruf(shapes.position) },
+        position: { basis: 'world', ...ruf(shapes.position) },
         children: {
           yellow_shape: {
             color: '0x999900', width: 2, height: 2,
-            center: { right: -1.75, up: 1.75, forward: -1 },
+            center: { basis: 'shapes', right: -1.75, up: 1.75, forward: -1 },
           },
           blue_shape: {
             color: '0x009999', width: 2, height: 2,
-            center: { right: 1.75, up: -3, forward: -1 },
+            center: { basis: 'shapes', right: 1.75, up: -3, forward: -1 },
           },
         }
       }
@@ -632,9 +646,12 @@ function load_state() {
   map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'example_move_shape'));
   map_set(ctx, 'map', map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape', 'position'));
 
+  bases['world'] = { _3js_proxy: scene };
   map_get(ctx, 'scene', 'camera')._3js_proxy = camera;
   map_get(ctx, 'scene', 'shapes')._3js_proxy = shapes;
-  sync_3js_proxy({ _3js_proxy: scene })('children', map_get(ctx, 'scene'));
+  map_get(ctx, 'scene', 'camera', 'children', 'ndc')._3js_proxy = ndc;
+  map_get(ctx, 'scene', 'camera', 'children', 'ndc', 'children', 'screen')._3js_proxy = screen;
+  sync_3js_proxy(bases['world'])('children', map_get(ctx, 'scene'));
 
   const cond_instrs = map_get(ctx, 'instructions', 'example_conditional');
   const common_exit = map_new({ map: map_get(cond_instrs, 'finish') });
