@@ -295,13 +295,14 @@ function fetch() {
   JSONTree.highlight('jstNextInstruction', map_get(ctx, 'next_instruction', 'value'));
 }
 
-function single_step() {
+function single_step(nofetch=false) {
   const inst = map_get(ctx, 'next_instruction', 'value'); // i.e. Instruction Pointer
   // Cache values, before any modifications, for later
   const op       = map_get(inst, 'op');    // i.e. opcode
   const focus    = map_get(ctx, 'focus');  // i.e. accumulator / bottleneck / map key register
   const map      = map_get(ctx, 'map');    // i.e. "map to read to / write from" register
   const source   = map_get(ctx, 'source'); // i.e. register to copy to write destination
+  const basis    = map_get(ctx, 'basis');  // i.e. name of coords to convert to
   const dest_reg = map_get(inst, 'register');
 
   map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
@@ -329,21 +330,15 @@ function single_step() {
   } // js: execute arbitrary JS code :P TODO return changeset
   else if (op === 'js') {
     map_get(inst, 'func')(inst);
-  } // vsub: subtract vectors TODO smell
-  else if (op === 'vsub') {
-    const vf = map_get(ctx, 'vec_from'), vt = map_get(ctx, 'vec_to');
-    const bf = map_get(vf, 'basis'), bt = map_get(vt, 'basis');
-    if (bf !== bt)
-      throw `TODO: convert one of ${bf}, ${bt} to match`;
-    map_set(ctx, 'focus', map_new());
-    map_iter(vf, (k,x) => { map_set(ctx, 'focus', k, map_get(vt, k) - x); });
-    map_set(ctx, 'focus', 'basis', map_get(vf, 'basis')); // TODO: pt -> vec
-  }
-  else if (op === 'in') {
-    if (map_get(inst, 'basis') !== 'world' || map_get(focus, 'basis') !== 'screen-pt')
-      throw "TODO: only screen->world supported";
-    const v = clientToWorld(new e3.Vector3(map_get(focus, 'right'), map_get(focus, 'down'), 0));
-    map_set(ctx, 'focus', map_new({ basis: 'world-vec', ...ruf(v) }));
+  } // in_basis: convert vector in .focus to the basis named in .basis
+  else if (op === 'in_basis') {
+    const curr_basis = map_get(focus, 'basis');
+    if (curr_basis !== basis) {
+      let v = xyz(focus.entries);
+      v = vecInBasis(v, !map_get(focus, 'is_vec'), bases[curr_basis]._3js_proxy, bases[basis]._3js_proxy);
+      map_set(focus, 'right', v.x); map_set(focus, 'up', v.y); map_set(focus, 'forward', v.z);
+      map_set(focus, 'basis', basis);
+    }
   } // no op field: assume nested instruction list
   else if (op === undefined) {
     const ref = map_get(ctx, 'next_instruction', 'ref');
@@ -352,7 +347,7 @@ function single_step() {
     map_set(ref, 'map', inst); map_set(ref, 'key', 1); // Dive in
   }
 
-  fetch(); // This goes here in case the instruction changed next_instruction
+  if (!nofetch) fetch(); // This goes here in case the instruction changed next_instruction
 
   let obj = ctx, key = 'focus'; // i.e. what changed?
   if (op === 'store')
@@ -446,9 +441,14 @@ sync_3js_pos = (obj) => (key, val) => {
 }
 
 function run_and_render(num_steps=1) {
+  let nofetch = false;
+  if (num_steps === 0) {
+    num_steps = 1; nofetch = true;
+  }
+
   const in_order = [];
   for (let i=0; i<num_steps; i++) {
-    const [id, key] = single_step()[0];
+    const [id, key] = single_step(nofetch)[0];
     in_order.push([deref(id), key]); // add it to the end
   }
 
