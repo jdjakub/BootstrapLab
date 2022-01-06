@@ -35,10 +35,10 @@ shapes.translateZ(-100);
 
 origin = new e3.Vector3();
 dir = new e3.Vector3(1,0,0);
-x_helper = new e3.ArrowHelper(dir, origin, 5/4, 0xff0000);
+x_helper = new e3.ArrowHelper(dir, origin, 1, 0xff0000);
 scene.add(x_helper);
 dir = new e3.Vector3(0,1,0);
-y_helper = new e3.ArrowHelper(dir, origin, 5/4, 0x00ff00);
+y_helper = new e3.ArrowHelper(dir, origin, 1, 0x00ff00);
 scene.add(y_helper);
 
 function leastCommonAncestor(_3obj1, _3obj2) {
@@ -190,6 +190,7 @@ renderer.domElement.onwheel = e => {
   new_focus.applyMatrix4(camera.matrixWorld);
 
   const delta = focus.clone().sub(new_focus);
+  delta.z = 0;
   camera.position.add(delta);
   upd(ctx, 'scene', 'camera', 'position', bl_vec_from_3js(camera, 'position'));
 
@@ -197,6 +198,7 @@ renderer.domElement.onwheel = e => {
 };
 
 function r() {
+  ThreeMeshUI.update();
   renderer.render(scene, camera);
   need_rerender = false;
 }
@@ -412,9 +414,9 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
     if (curr_basis !== targ_basis) {
       curr_basis = bases[curr_basis]; targ_basis = bases[targ_basis];
       const v = val.isPositionFor.position;
-      if (obj._3js_proxy.isCamera) { // keep cameras at z=0 world
+      if (obj._3js_proxy.isCamera) { // keep cameras at z=10 world
         v.copy(vecInBasis(v, true, curr_basis._3js_proxy, scene));
-        v.z = 0;
+        v.z = 10;
         if (targ_basis._3js_proxy !== scene)
           v.copy(vecInBasis(v, true, scene, targ_basis._3js_proxy));
       } else
@@ -684,3 +686,18 @@ function upd(o, ...args) {
 }
 
 load_state();
+
+// python3 -m cors-server
+block = new ThreeMeshUI.Block({
+  fontFamily: 'Roboto-msdf.json', fontTexture: 'Roboto-msdf.png',
+  width: 10, height: 10, fontSize: 1,
+});
+
+txt = new ThreeMeshUI.Text({
+  content: 'Hello, World! Lorem ipsum dolor sit amet, blah blah.'
+});
+
+scene.add(block);
+block.add(txt);
+camera.position.z = 10;
+r();
