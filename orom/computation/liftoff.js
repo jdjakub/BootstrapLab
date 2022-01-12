@@ -394,6 +394,7 @@ sync_3js_children = (children) => (ch_name, child) => {
 sync_3js_proxy = (obj, parent) => (key, val) => {
   if (key === 'children') {
     val.isChildrenFor = obj;
+    if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group();
     map_iter(val, sync_3js_children(val));
   } else if (key === 'color' && val !== undefined) {
     init_3js_rect(obj); obj._3js_rect.material.color.setHex(parseInt(val));
@@ -405,13 +406,14 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
     obj._3js_proxy.zoom = val;
     camera.updateProjectionMatrix();
     ndc.matrix.copy(camera.projectionMatrixInverse);
-  } else if (key === 'center' || key === 'position') {
+  } else if (key === 'center' || key === 'position' || key === 'top_left') {
     if (key === 'center') init_3js_rect(obj);
+    if (key === 'top_left') init_3js_text(obj);
     val.isPositionFor = obj._3js_proxy;
     map_iter(val, sync_3js_pos(val));
     let curr_basis = map_get(val, 'basis');
     let targ_basis = parent? parent._3js_proxy.name : val.isPositionFor.parent.name;
-    if (curr_basis !== targ_basis) {
+    if (curr_basis !== undefined && curr_basis !== targ_basis) {
       curr_basis = bases[curr_basis]; targ_basis = bases[targ_basis];
       const v = val.isPositionFor.position;
       if (obj._3js_proxy.isCamera) { // keep cameras at z=10 world
@@ -422,16 +424,34 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
       } else
         v.copy(vecInBasis(v, true, curr_basis._3js_proxy, targ_basis._3js_proxy));
     }
+  } else if (key === 'text') {
+    init_3js_text(obj); obj._3js_text.set({ content: val });
   }
   need_rerender = true;
 }
 
 function init_3js_rect(obj) {
-  if (obj._3js_proxy === undefined) {
-    obj._3js_proxy = new e3.Group();
+  if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group();
+  if (obj._3js_rect === undefined) {
     const mat = new e3.MeshBasicMaterial({ color: 0xff00ff, side: e3.DoubleSide });
     obj._3js_rect = new e3.Mesh(square_geom, mat);
     obj._3js_proxy.add(obj._3js_rect);
+  }
+}
+
+function init_3js_text(obj) {
+  if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group();
+  if (obj._3js_text === undefined) {
+    const width = 4, height = 1;
+    const block = new ThreeMeshUI.Block({
+      fontFamily: 'Roboto-msdf.json', fontTexture: 'Roboto-msdf.png',
+      width, height, fontSize: 0.2,  backgroundOpacity: 0, alignContent: 'left',
+      padding: 0, margin: 0
+    });
+    obj._3js_proxy.add(block);
+    obj._3js_text = new ThreeMeshUI.Text({content: map_get(obj, 'text')});
+    block.add(obj._3js_text);
+    block.position.set(width/2, -height/2, 0); // so .position = top-left
   }
 }
 
@@ -600,6 +620,7 @@ function load_state() {
           }
         },
       },
+      lisp_3js: {children: {}},
       shapes: {
         position: { basis: 'world', ...ruf(shapes.position) },
         children: {
@@ -612,7 +633,7 @@ function load_state() {
             center: { basis: 'shapes', right: 1.75, up: -3, forward: -1 },
           },
         }
-      }
+      },
     },
     weather: 'cold',
     conclusion: null,
@@ -664,7 +685,8 @@ function load_state() {
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
   //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
   JSONTree.toggle(map_get(ctx, 'instructions', 'example_store_obj'));
-  JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
+  //JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
+  JSONTree.toggle(map_get(ctx, 'scene', 'shapes'));
   JSONTree.toggle(map_get(ctx, 'instructions', 'example_move_shape'));
   JSONTree.toggle(cond_instrs);
   JSONTree.toggle(map_get(cond_instrs, 'branch1', 'warm'));
@@ -687,17 +709,30 @@ function upd(o, ...args) {
 
 load_state();
 
+function tree_to_3js(node) { // TODO: implement in BL-asm!
+  if (typeof node === 'object') {
+    const children = {};
+    let tot_nlines = 0;
+    map_iter(node, (key, val, i) => {
+      const [val_3js, nlines] = tree_to_3js(val);
+      tot_nlines++;
+      children[i+1] = {
+        top_left: {right: .2, up: -.3*tot_nlines}, text: key+':',
+        children: val_3js
+      };
+      tot_nlines += nlines;
+    });
+    return [children, tot_nlines];
+  } else
+    return [{1: { top_left: {right: .75}, text: node.toString() }}, 0];
+}
+upd(ctx, 'src_tree', map_get(ctx, 'lisp_stuff', /*'args_e', 'value', 'args_e', 'body_e', 1, 'proc_e', 'entries', '_', 'args_e', 2, 'args_e'*/));
+upd(ctx, 'scene', 'lisp_3js', 'children', maps_init(tree_to_3js(map_get(ctx, 'src_tree'))[0]));
+
+upd(ctx, 'scene', 'camera', 'position', map_new({basis: 'world', right: 1.01, up: -4.764}));
+upd(ctx, 'scene', 'camera', 'zoom', .2147);
+
 // python3 -m cors-server
-block = new ThreeMeshUI.Block({
-  fontFamily: 'Roboto-msdf.json', fontTexture: 'Roboto-msdf.png',
-  width: 10, height: 10, fontSize: 1,
-});
 
-txt = new ThreeMeshUI.Text({
-  content: 'Hello, World! Lorem ipsum dolor sit amet, blah blah.'
-});
-
-scene.add(block);
-block.add(txt);
 camera.position.z = 10;
 r();
