@@ -250,6 +250,7 @@ function map_set(o, ...args) {
   let k = args.shift(); const v = args.pop();
   args.forEach(a => { o = o.entries[k]; k = a; });
   o.entries[k] = v;
+  return v;
 }
 function map_set_rel(o, ...args) {
   let k = args.shift(); const f = args.pop();
@@ -425,7 +426,7 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
         v.copy(vecInBasis(v, true, curr_basis._3js_proxy, targ_basis._3js_proxy));
     }
   } else if (key === 'text') {
-    init_3js_text(obj); obj._3js_text.set({ content: val });
+    init_3js_text(obj); obj._3js_text.set({ content: val.toString() });
   }
   need_rerender = true;
 }
@@ -621,6 +622,7 @@ function load_state() {
         },
       },
       lisp_3js: {children: {}},
+      lisp_iter: {children: {}},
       shapes: {
         position: { basis: 'world', ...ruf(shapes.position) },
         children: {
@@ -705,11 +707,13 @@ function upd(o, ...args) {
   if (v !== undefined)
     JSONTree.highlight('jstExternalChange', o, k);
   if (need_rerender) r();
+  return v;
 }
 
 load_state();
 
-function tree_to_3js(node) { // TODO: implement in BL-asm!
+// Recursive JS version
+function tree_to_3js(node) { // TODO: layout
   if (typeof node === 'object') {
     const children = {};
     let tot_nlines = 0;
@@ -724,13 +728,73 @@ function tree_to_3js(node) { // TODO: implement in BL-asm!
     });
     return [children, tot_nlines];
   } else
-    return [{1: { top_left: {right: .75}, text: node.toString() }}, 0];
+    return [{1: { top_left: {right: .75}, text: node }}, 0];
 }
 upd(ctx, 'src_tree', map_get(ctx, 'lisp_stuff', /*'args_e', 'value', 'args_e', 'body_e', 1, 'proc_e', 'entries', '_', 'args_e', 2, 'args_e'*/));
-upd(ctx, 'scene', 'lisp_3js', 'children', maps_init(tree_to_3js(map_get(ctx, 'src_tree'))[0]));
+//upd(ctx, 'scene', 'lisp_3js', 'children', maps_init(tree_to_3js(map_get(ctx, 'src_tree'))[0]));
 
 upd(ctx, 'scene', 'camera', 'position', map_new({basis: 'world', right: 1.01, up: -4.764}));
 upd(ctx, 'scene', 'camera', 'zoom', .2147);
+
+// Iterative tree-state JS version. TODO: translate to BL-asm!
+stack = upd(ctx, 'stack', maps_init({
+  1: {src_key: 'lisp_iter', nlines: 1, dst_key: 1}
+}));
+upd(ctx, 'stack', 1, 'src_val', map_get(ctx, 'src_tree'));
+upd(ctx, 'stack', 1, 'dst_map', map_get(ctx, 'scene', 'lisp_iter', 'children'));
+JSONTree.toggle(upd(ctx, 'bullshit', maps_init(
+  {bullshit: {bullshit: {bullshit: 'bullshit'}}}
+)));
+JSONTree.toggle(stack);
+
+curr_i = 1;
+function conv_iter1() { //debugger;
+  frame = map_get(stack, curr_i);
+  key_r = map_get(frame, 'key_r');
+  if (key_r === undefined) { // Render key part if not already done so.
+    const voffs = curr_i > 1? map_get(stack, curr_i-1, 'nlines') * -.3 : 0;
+    key_r = upd(frame, 'key_r', maps_init({
+      text: map_get(frame, 'src_key')+':', top_left: {right: .2, up: voffs},
+      children: {}
+    }));
+     // emit keypart render
+    upd(map_get(frame, 'dst_map'), map_get(frame, 'dst_key'), key_r);
+  }
+  return conv_iter2;
+}
+
+function conv_iter2() { //debugger;
+  curr_val = map_get(frame, 'src_val');
+  if (typeof curr_val === 'object') {
+    const entries = Object.entries(curr_val.entries);
+    if (map_get(frame, 'entry_i') === undefined) upd(frame, 'entry_i', 0);
+    const entry_i = map_get(frame, 'entry_i');
+    if (entry_i < entries.length) {
+      const [k, v] = entries[entry_i];
+      const ch_frame = maps_init({ src_key: k, dst_key: entry_i+1, nlines: 1 });
+      map_set(ch_frame, 'src_val', v);
+      map_set(ch_frame, 'dst_map', map_get(key_r, 'children'));
+      upd(frame, 'entry_i', entry_i+1);
+      curr_i++; JSONTree.toggle(upd(stack, curr_i, ch_frame)); // push
+      return conv_iter1;
+    }
+  } else {
+    upd(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: curr_val }));
+  }
+  return conv_iter3;
+}
+
+function conv_iter3() { //debugger;
+  upd(stack, curr_i, undefined); curr_i--; // pop
+  if (curr_i > 0) {
+    const parent_frame = map_get(stack, curr_i);
+    upd(parent_frame, 'nlines', map_get(parent_frame, 'nlines')+map_get(frame, 'nlines'));
+    return conv_iter1;
+  }
+}
+
+f = conv_iter1;
+while (f) f=f();
 
 // python3 -m cors-server
 
