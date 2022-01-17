@@ -298,6 +298,15 @@ function fetch() {
   JSONTree.highlight('jstNextInstruction', map_get(ctx, 'next_instruction', 'value'));
 }
 
+function clone(o) {
+  if (typeof o === 'object') { // deep copy, intended for tree literals
+    const o2 = {};
+    Object.entries(o).forEach(([k, v]) => { o2[k] = clone(v); });
+    return o2;
+  } // CAUTION: won't work for Functions, DOM nodes etc.
+  return o;
+}
+
 function single_step(nofetch=false) {
   const inst = map_get(ctx, 'next_instruction', 'value'); // i.e. Instruction Pointer
   // Cache values, before any modifications, for later
@@ -314,7 +323,7 @@ function single_step(nofetch=false) {
     // load: copy value to .focus register
   if      (op === 'load') {
     const value = map_get(inst, 'value');
-    map_set(ctx, 'focus', typeof value === 'object' ? { ...value } : value);
+    map_set(ctx, 'focus', clone(value));
     // store: copy value in .focus to the given reg (if included)
   } //        OR copy value in .source to .map[.focus] (if absent)
   else if (op === 'store') {
@@ -342,6 +351,15 @@ function single_step(nofetch=false) {
       map_set(focus, 'right', v.x); map_set(focus, 'up', v.y); map_set(focus, 'forward', v.z);
       map_set(focus, 'basis', basis);
     }
+  }
+  else if (op === 'add') { // TODO: operand stack?
+    map_set(ctx, 'focus', focus + map_get(ctx, 'addend'));
+  }
+  else if (op === 'mul') {
+    map_set(ctx, 'focus', focus * map_get(ctx, 'factor'));
+  }
+  else if (op === 'sign') {
+    map_set(ctx, 'focus', Math.sign(focus));
   } // no op field: assume nested instruction list
   else if (op === undefined) {
     const ref = map_get(ctx, 'next_instruction', 'ref');
@@ -504,23 +522,28 @@ function run_and_render(num_steps=1) {
   if (need_rerender) r();
 }
 
-function typed(str) {
+function typed(str, objs) {
   if (str === '{}') return {};
+  if (str[0] === '$') return objs[+str.substring(1)]; // $N = insert obj[N]
   const n = +str;
   if (isNaN(n)) return str;
   else return n;
 }
 
-function assemble_code(blocks, obj={}, start_i=1) {
+function assemble_code(blocks, ...args) {
+  const obj = {};
+  let start_i = 1;
   let instructions = blocks.map(block => typeof block !== 'string' ? block :
     block.replaceAll('\n', '').split(';').map(s => {
       s = s.trim().split(' ');
       s[0] = s[0].toLowerCase();
-           if (s[0] === 'l') return { op: 'load', value: typed(s[1]) };
+           if (s[0] === 'l') return { op: 'load', value: typed(s[1], args) };
       else if (s[0] === 's') return { op: 'store', register: s[1] };
       else if (s[0] === 'd') return { op: 'deref' };
-      else if (s[0] === 'r') return { op: 'ref' };
       else if (s[0] === 'i') return { op: 'index' };
+      else if (s[0] === '+') return { op: 'add' };
+      else if (s[0] === '*') return { op: 'mul' };
+      else return { op: s[0] };
       return;
     })
   );
@@ -600,6 +623,29 @@ function load_state() {
         },
         finish: assemble_code(['l true; s finished']),
       },
+      example_render: {
+        start: assemble_code([
+          'l stack; d; s map; l stack_top; d; i; l map; d; s frame;' + // frame := stack[stack_top]
+          'l {}; s continue_to;' +
+          'l instructions; d; s map; l example_render; i; l branch1; i;' +
+          'l -1; s addend; l stack_top; d; +; s tmp; sign; i;' +
+          'l map; d; s source; l continue_to; d; s map; l map; s' // goto branch[sgn(stack_top-1)]
+        ]),
+        branch1: {
+          0: assemble_code(['l 0; s voffs']),
+          1: assemble_code([
+            'l -.3; s factor; l stack; d; s map; l tmp; d; i; l nlines; i;' +
+            'l map; d; *; s voffs' // voffs := stack[stack_top-1].nlines * -.3
+          ]),
+        },
+        render: assemble_code([
+          'l $0; s tmp; s map; l top_left; i; l voffs; d; s source; l up; s;' + // ...top_left.up := voffs
+          'l :; s addend; l frame; d; s map; l src_key; i; l map; d; +; s source;' +
+          'l tmp; d; s map; l text; s;' + // key_r.text := frame.src_key+':'
+          'l tmp; d; s source; l frame; d; s map; l key_r; s;' + // frame.key_r := key_r
+          'l dst_key; i; s tmp; l frame; d; s map; l dst_map; i; l tmp; d; s' // frame.dst_map[frame.dst_key] := key_r
+        ], { top_left: {right: .2}, children: {} }),
+      }
     },
     dragging_in_system: false,
     pointer: {
@@ -668,8 +714,8 @@ function load_state() {
     },
   });
   const instrs = map_get(ctx, 'instructions');
-  map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'example_move_shape'));
-  map_set(ctx, 'map', map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape', 'position'));
+  map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'example_render', 'start'));
+  //map_set(ctx, 'map', map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape', 'position'));
 
   bases['world'] = { _3js_proxy: scene };
   map_get(ctx, 'scene', 'camera')._3js_proxy = camera;
@@ -679,10 +725,16 @@ function load_state() {
   sync_3js_proxy(bases['world'])('children', map_get(ctx, 'scene'));
 
   const cond_instrs = map_get(ctx, 'instructions', 'example_conditional');
-  const common_exit = map_new({ map: map_get(cond_instrs, 'finish') });
+  let common_exit = map_new({ map: map_get(cond_instrs, 'finish') });
   map_set(cond_instrs, 'branch1', 'warm', 'continue_to', common_exit);
   map_set(cond_instrs, 'branch1', 'cold', 'continue_to', common_exit);
   map_set(cond_instrs, 'branch1', '_', 'continue_to', common_exit);
+  
+  const rnd_instrs = map_get(ctx, 'instructions', 'example_render');
+  common_exit = map_new({ map: map_get(rnd_instrs, 'render') });
+  map_set(rnd_instrs, 'branch1', 0, 'continue_to', common_exit);
+  map_set(rnd_instrs, 'branch1', 1, 'continue_to', common_exit);
+  map_set(rnd_instrs, 'branch1', -1, map_get(rnd_instrs, 'branch1', 0));
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
   //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
@@ -742,12 +794,12 @@ stack = upd(ctx, 'stack', maps_init({
 }));
 upd(ctx, 'stack', 1, 'src_val', map_get(ctx, 'src_tree'));
 upd(ctx, 'stack', 1, 'dst_map', map_get(ctx, 'scene', 'lisp_iter', 'children'));
-JSONTree.toggle(upd(ctx, 'bullshit', maps_init(
-  {bullshit: {bullshit: {bullshit: 'bullshit'}}}
+JSONTree.toggle(upd(ctx, 'padding', maps_init(
+  {padding: {padding: {padding: 'padding'}}}
 )));
 JSONTree.toggle(stack);
 
-curr_i = 1;
+curr_i = upd(ctx, 'stack_top', 1);
 function conv_iter1() { //debugger;
   frame = map_get(stack, curr_i);
   key_r = map_get(frame, 'key_r');
@@ -762,6 +814,21 @@ function conv_iter1() { //debugger;
   }
   return conv_iter2;
 }
+/*
+frame := stack[stack_top]  ;  l stack; d; s map; l stack_top; d; i; l map; d; s frame
+key_r := frame.key_r      ;  l key_r; i; l map; d; s key_r
+l conds; d; s map; l -1; s addend; l stack_top; d; +; s tmp; sign; i;
+s source; l {}; store continue_to; l continue_to; d; s map; l map; s;
+conds[-1] = conds[0] = l 0; s voffs
+conds[1] = l -.3; s factor; l stack; d; s map; l tmp; d; i; l nlines; i;
+           l map; d; *; s voffs
+l { top_left: {right: .2}, children: {} }; s tmp; s map;
+l top_left; i; l voffs; d; s source; l up; s;
+l ':'; s addend; l frame; d; s map; l src_key; i; l map; d; +; s source;
+l tmp; d; s map; l text; s
+frame.key_r := key_r
+frame.dst_map[frame.dst_key] := key_r
+*/
 
 function conv_iter2() { //debugger;
   curr_val = map_get(frame, 'src_val');
@@ -794,7 +861,7 @@ function conv_iter3() { //debugger;
 }
 
 f = conv_iter1;
-while (f) f=f();
+//while (f) f=f();
 
 // python3 -m cors-server
 
