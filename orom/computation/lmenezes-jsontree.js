@@ -93,11 +93,17 @@ JSONTree = { // eslint-disable-line no-unused-vars
   });},
 
   highlight: function(cssClass, obj, key) {
+    if (obj === undefined) return;
     let jstPropsOrLists = JSONTree.locate(obj, key);
+    let obj_deleted = false;
     if (key === undefined) // Highlight the entire jstItem containing the jstList
       jstPropsOrLists = jstPropsOrLists.map(([jstList,_]) => jstList.parentElement);
     else // Highlight the key name in the jstItem
-      jstPropsOrLists = jstPropsOrLists.map(([_,jstItem]) => jstItem.querySelector('.jstProperty'));
+      jstPropsOrLists = jstPropsOrLists.map(([_,jstItem]) => {
+        if (jstItem !== null) return jstItem.querySelector('.jstProperty');
+        obj_deleted = true; return null;
+      });
+    if (obj_deleted) return;
 
     // Turn the old one off
     let lastChanged = JSONTree.last_highlighted.get(cssClass);
@@ -135,14 +141,10 @@ JSONTree = { // eslint-disable-line no-unused-vars
   _jsVal: function(value) {
     const type = typeof value;
     switch (type) {
-      case 'boolean':
-        return JSONTree._jsBool(value);
-      case 'number':
-        return JSONTree._jsNum(value);
-      case 'string':
-        return JSONTree._jsStr(value);
-      case 'function':
-        return JSONTree._jsFunc(value);
+      case 'boolean': return JSONTree._jsBool(value);
+      case 'number': return JSONTree._jsNum(value);
+      case 'string': return JSONTree._jsStr(value);
+      case 'function': return JSONTree._jsFunc(value);
       default:
         if (value === null) {
           return JSONTree._jsNull();

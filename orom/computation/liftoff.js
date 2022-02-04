@@ -316,6 +316,7 @@ function single_step(nofetch=false) {
   const source   = map_get(ctx, 'source'); // i.e. register to copy to write destination
   const basis    = map_get(ctx, 'basis');  // i.e. name of coords to convert to
   const dest_reg = map_get(inst, 'register');
+  const do_break = map_get(inst, 'break'); // whether to pause execution after
 
   map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
 
@@ -342,6 +343,10 @@ function single_step(nofetch=false) {
   } // js: execute arbitrary JS code :P TODO return changeset
   else if (op === 'js') {
     map_get(inst, 'func')(inst);
+  } // order: access the order map for a map, i.e. its keys in order
+  else if (op === 'order') {
+    const o = {}; Object.keys(focus.entries).forEach((k, i) => { o[i+1] = k; });
+    map_set(ctx, 'focus', map_new(o));
   } // in_basis: convert vector in .focus to the basis named in .basis
   else if (op === 'in_basis') {
     const curr_basis = map_get(focus, 'basis');
@@ -360,6 +365,9 @@ function single_step(nofetch=false) {
   }
   else if (op === 'sign') {
     map_set(ctx, 'focus', Math.sign(focus));
+  }
+  else if (op === 'typeof') {
+    map_set(ctx, 'focus', typeof focus);
   } // no op field: assume nested instruction list
   else if (op === undefined) {
     const ref = map_get(ctx, 'next_instruction', 'ref');
@@ -381,9 +389,9 @@ function single_step(nofetch=false) {
   update_relevant_proxy_objs(obj, key);
 
   // Return changeset
-  return [
+  return [do_break, [
     [obj, key], [map_get(ctx, 'next_instruction', 'ref'), 'key'], [map_get(ctx, 'next_instruction'), 'value']
-  ].map(([o, k]) => [ref(o).id, k]);
+  ].map(([o, k]) => [ref(o).id, k])];
 }
 
 function update_relevant_proxy_objs(obj, key) {
@@ -489,8 +497,9 @@ function run_and_render(num_steps=1) {
 
   const in_order = [];
   for (let i=0; i<num_steps; i++) {
-    const [id, key] = single_step(nofetch)[0];
+    const [do_break, [[id, key], _]] = single_step(nofetch);
     in_order.push([deref(id), key]); // add it to the end
+    if (do_break) break;
   }
 
   const changes = new Map();
@@ -512,6 +521,7 @@ function run_and_render(num_steps=1) {
     JSONTree.update(...last_change);
   });
   // Highlight the most recent change in the tree
+  if (window.debuggit) debugger;
   JSONTree.highlight('jstLastChange', ...last_change);
 
   // We know these will have changed
@@ -627,24 +637,81 @@ function load_state() {
         start: assemble_code([
           'l stack; d; s map; l stack_top; d; i; l map; d; s frame;' + // frame := stack[stack_top]
           'l {}; s continue_to;' +
-          'l instructions; d; s map; l example_render; i; l branch1; i;' +
+          'l instructions; d; s map; l example_render; i; l does_parent_frame_exist; i;' +
           'l -1; s addend; l stack_top; d; +; s tmp; sign; i;' +
           'l map; d; s source; l continue_to; d; s map; l map; s' // goto branch[sgn(stack_top-1)]
         ]),
-        branch1: {
+        does_parent_frame_exist: {
           0: assemble_code(['l 0; s voffs']),
           1: assemble_code([
             'l -.3; s factor; l stack; d; s map; l tmp; d; i; l nlines; i;' +
             'l map; d; *; s voffs' // voffs := stack[stack_top-1].nlines * -.3
           ]),
         },
-        render: assemble_code([
-          'l $0; s tmp; s map; l top_left; i; l voffs; d; s source; l up; s;' + // ...top_left.up := voffs
+        render_key: assemble_code([
+          'l $0; s key_r; s map; l top_left; i; l voffs; d; s source; l up; s;' + // ...top_left.up := voffs
           'l :; s addend; l frame; d; s map; l src_key; i; l map; d; +; s source;' +
-          'l tmp; d; s map; l text; s;' + // key_r.text := frame.src_key+':'
-          'l tmp; d; s source; l frame; d; s map; l key_r; s;' + // frame.key_r := key_r
-          'l dst_key; i; s tmp; l frame; d; s map; l dst_map; i; l tmp; d; s' // frame.dst_map[frame.dst_key] := key_r
+          'l key_r; d; s map; l text; s;' + // key_r.text := frame.src_key+':'
+          'l key_r; d; s source; l frame; d; s map; l key_r; s;' + // frame.key_r := key_r
+          'l dst_key; i; l map; d; s tmp; l frame; d; s map; l dst_map; i; l tmp; d; s' // frame.dst_map[frame.dst_key] := key_r
         ], { top_left: {right: .2}, children: {} }),
+        render_value: assemble_code([
+          'l frame; d; s map; l src_val; i; l map; d; s curr_val;' +
+          'l instructions; d; s map; l example_render; i;' +
+          'l typeof_curr_val; i; l curr_val; d; typeof; i;' + // goto branch[typeof(curr_val)]
+          'l map; d; s source; l {}; s continue_to; s map; l map; s'
+        ]),
+        typeof_curr_val: {
+          object: assemble_code([ // access curr child key
+            'l frame; d; s map; l entry_i; i; l map; d; s entry_i;' +
+            'l curr_val; d; order; s curr_keys; s map; l entry_i; d; i; l map; d; s src_key; ' +
+            'l instructions; d; s map; l example_render; i; l any_keys_left; i; ' +
+            'l src_key; d; typeof; i; ' + // goto branch[typeof(src_key)]
+            'l map; d; s source; l {}; s continue_to; s map; l map; s'
+          ]),
+          _: assemble_code([ // render primitive val
+            'l $0; s map; l curr_val; d; s source; l text; s;' +
+            'l map; d; s source; l key_r; d; s map; l children; i; l 1; s'
+          ], { top_left: {right: .75} }),
+        },
+        any_keys_left: {
+          undefined: {1: {op: 'load', value: 'no-op'}}, // No-op necessary :(
+          _: assemble_code([
+            'l curr_val; d; s map; l src_key; d; i; l map; d; s src_val;' + // src_val := curr_val[src_key]
+            's source; l $0; s ch_frame; s map; l src_val; s;' + // ch_frame = { nlines: 1, entry_i: 1, src_val }
+            'l src_key; d; s source; l src_key; s;' + // ch_frame.src_key := src_key
+            'l entry_i; d; s source; l dst_key; s;' + // ch_frame.dst_key := entry_i
+            'l key_r; d; s map; l children; i; l map; d;' + // ch_frame.dst_map := key_r.children
+            's source; l ch_frame; d; s map; l dst_map; s; l 1; s addend; l entry_i; d; +;' + 
+            's source; l frame; d; s map; l entry_i; s;' + // frame.entry_i++
+            'l instructions; d; s map; l example_render; i; l typeof_curr_val; i;' +
+            'l object; i; l map; d; s source; l {}; s return; s map; l map; s;' +
+            'l return; d; s source; l frame; d; s map; l return; s;' + // frame.return = typeof_cv.object
+            'l ch_frame; d; s source; l stack; d; s map;' +
+            'l 1; s addend; l stack_top; d; +; s stack_top; s;' + // push ch_frame
+            'l instructions; d; s map; l example_render; i; l start; i;' +
+            'l map; d; s source; l {}; s continue_to; s map; l map; s', // goto start
+          ], { nlines: 1, entry_i: 1 })
+        },
+        pop_frame: assemble_code([
+          'l stack; d; s map; l $0; s source; l stack_top; d; s;' + // pop
+          's addend; l -1; +; s stack_top;' +
+          'l instructions; d; s map; l example_render; i; l num_frames; i;' +
+          'l stack_top; d; sign; i; l map; d; s source;' +
+          'l {}; s continue_to; s map; l map; s' // goto num_frames[sign(stack_top)]
+        ], undefined),
+        num_frames: {
+          [-1]: {}, 0: {},
+          1: assemble_code([
+            'l stack; d; s map; l stack_top; d; i; l map; d; s parent_frame;' +
+            'l nlines; i; l map; d; s addend; l frame; d; s map; l nlines; i; l map; d; +; s source;' +
+            'l parent_frame; d; s map; l nlines; s;' + // parent_frame.nlines += frame.nlines
+            'l key_r; i; l map; d; s key_r;' + // restore key_r local
+            'l parent_frame; d; s map; l src_val; i; l map; d; s curr_val;' + // restore curr_val local
+            'l parent_frame; d; s frame;' + // restore frame local
+            's map; l return; i; l map; d; s continue_to' // jump return address
+          ]),
+        }
       }
     },
     dragging_in_system: false,
@@ -694,6 +761,7 @@ function load_state() {
             pattern_e: { 1: 'n' },
             body_e: {
               1: {
+                args_e: { 1: 'n' },
                 type: 'apply',  proc_e: {
                   type: 'dict',  entries: {
                     0: 1,  _: {
@@ -705,7 +773,7 @@ function load_state() {
                     }
                   }
                 },
-                args_e: { 1: 'n' }
+                //args_e: { 1: 'n' }
               }
             }
           }
@@ -731,13 +799,20 @@ function load_state() {
   map_set(cond_instrs, 'branch1', '_', 'continue_to', common_exit);
   
   const rnd_instrs = map_get(ctx, 'instructions', 'example_render');
-  common_exit = map_new({ map: map_get(rnd_instrs, 'render') });
-  map_set(rnd_instrs, 'branch1', 0, 'continue_to', common_exit);
-  map_set(rnd_instrs, 'branch1', 1, 'continue_to', common_exit);
-  map_set(rnd_instrs, 'branch1', -1, map_get(rnd_instrs, 'branch1', 0));
+  common_exit = map_new({ map: map_get(rnd_instrs, 'render_key') });
+  map_set(rnd_instrs, 'does_parent_frame_exist', 0, 'continue_to', common_exit);
+  map_set(rnd_instrs, 'does_parent_frame_exist', 1, 'continue_to', common_exit);
+  map_set(rnd_instrs, 'does_parent_frame_exist', -1, map_get(rnd_instrs, 'does_parent_frame_exist', 0));
+
+  common_exit = map_new({ map: map_get(rnd_instrs, 'render_value') });
+  map_set(rnd_instrs, 'render_key', 'continue_to', common_exit);
+  
+  common_exit = map_new({ map: map_get(rnd_instrs, 'pop_frame') });
+  map_set(rnd_instrs, 'typeof_curr_val', '_', 'continue_to', common_exit);
+  map_set(rnd_instrs, 'any_keys_left', 'undefined', 'continue_to', common_exit);
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
+  JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
   JSONTree.toggle(map_get(ctx, 'instructions', 'example_store_obj'));
   //JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
   JSONTree.toggle(map_get(ctx, 'scene', 'shapes'));
@@ -782,7 +857,7 @@ function tree_to_3js(node) { // TODO: layout
   } else
     return [{1: { top_left: {right: .75}, text: node }}, 0];
 }
-upd(ctx, 'src_tree', map_get(ctx, 'lisp_stuff', /*'args_e', 'value', 'args_e', 'body_e', 1, 'proc_e', 'entries', '_', 'args_e', 2, 'args_e'*/));
+upd(ctx, 'src_tree', map_get(ctx, 'lisp_stuff', 'args_e', 'value', 'args_e', /*'body_e', 1, 'proc_e', 'entries', '_', 'args_e', 2, 'args_e'*/));
 //upd(ctx, 'scene', 'lisp_3js', 'children', maps_init(tree_to_3js(map_get(ctx, 'src_tree'))[0]));
 
 upd(ctx, 'scene', 'camera', 'position', map_new({basis: 'world', right: 1.01, up: -4.764}));
@@ -792,11 +867,9 @@ upd(ctx, 'scene', 'camera', 'zoom', .2147);
 stack = upd(ctx, 'stack', maps_init({
   1: {src_key: 'lisp_iter', nlines: 1, dst_key: 1}
 }));
+upd(ctx, 'stack', 1, 'entry_i', 1);
 upd(ctx, 'stack', 1, 'src_val', map_get(ctx, 'src_tree'));
 upd(ctx, 'stack', 1, 'dst_map', map_get(ctx, 'scene', 'lisp_iter', 'children'));
-JSONTree.toggle(upd(ctx, 'padding', maps_init(
-  {padding: {padding: {padding: 'padding'}}}
-)));
 JSONTree.toggle(stack);
 
 curr_i = upd(ctx, 'stack_top', 1);
@@ -834,12 +907,11 @@ function conv_iter2() { //debugger;
   curr_val = map_get(frame, 'src_val');
   if (typeof curr_val === 'object') {
     const entries = Object.entries(curr_val.entries);
-    if (map_get(frame, 'entry_i') === undefined) upd(frame, 'entry_i', 0);
-    const entry_i = map_get(frame, 'entry_i');
-    if (entry_i < entries.length) {
-      const [k, v] = entries[entry_i];
-      const ch_frame = maps_init({ src_key: k, dst_key: entry_i+1, nlines: 1 });
-      map_set(ch_frame, 'src_val', v);
+    const entry_i = map_get(frame, 'entry_i'); // 1-based
+    if (entry_i <= entries.length) {
+      const [src_key, src_val] = entries[entry_i-1];
+      const ch_frame = maps_init({ src_key, dst_key: entry_i, nlines: 1, entry_i: 1 });
+      map_set(ch_frame, 'src_val', src_val);
       map_set(ch_frame, 'dst_map', map_get(key_r, 'children'));
       upd(frame, 'entry_i', entry_i+1);
       curr_i++; JSONTree.toggle(upd(stack, curr_i, ch_frame)); // push
@@ -850,6 +922,28 @@ function conv_iter2() { //debugger;
   }
   return conv_iter3;
 }
+/*
+l frame; d; s map; l src_val; i; l map; d; s curr_val;
+l instructions; d; s map; l example_rnd; i; l typeof_curr_val; i; l curr_val; d; typeof; i;
+l map; d; s source; l {}; s continue_to; l continue_to; d; s map; l map; s
+typeof_curr_val._ =
+  l { top_left: {right: .75} }; s map; l curr_val; d; s source; l text; s;
+  l map; d; s source; l key_r; d; s map; l children; i; l 1; s
+typeof_curr_val.object =
+  TODO: check for entry_i undefined - undefined can be JS key but JSONTree no like.
+  l frame; d; s map; l entry_i; i; l map; d; s entry_i; 
+  TODO: somehow obtain key in focus
+  l curr_val; d; order; s curr_keys; s map; l entry_i; d; i; l map; d; s src_key;
+  // if focus defined
+  l curr_val; d; s map; l key; d; i; l map; d; s src_val;
+  s source; l { nlines: 1, entry_i: 1 }; s ch_frame; s map; l src_val; s;
+  l src_key; d; s source; l src_key; s;
+  l entry_i; d; s source; l dst_key; s;
+  l key_r; d; s map; l children; i; l map; d; s source; l ch_frame; d; s map; l dst_map; s
+  l 1; s addend; l entry_i; d; +; s source; l frame; d; s map; l entry_i; s;
+  l ch_frame; d; s source; l stack; d; s map;
+  l 1; s addend; l stack_top; d; +; s stack_top; s
+*/
 
 function conv_iter3() { //debugger;
   upd(stack, curr_i, undefined); curr_i--; // pop
@@ -859,6 +953,20 @@ function conv_iter3() { //debugger;
     return conv_iter1;
   }
 }
+/*
+l stack; d; s map; l undefined; s source; l stack_top; d; s;
+s addend; l -1; +; s stack_top;
+l instructions; d; s map; ... l num_frames; i; l stack_top; d; sign; i;
+l map; d; s source; goto
+num_frames[-1] = [0] = goto start
+num_frames[+1] =
+l stack; d; s map; l stack_top; d; i; l map; d; s parent_frame;
+l nlines; i; l map; d; s addend; l frame; d; s map; l nlines; i; l map; d; +; s source;
+l parent_frame; d; s map; l nlines; s;
+l key_r; i; l map; d; s key_r;
+l parent_frame; d; s map; l src_val; i; l map; d; s curr_val;
+l parent_frame; d; s frame; s map; l return; i; l map; d; s continue_to;
+*/
 
 f = conv_iter1;
 //while (f) f=f();
