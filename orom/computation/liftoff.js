@@ -317,6 +317,7 @@ function single_step(nofetch=false) {
   const basis    = map_get(ctx, 'basis');  // i.e. name of coords to convert to
   const dest_reg = map_get(inst, 'register');
   const do_break = map_get(inst, 'break'); // whether to pause execution after
+  let continue_nested = false; // whether current 'instruction' contains instructions
 
   map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
 
@@ -368,11 +369,71 @@ function single_step(nofetch=false) {
   }
   else if (op === 'typeof') {
     map_set(ctx, 'focus', typeof focus);
+  } // macro: copy reg|path := reg|path
+  else if (op === 'copy') {
+    // expand copy A.B.C := X.Y.Z -->
+    // l X; d; s map; l Y; i; l Z; i; l map; d; s source;
+    // l A; d; s map; l B; i; l C; s
+    /*
+    a.[b.[[[c]].typeof d].e].f
+    1: a                       l a; d; s map
+    2: deref:                  
+       1: b                    s tmp1; l b; d; s map
+       2: deref:
+          1: deref: deref: c   s tmp2; l c; d; d; s map
+          2: typeof: d         l d; typeof; i
+                               l map; d; d; s tmp; l tmp2; d; s map; l tmp; d; i
+       3: e                    l e; i
+                               l map; d; d; s tmp; l tmp1; d; s map; l tmp; d; i
+    3: f                       l f; i
+    */
+    if (map_get(inst, 1) === undefined) { // assume already generated otherwise
+      let from = map_get(inst, 'from'), to = map_get(inst, 'to');
+      let instrs = [];
+      const emit = (...ins) => { instrs.push(...ins); };
+      // Step 1: put source in .focus
+      if (typeof from === 'string') emit({op: 'load', value: from}, {op: 'deref'});
+      else {
+        map_iter(from, (k,v,i) => {
+          if (i === 0) emit(
+            {op: 'load', value: v}, {op: 'deref'}, {op: 'store', register: 'map'}
+          );
+          else emit({op: 'load', value: v}, {op: 'index'});
+        });
+        emit({op: 'load', value: 'map'}, {op: 'deref'});
+      }
+      // Step 2: write to dest
+      if (typeof to === 'string') emit({op: 'store', register: to}); // SMELL: ditto
+      else {
+        let prev = undefined;
+        map_iter(to, (k,v,i) => {
+          if (i === 0) emit(
+            {op: 'load', value: v}, {op: 'deref'}, {op: 'store', register: 'map'}
+          );
+          else {
+            if (prev !== undefined) emit({op: 'load', value: prev}, {op: 'index'});
+            prev = v;
+          }
+        });
+        emit({op: 'load', value: prev}, {op: 'store'});
+      }
+      
+      const new_instrs = map_new();
+      instrs.forEach((ins,j) => {
+        map_set(new_instrs, j+1, map_new(instrs[j]));
+      });
+      map_set(inst, 1, new_instrs); // Shove them under the 1 key...
+    }
+    continue_nested = true;
   } // no op field: assume nested instruction list
   else if (op === undefined) {
+    continue_nested = true;
+  }
+  
+  if (continue_nested) {
     const ref = map_get(ctx, 'next_instruction', 'ref');
     const prev_return_pt = map_get(ctx, 'return_to');
-    map_set(ctx, 'return_to', map_new({ ...ref, next: prev_return_pt })); // Push current execution point
+    map_set(ctx, 'return_to', map_new({ ...ref.entries, next: prev_return_pt })); // Push current execution point
     map_set(ref, 'map', inst); map_set(ref, 'key', 1); // Dive in
   }
 
@@ -383,7 +444,8 @@ function single_step(nofetch=false) {
     if (dest_reg === undefined) { obj = map; key = focus; }
     else key = dest_reg;
   else if (op === 'index') key = 'map';
-  else if (op === undefined) key = 'return_to';
+  else if (op === 'copy') { obj = inst; key = 1; } // SMELL should be only once?
+  else if (continue_nested) key = 'return_to';
 
   // Check if the map being changed is a proxy for some 3JS thing
   update_relevant_proxy_objs(obj, key);
@@ -576,7 +638,11 @@ function load_state() {
       example_store_obj: {
         // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
         // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
-        1: {
+        1: {op: 'copy',
+            from: {1: 'lisp_stuff', 2: 'args_e', 3: 'name'},
+            to: {1: 'lisp_stuff', 2: 'args_e', 3: 'value', 4: 'args_e',
+                 5: 'body_e', 6: 1, 7: 'type'}},
+        /*1: {
           1: {op:"load",value:"lisp_stuff"},
           2: {op:"deref"},
           3: {op:"store",register:"map"},
@@ -598,7 +664,7 @@ function load_state() {
           2:{op:"store",register:"source"},
           3:{op:"load",value:"type"},
           4:{op:"store"}
-        }
+        }*/
       },
       /* last_delta = pointer.(released_at - pressed_at)
        * camera.position.sub(last_delta in world with z=0)
