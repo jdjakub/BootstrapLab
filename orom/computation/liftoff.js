@@ -929,7 +929,7 @@ upd(ctx, 'src_tree', map_get(ctx, 'lisp_stuff', 'args_e', 'value', 'args_e', /*'
 upd(ctx, 'scene', 'camera', 'position', map_new({basis: 'world', right: 1.01, up: -4.764}));
 upd(ctx, 'scene', 'camera', 'zoom', .2147);
 
-// Iterative tree-state JS version. TODO: translate to BL-asm!
+// Iterative tree-state JS version.
 stack = upd(ctx, 'stack', maps_init({
   1: {src_key: 'lisp_iter', nlines: 1, dst_key: 1}
 }));
@@ -996,9 +996,9 @@ typeof_curr_val._ =
   l { top_left: {right: .75} }; s map; l curr_val; d; s source; l text; s;
   l map; d; s source; l key_r; d; s map; l children; i; l 1; s
 typeof_curr_val.object =
-  TODO: check for entry_i undefined - undefined can be JS key but JSONTree no like.
+  check for entry_i undefined - undefined can be JS key but JSONTree no like.
   l frame; d; s map; l entry_i; i; l map; d; s entry_i; 
-  TODO: somehow obtain key in focus
+  somehow obtain key in focus
   l curr_val; d; order; s curr_keys; s map; l entry_i; d; i; l map; d; s src_key;
   // if focus defined
   l curr_val; d; s map; l key; d; i; l map; d; s src_val;
@@ -1036,6 +1036,49 @@ l parent_frame; d; s frame; s map; l return; i; l map; d; s continue_to;
 
 f = conv_iter1;
 //while (f) f=f();
+
+function export_state(root, pretty=false) {
+  const visited = new Map(); // node -> id
+  const reffed = new Set();
+  let next_id = 1;
+  const visit = (node) => {
+    const this_id = next_id; next_id++;
+    visited.set(node, this_id); return this_id;
+  };
+  const walk_from = val => {
+    switch (typeof val) {
+    case 'object':
+      if (val === null) return null;
+    case 'function':
+      const id = visited.get(val);
+      if (id) { reffed.add(id); return ['ref', id]; }
+      break;
+    default: return val;
+    }
+    const this_id = visit(val);
+    switch (typeof val) {
+    case 'object':
+      const tree = {};
+      map_iter(val, (k,v) => { tree[k] = walk_from(v); });
+      return [this_id, tree];
+    case 'function': return [this_id, v.toString()];
+    }
+  };
+  const clean_from = val => {
+    if (typeof val !== 'object' || val === null) return val;
+    if (val instanceof Array && typeof val[0] === 'number') {
+      if (!reffed.has(val[0])) {
+        if (typeof(val[1]) === 'string') return ['func', val[1]];
+        else return clean_from(val[1]);
+      } else return [val[0], clean_from(val[1])];
+    } else
+      Object.entries(val).forEach(([k,v]) => { val[k] = clean_from(v); });
+    return val;
+  };
+  let tree = walk_from(root);
+  tree = clean_from(tree);
+  return JSON.stringify(tree, ...(pretty? [null, 2] : []));
+}
 
 // python3 -m cors-server
 
