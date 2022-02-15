@@ -232,12 +232,20 @@ function ref(obj) {
 
 // In-universe, we call objs / dicts "maps"
 
-function maps_init(o) { // REWRITES o
+function maps_init(o, refs) { // REWRITES o; Traverse TREE (no cycles!)
+  if (o instanceof Array) {
+    if (typeof o[0] === 'number') { refs.set(o[0], o[1]); o = o[1]; }
+    else return o; // preserve refs for subsequent fixup pass
+  } else if (typeof o !== 'object' || o === null) return o;
   const map = { entries: o };
-  Object.entries(o).forEach(([k,v]) => { // Traverse TREE (no cycles!)
-    if (typeof v === 'object' && v !== null) o[k] = maps_init(v);
-  });
+  Object.entries(o).forEach(([k,v]) => { o[k] = maps_init(v, refs); });
   return map;
+}
+function maps_fixup(o, refs) {
+  if (o instanceof Array && o[0] === 'ref') return refs.get(o[1]);
+  else if (typeof o !== 'object' || o === null) return o;
+  map_iter(o, (k,v) => { o[k] = maps_fixup(v, refs); });
+  return o;
 }
 function map_new(o={}) {
   return { entries: o };
@@ -265,7 +273,7 @@ ctx = {};
 treeView = document.getElementById('treeview');
 document.body.appendChild(treeView); // So that it's last
 
-function fetch() {
+function fetch_next() {
   const ref = map_get(ctx, 'next_instruction', 'ref');
   let next_inst = map_get(ref, 'map', map_get(ref, 'key'));
   if (next_inst === undefined) {
@@ -437,7 +445,7 @@ function single_step(nofetch=false) {
     map_set(ref, 'map', inst); map_set(ref, 'key', 1); // Dive in
   }
 
-  if (!nofetch) fetch(); // This goes here in case the instruction changed next_instruction
+  if (!nofetch) fetch_next(); // This goes here in case the instruction changed next_instruction
 
   let obj = ctx, key = 'focus'; // i.e. what changed?
   if (op === 'store')
@@ -887,7 +895,7 @@ function load_state() {
   JSONTree.toggle(map_get(cond_instrs, 'branch1', 'warm'));
   JSONTree.toggle(map_get(cond_instrs, 'branch1', 'cold'));
   JSONTree.toggle(map_get(cond_instrs, 'branch1', '_'));
-  fetch();
+  fetch_next();
 }
 
 function upd(o, ...args) {
@@ -1077,7 +1085,15 @@ function export_state(root, pretty=false) {
   };
   let tree = walk_from(root);
   tree = clean_from(tree);
-  return JSON.stringify(tree, ...(pretty? [null, 2] : []));
+  download(JSON.stringify(tree, ...(pretty? [null, 2] : [])),
+           'test.json', 'application/json');
+}
+
+function import_state(tree) {
+  const refs = new Map();
+  let graph = maps_init(tree, refs);
+  graph = maps_fixup(graph, refs);
+  return graph;
 }
 
 // python3 -m cors-server
