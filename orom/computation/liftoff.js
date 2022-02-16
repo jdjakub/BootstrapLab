@@ -233,18 +233,20 @@ function ref(obj) {
 // In-universe, we call objs / dicts "maps"
 
 function maps_init(o, refs) { // REWRITES o; Traverse TREE (no cycles!)
+  if (typeof o !== 'object' || o === null) return o;
+  let map = { entries: o };
   if (o instanceof Array) {
-    if (typeof o[0] === 'number') { refs.set(o[0], o[1]); o = o[1]; }
-    else return o; // preserve refs for subsequent fixup pass
-  } else if (typeof o !== 'object' || o === null) return o;
-  const map = { entries: o };
-  Object.entries(o).forEach(([k,v]) => { o[k] = maps_init(v, refs); });
+    const [id, obj] = o;
+    if (typeof id !== 'number') return o; // preserve refs for subsequent fixup pass
+    map.entries = obj; refs.set(id, map); // work on the obj defined within
+  }
+  map_iter(map, (k,v) => { map_set(map, k, maps_init(v, refs)); });
   return map;
 }
 function maps_fixup(o, refs) {
   if (o instanceof Array && o[0] === 'ref') return refs.get(o[1]);
   else if (typeof o !== 'object' || o === null) return o;
-  map_iter(o, (k,v) => { o[k] = maps_fixup(v, refs); });
+  map_iter(o, (k,v) => { map_set(o, k, maps_fixup(v, refs)); });
   return o;
 }
 function map_new(o={}) {
@@ -413,6 +415,7 @@ function single_step(nofetch=false) {
       // Step 2: write to dest
       if (typeof to === 'string') emit({op: 'store', register: to}); // SMELL: ditto
       else {
+        emit({op: 'store', register: 'source'});
         let prev = undefined;
         map_iter(to, (k,v,i) => {
           if (i === 0) emit(
@@ -636,77 +639,11 @@ function load_state() {
   ctx = maps_init({
     next_instruction: { ref: { map: null, key: 1 } },
     continue_to: null,
+    return_to: null,
     focus: null,
     map: null,
-    vec_from: null,
-    vec_to: null,
     source: null,
     instructions: {
-      // Set lisp_stuff.args_e.value.args_e.body_e.1.type = foobar
-      example_store_obj: {
-        // [['l lisp_stuff; d; s map'], ['l args_e; i; l value; i; l args_e; i;'+
-        // 'l_body_y; i; l 1; i'], [ 'l foobar; s source; l type; s' ]]
-        1: {op: 'copy',
-            from: {1: 'lisp_stuff', 2: 'args_e', 3: 'name'},
-            to: {1: 'lisp_stuff', 2: 'args_e', 3: 'value', 4: 'args_e',
-                 5: 'body_e', 6: 1, 7: 'type'}},
-        /*1: {
-          1: {op:"load",value:"lisp_stuff"},
-          2: {op:"deref"},
-          3: {op:"store",register:"map"},
-        },
-        2: {
-          1:{op:"load",value:"args_e"},
-          2:{op:"index"},
-          3:{op:"load",value:"value"},
-          4:{op:"index"},
-          5:{op:"load",value:"args_e"},
-          6:{op:"index"},
-          7:{op:"load",value:"body_e"},
-          8:{op:"index"},
-          9:{op:"load",value:1},
-          10:{op:"index"},
-        },
-        3: {
-          1:{op:"load",value:"foobar"},
-          2:{op:"store",register:"source"},
-          3:{op:"load",value:"type"},
-          4:{op:"store"}
-        }*/
-      },
-      /* last_delta = pointer.(released_at - pressed_at)
-       * camera.position.sub(last_delta in world with z=0)
-       * ---
-       * vec_from := pointer.pressed_at; vec_to := pointer.released_at;
-       * sub; in world; focus.forward := 0; s vec_from; vec_to := camera.position;
-       * sub; camera.position := focus
-       */
-      example_move_shape: assemble_code([
-        `l pointer; d; s map; l pressed_at; i; l map; d; s vec_from;
-        l pointer; d; s map; l released_at; i; l map; d; s vec_to`,
-        { op: 'vsub' }, { op: 'in', basis: 'world' },
-        `s map; l 0; s source; l forward; s; l map; d; s vec_from;
-        l scene; d; s map; l camera; i; l position; i; l map; d; s vec_to`,
-        { op: 'vsub' },
-        `s source; l scene; d; s map; l camera; i; l position; s`,
-      ]),
-      // Set .conclusion based on .weather, and then mark .finished
-      example_conditional: {
-        start: assemble_code([
-          'l instructions; d; s map; l example_conditional; i; l branch1; i; l weather; d; i;' +
-          'l map; d; s source', { op: 'load', value: { map: null } },
-          's map; l map; s; d; s continue_to' // essentially, conditional jump = 9 uops
-        ]),
-        branch1: {
-          warm: assemble_code([
-            { op: 'load', value: "it's warm" }, // cuz assemble_code can't handle spaces yet lol
-            's conclusion'
-          ]),
-          cold: assemble_code([ { op: 'load', value: "it's cold" }, 's conclusion' ]),
-          _:    assemble_code([ { op: 'load', value: "it's neither!" }, 's conclusion' ]),
-        },
-        finish: assemble_code(['l true; s finished']),
-      },
       example_render: {
         start: assemble_code([
           'l stack; d; s map; l stack_top; d; i; l map; d; s frame;' + // frame := stack[stack_top]
@@ -808,7 +745,6 @@ function load_state() {
           }
         },
       },
-      lisp_3js: {children: {}},
       lisp_iter: {children: {}},
       shapes: {
         position: { basis: 'world', ...ruf(shapes.position) },
@@ -824,9 +760,6 @@ function load_state() {
         }
       },
     },
-    weather: 'cold',
-    conclusion: null,
-    finished: false,
     lisp_stuff: {
       type: 'apply',  proc_e: 'define',  args_e: {
         name: 'fac',
@@ -865,12 +798,6 @@ function load_state() {
   map_get(ctx, 'scene', 'camera', 'children', 'ndc')._3js_proxy = ndc;
   map_get(ctx, 'scene', 'camera', 'children', 'ndc', 'children', 'screen')._3js_proxy = screen;
   sync_3js_proxy(bases['world'])('children', map_get(ctx, 'scene'));
-
-  const cond_instrs = map_get(ctx, 'instructions', 'example_conditional');
-  let common_exit = map_new({ map: map_get(cond_instrs, 'finish') });
-  map_set(cond_instrs, 'branch1', 'warm', 'continue_to', common_exit);
-  map_set(cond_instrs, 'branch1', 'cold', 'continue_to', common_exit);
-  map_set(cond_instrs, 'branch1', '_', 'continue_to', common_exit);
   
   const rnd_instrs = map_get(ctx, 'instructions', 'example_render');
   common_exit = map_new({ map: map_get(rnd_instrs, 'render_key') });
@@ -886,15 +813,11 @@ function load_state() {
   map_set(rnd_instrs, 'any_keys_left', 'undefined', 'continue_to', common_exit);
 
   treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
-  JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
-  JSONTree.toggle(map_get(ctx, 'instructions', 'example_store_obj'));
+  //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
   //JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
+  map_iter(rnd_instrs, (_,blk) => JSONTree.toggle(blk));
   JSONTree.toggle(map_get(ctx, 'scene', 'shapes'));
-  JSONTree.toggle(map_get(ctx, 'instructions', 'example_move_shape'));
-  JSONTree.toggle(cond_instrs);
-  JSONTree.toggle(map_get(cond_instrs, 'branch1', 'warm'));
-  JSONTree.toggle(map_get(cond_instrs, 'branch1', 'cold'));
-  JSONTree.toggle(map_get(cond_instrs, 'branch1', '_'));
+  JSONTree.toggle(map_get(ctx, 'pointer'));
   fetch_next();
 }
 
@@ -1045,7 +968,7 @@ l parent_frame; d; s frame; s map; l return; i; l map; d; s continue_to;
 f = conv_iter1;
 //while (f) f=f();
 
-function export_state(root, pretty=false) {
+function export_state(root, filename='bl-state.json') {
   const visited = new Map(); // node -> id
   const reffed = new Set();
   let next_id = 1;
@@ -1085,18 +1008,21 @@ function export_state(root, pretty=false) {
   };
   let tree = walk_from(root);
   tree = clean_from(tree);
-  download(JSON.stringify(tree, ...(pretty? [null, 2] : [])),
-           'test.json', 'application/json');
-}
-
-function import_state(tree) {
-  const refs = new Map();
-  let graph = maps_init(tree, refs);
-  graph = maps_fixup(graph, refs);
-  return graph;
+  download(JSON.stringify(tree), filename, 'application/json');
 }
 
 // python3 -m cors-server
+function import_state(tree_or_url) {
+  const doIt = tree => {
+    const refs = new Map();
+    let graph = maps_init(tree, refs);
+    graph = maps_fixup(graph, refs);
+    return graph;
+  }
+  if (typeof tree_or_url === 'string')
+    return fetch(tree_or_url).then(r => r.json()).then(doIt);
+  else return doIt(tree_or_url);
+}
 
 camera.position.z = 10;
 r();
