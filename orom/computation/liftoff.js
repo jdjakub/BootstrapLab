@@ -317,6 +317,7 @@ function clone(o) {
   return o;
 }
 
+let old_value = undefined; // In case a scene node with 3js proxy is overwritten!
 function single_step(nofetch=false) {
   const inst = map_get(ctx, 'next_instruction', 'value'); // i.e. Instruction Pointer
   // Cache values, before any modifications, for later
@@ -340,7 +341,7 @@ function single_step(nofetch=false) {
   } //        OR copy value in .source to .map[.focus] (if absent)
   else if (op === 'store') {
     if (dest_reg === undefined) {
-      map_set(ctx, 'map', focus, source);
+      old_value = map_get(map, focus); map_set(ctx, 'map', focus, source);
     } else map_set(ctx, dest_reg, focus);
   } // deref: replace .focus with the value of the reg it references
   else if (op === 'deref') {
@@ -475,27 +476,39 @@ function update_relevant_proxy_objs(obj, key) {
   else return;
   const val = map_get(obj, key);
   f(obj)(key, val);
+  old_value = undefined;
 }
 
 square_geom = new e3.PlaneGeometry(1, 1);
 need_rerender = false;
 bases = {};
 
-sync_3js_children = (children) => (ch_name, child) => {
+sync_3js_children = (children, do_delete) => (ch_name, child) => {
   const parent = children.isChildrenFor;
-  map_iter(child, sync_3js_proxy(child, parent));
+  if (!do_delete) map_iter(child, sync_3js_proxy(child, parent));
   if (child._3js_proxy) {
-    child._3js_proxy.name = ch_name; // set name in 3js
-    parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
-    if (bases[ch_name] === undefined) bases[ch_name] = child; // SMELL unique names
+    if (do_delete) {
+      if (parent._3js_proxy) parent._3js_proxy.remove(child._3js_proxy);
+      bases[ch_name] = undefined;
+    } else {
+      child._3js_proxy.name = ch_name; // set name in 3js
+      parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
+      if (bases[ch_name] === undefined) bases[ch_name] = child; // SMELL unique names
+    }
   }
 }
 
 sync_3js_proxy = (obj, parent) => (key, val) => {
   if (key === 'children') {
-    val.isChildrenFor = obj;
-    if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group();
-    map_iter(val, sync_3js_children(val));
+    if (old_value !== undefined) {
+      map_iter(old_value, sync_3js_children(old_value, true));
+      old_value.isChildrenFor = undefined;
+    }
+    if (val !== undefined) {
+      val.isChildrenFor = obj;
+      if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group(); // SMELL group not added!?
+      map_iter(val, sync_3js_children(val));
+    }
   } else if (key === 'color' && val !== undefined) {
     init_3js_rect(obj); obj._3js_rect.material.color.setHex(parseInt(val));
   } else if (key === 'width') { // TODO: rect ontologies
@@ -825,6 +838,7 @@ function upd(o, ...args) {
   const v = args.pop();
   const k = args.pop();
   o = map_get(o, ...args);
+  old_value = map_get(o, k);
   map_set(o, k, v);
   update_relevant_proxy_objs(o, k);
   JSONTree.update(o, k);
@@ -909,20 +923,27 @@ function import_state(tree_or_url) {
 }
 
 // JS breadth-first on-demand tree rendering (with layout)
-function expand_children(scene_path, state_node) {
+function toggle_expand(scene_path, state_node) {
+  if (typeof state_node !== 'object') return;
+  let lines = map_num_entries(state_node);
+  if (lines === 0) return;
+  
   const scene_node = map_get(ctx, ...scene_path);
   const children = map_get(scene_node, 'children');
-  let lines = 0;
-  map_iter(state_node, (k,v,i) => {
-    i++;
-    const key_r = maps_init({
-      text: k+':', top_left: {right: .2, up: -.3*i}, children: {}
+  if (map_num_entries(children) === 0) // expand
+    map_iter(state_node, (k,v,i) => {
+      i++;
+      const key_r = maps_init({
+        text: k+':', top_left: {right: .2, up: -.3*i}, children: {}
+      });
+      if (typeof v !== 'object' || v === null) // render primitive value
+        map_set(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: v }));
+      upd(children, i, key_r);
     });
-    if (typeof v !== 'object' || v === null) // render primitive value
-      map_set(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: v }));
-    upd(children, i, key_r);
-    lines++;
-  });
+  else { // collapse
+    upd(scene_node, 'children', map_new()); lines *= -1;
+  }
+    
   // figure out the chain of ancestors and keys...
   let scene_parents = [];
   for (let i=scene_path.length-1; i>=0; i--) {
@@ -931,7 +952,7 @@ function expand_children(scene_path, state_node) {
         map_get(ctx, ...scene_path.slice(0, i+1)), scene_path[i+1]
       ]);
   }
-  // walk up the scene tree pushing stuff vertically down
+  // walk up the scene tree pushing stuff vertically down/up
   for (let [map, i] of scene_parents) {
     let j = i+1, sibling = map_get(map, j)
     while (sibling !== undefined) {
