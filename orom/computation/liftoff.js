@@ -259,7 +259,12 @@ function map_set(o, ...args) {
   if (args.length === 1) { o.entries[args[1]] = undefined; return; }
   let k = args.shift(); const v = args.pop();
   args.forEach(a => { o = o.entries[k]; k = a; });
+  const old = o.entries[k];
+  if (typeof old === 'object' && old !== null && old !== v && old.parent === o)
+    old.parent = undefined; // if overwriting a tree child, remove parent
   o.entries[k] = v;
+  if (typeof v === 'object' && v !== null && v.parent === undefined)
+    v.parent = o; // first to reference v becomes its parent
   return v;
 }
 function map_set_rel(o, ...args) {
@@ -607,7 +612,6 @@ function run_and_render(num_steps=1) {
     JSONTree.update(...last_change);
   });
   // Highlight the most recent change in the tree
-  if (window.debuggit) debugger;
   JSONTree.highlight('jstLastChange', ...last_change);
 
   // We know these will have changed
@@ -922,15 +926,31 @@ function import_state(tree_or_url) {
   else return doIt(tree_or_url);
 }
 
+function measure_tree_height(scene_node) { // DF traversal
+  let total = 1;
+  const children = map_get(scene_node, 'children');
+  if (children === undefined) return 0;
+  map_iter(children, (k,v) => {
+    total += measure_tree_height(v);
+  });
+  return total;
+}
+
 // JS breadth-first on-demand tree rendering (with layout)
-function toggle_expand(scene_path, state_node) {
+function toggle_expand(scene_path) {
+  const scene_node = map_get(ctx, ...scene_path);
+  const children = map_get(scene_node, 'children');
+  
+  // work out what the source state is
+  const source_node = map_get(scene_node.parent.parent, 'source');
+  const source_key = map_get(scene_node, 'text').slice(0, -1);
+  const state_node = map_get(source_node, source_key);
   if (typeof state_node !== 'object') return;
   let lines = map_num_entries(state_node);
   if (lines === 0) return;
   
-  const scene_node = map_get(ctx, ...scene_path);
-  const children = map_get(scene_node, 'children');
-  if (map_num_entries(children) === 0) // expand
+  if (map_num_entries(children) === 0) { // expand
+    upd(scene_node, 'source', state_node);
     map_iter(state_node, (k,v,i) => {
       i++;
       const key_r = maps_init({
@@ -940,10 +960,11 @@ function toggle_expand(scene_path, state_node) {
         map_set(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: v }));
       upd(children, i, key_r);
     });
-  else { // collapse
-    upd(scene_node, 'children', map_new()); lines *= -1;
+  } else { // collapse
+    lines = -1 * (measure_tree_height(scene_node) - 1);
+    upd(scene_node, 'children', map_new());
   }
-    
+  
   // figure out the chain of ancestors and keys...
   let scene_parents = [];
   for (let i=scene_path.length-1; i>=0; i--) {
@@ -952,6 +973,7 @@ function toggle_expand(scene_path, state_node) {
         map_get(ctx, ...scene_path.slice(0, i+1)), scene_path[i+1]
       ]);
   }
+  
   // walk up the scene tree pushing stuff vertically down/up
   for (let [map, i] of scene_parents) {
     let j = i+1, sibling = map_get(map, j)
