@@ -146,6 +146,20 @@ renderer.domElement.onmouseup = e => {
   JSONTree.update(ctx.pointer, 'released_at');
   JSONTree.highlight('jstExternalChange', tmp);*/
 };
+raycaster = new e3.Raycaster();
+renderer.domElement.ondblclick = e => {
+  const screen_v = new e3.Vector3(e.clientX, e.clientY, 0);
+  const ndc_v = vecInBasis(screen_v, true, screen, ndc);
+  raycaster.setFromCamera(ndc_v, camera);
+  const isects = raycaster.intersectObjects(scene.children, true);
+  if (isects.length == 0) return;
+  let scene_node, t;
+  try {
+    scene_node = isects[0].object.parent.parent.parent.userData.sceneNode;
+    t = map_get(scene_node, 'text');
+  } catch (e) { return; }
+  if (t !== undefined) toggle_expand(scene_node);
+}
 
 last_pointer = undefined;
 last_delta = new e3.Vector3();
@@ -260,11 +274,14 @@ function map_set(o, ...args) {
   let k = args.shift(); const v = args.pop();
   args.forEach(a => { o = o.entries[k]; k = a; });
   const old = o.entries[k];
-  if (typeof old === 'object' && old !== null && old !== v && old.parent === o)
-    old.parent = undefined; // if overwriting a tree child, remove parent
+  if (typeof old === 'object' && old !== null && old !== v && old.parent === o) {
+    old.parent = old.parent_key = undefined; // if overwriting a tree child, remove parent
+  }
   o.entries[k] = v;
-  if (typeof v === 'object' && v !== null && v.parent === undefined)
+  if (typeof v === 'object' && v !== null && v.parent === undefined) {
     v.parent = o; // first to reference v becomes its parent
+    v.parent_key = k;
+  }
   return v;
 }
 function map_set_rel(o, ...args) {
@@ -563,11 +580,14 @@ function init_3js_text(obj) {
     const width = 4, height = 1;
     const block = new ThreeMeshUI.Block({
       fontFamily: 'Roboto-msdf.json', fontTexture: 'Roboto-msdf.png',
-      width, height, fontSize: 0.2,  backgroundOpacity: 0, alignContent: 'left',
+      width, height, fontSize: 0.2,  backgroundOpacity: 0.5, alignContent: 'left',
       padding: 0, margin: 0
     });
+    block.name = map_get(obj, 'text').slice(0, 5) + 'block';
     obj._3js_proxy.add(block);
     obj._3js_text = new ThreeMeshUI.Text({content: map_get(obj, 'text')});
+    obj._3js_proxy.userData.sceneNode = obj; // for e.g. mouse identification
+    obj._3js_text.name = map_get(obj, 'text').slice(0, 5) + 'text';
     block.add(obj._3js_text);
     block.position.set(width/2, -height/2, 0); // so .position = top-left
   }
@@ -937,14 +957,17 @@ function measure_tree_height(scene_node) { // DF traversal
 }
 
 // JS breadth-first on-demand tree rendering (with layout)
-function toggle_expand(scene_path) {
-  const scene_node = map_get(ctx, ...scene_path);
+function toggle_expand(scene_node) {
   const children = map_get(scene_node, 'children');
   
   // work out what the source state is
-  const source_node = map_get(scene_node.parent.parent, 'source');
-  const source_key = map_get(scene_node, 'text').slice(0, -1);
-  const state_node = map_get(source_node, source_key);
+  let state_node = map_get(scene_node, 'source');
+  if (state_node === undefined) {
+    const source_node = map_get(scene_node.parent.parent, 'source');
+    const source_key = map_get(scene_node, 'text').slice(0, -1);
+    state_node = map_get(source_node, source_key);
+  }
+  
   if (typeof state_node !== 'object') return;
   let lines = map_num_entries(state_node);
   if (lines === 0) return;
@@ -964,25 +987,22 @@ function toggle_expand(scene_path) {
     lines = -1 * (measure_tree_height(scene_node) - 1);
     upd(scene_node, 'children', map_new());
   }
-  
-  // figure out the chain of ancestors and keys...
-  let scene_parents = [];
-  for (let i=scene_path.length-1; i>=0; i--) {
-    if (scene_path[i] === 'children' && typeof scene_path[i+1] === 'number')
-      scene_parents.push([
-        map_get(ctx, ...scene_path.slice(0, i+1)), scene_path[i+1]
-      ]);
-  }
-  
+
   // walk up the scene tree pushing stuff vertically down/up
-  for (let [map, i] of scene_parents) {
-    let j = i+1, sibling = map_get(map, j)
+  let siblings = scene_node.parent, i = Number.parseInt(scene_node.parent_key);
+  while (siblings !== undefined && Number.isInteger(i)) {
+    let j = i+1, sibling = map_get(siblings, j);
     while (sibling !== undefined) {
       const tl = map_get(sibling, 'top_left');
       if (tl === undefined) break;
       const up = map_get(tl, 'up');
       upd(tl, 'up', up - .3*lines);
-      j++; sibling = map_get(map, j)
+      j++; sibling = map_get(siblings, j)
+    }
+    const parent_sc_node = siblings.parent;
+    if (parent_sc_node !== undefined) {
+      i = Number.parseInt(parent_sc_node.parent_key);
+      siblings = parent_sc_node.parent;
     }
   }
 }
