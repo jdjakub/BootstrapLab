@@ -560,7 +560,7 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
         v.copy(vecInBasis(v, true, curr_basis._3js_proxy, targ_basis._3js_proxy));
     }
   } else if (key === 'text') {
-    init_3js_text(obj); obj._3js_text.set({ content: val.toString() });
+    init_3js_text(obj); obj._3js_text.set({ content: ""+val });
   }
   need_rerender = true;
 }
@@ -580,14 +580,15 @@ function init_3js_text(obj) {
     const width = 4, height = 1;
     const block = new ThreeMeshUI.Block({
       fontFamily: 'Roboto-msdf.json', fontTexture: 'Roboto-msdf.png',
-      width, height, fontSize: 0.2,  backgroundOpacity: 0.5, alignContent: 'left',
+      width, height, fontSize: 0.2,  backgroundOpacity: 0, alignContent: 'left',
       padding: 0, margin: 0
     });
-    block.name = map_get(obj, 'text').slice(0, 5) + 'block';
+    const short = (""+map_get(obj, 'text')).slice(0, 5);
+    block.name = short + '_blk';
     obj._3js_proxy.add(block);
-    obj._3js_text = new ThreeMeshUI.Text({content: map_get(obj, 'text')});
+    obj._3js_text = new ThreeMeshUI.Text({content: ""+map_get(obj, 'text')});
     obj._3js_proxy.userData.sceneNode = obj; // for e.g. mouse identification
-    obj._3js_text.name = map_get(obj, 'text').slice(0, 5) + 'text';
+    obj._3js_text.name = short + '_txt';
     block.add(obj._3js_text);
     block.position.set(width/2, -height/2, 0); // so .position = top-left
   }
@@ -782,6 +783,7 @@ function load_state() {
           }
         },
       },
+      root: { text:'root:', top_left: { right: 0.2, up: 0 }, children: {} },
       lisp_iter: {children: {}},
       shapes: {
         position: { basis: 'world', ...ruf(shapes.position) },
@@ -859,13 +861,16 @@ function load_state() {
 }
 
 function upd(o, ...args) {
-  const v = args.pop();
+  let real_v; // Hack for doing cyclic structures w/o breaking JSONTree...
+  let v = args.pop();
+  if (v instanceof Array) { real_v = v[1]; v = v[0]; }
   const k = args.pop();
   o = map_get(o, ...args);
   old_value = map_get(o, k);
   map_set(o, k, v);
-  update_relevant_proxy_objs(o, k);
   JSONTree.update(o, k);
+  if (real_v !== undefined) map_set(o, k, real_v); // Hidden from JSONTree
+  update_relevant_proxy_objs(o, k);
   if (v !== undefined)
     JSONTree.highlight('jstExternalChange', o, k);
   if (need_rerender) r();
@@ -973,7 +978,7 @@ function toggle_expand(scene_node) {
   if (lines === 0) return;
   
   if (map_num_entries(children) === 0) { // expand
-    upd(scene_node, 'source', state_node);
+    upd(scene_node, 'source', ['<state>', state_node]);
     map_iter(state_node, (k,v,i) => {
       i++;
       const key_r = maps_init({
@@ -1006,6 +1011,8 @@ function toggle_expand(scene_node) {
     }
   }
 }
+
+upd(ctx, 'scene', 'root', 'source', ['<CTX>', ctx]);
 
 camera.position.z = 10;
 r();
