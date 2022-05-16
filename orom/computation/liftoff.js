@@ -285,9 +285,11 @@ function map_set(o, ...args) {
   return v;
 }
 function map_set_rel(o, ...args) {
-  let k = args.shift(); const f = args.pop();
-  args.forEach(a => { o = o.entries[k]; k = a; });
-  o.entries[k] = f(o.entries[k]);
+  /*let k = args.shift(); const f = args.pop();*/
+  /*args.forEach(a => { o = o.entries[k]; k = a; });
+  o.entries[k] = f(o.entries[k]);*/
+  const f = args.pop(), v = map_get(o, ...args);
+  return map_set(o, ...args, f(v));
 }
 map_iter = (o, f) => Object.entries(o.entries).forEach(([k,v],i) => f(k,v,i));
 map_num_entries = (o) => Object.keys(o.entries).length;
@@ -964,13 +966,16 @@ function measure_tree_height(scene_node) { // DF traversal
 // JS breadth-first on-demand tree rendering (with layout)
 function toggle_expand(scene_node) {
   const children = map_get(scene_node, 'children');
+  // children := scene_node.children
   
   // work out what the source state is
   let state_node = map_get(scene_node, 'source');
+  // state_node := scene_node.source
   if (state_node === undefined) {
     const source_node = map_get(scene_node.parent.parent, 'source');
     const source_key = map_get(scene_node, 'text').slice(0, -1);
     state_node = map_get(source_node, source_key);
+    // state_node := [scene_node^^.source].[scene_node.text[0:-1]]
   }
   
   if (typeof state_node !== 'object') return;
@@ -979,14 +984,18 @@ function toggle_expand(scene_node) {
   
   if (map_num_entries(children) === 0) { // expand
     upd(scene_node, 'source', ['<state>', state_node]);
+    // scene_node.source := state_node
     map_iter(state_node, (k,v,i) => {
       i++;
       const key_r = maps_init({
         text: k+':', top_left: {right: .2, up: -.3*i}, children: {}
       });
+      // key_r := <expr>
       if (typeof v !== 'object' || v === null) // render primitive value
         map_set(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: v }));
+        // key_r.children.1 := <expr>
       upd(children, i, key_r);
+      // children.[i] := key_r
     });
   } else { // collapse
     lines = -1 * (measure_tree_height(scene_node) - 1);
@@ -1013,6 +1022,161 @@ function toggle_expand(scene_node) {
 }
 
 upd(ctx, 'scene', 'root', 'source', ['<CTX>', ctx]);
+
+// 2022-05-04: 1-masp eval
+const masp =  map_new();
+upd(ctx, 'masp', masp);
+upd(masp, 'initial_env', maps_init({ entries: {
+  'mul': { body: (c, args) =>
+    { upd(c, 'value', args[1]*args[2]); return true; }},
+  'decr': { body: (c, args) =>
+    { upd(c, 'value', args[1]-1); return true; }},
+  'fun': { body: (c, args) => {
+    const defining_env = masp_curr_env();
+    const closure = map_new({
+      arg_names: args.arg_names,
+      body: args.body, env: () => defining_env
+    });
+    upd(c, 'value', closure); return true;
+  }, dont_eval_args: true },
+  'define': { body: (c, args) => {
+    if (typeof args.as === 'object') {
+      const val = map_get(args.as, 'value');
+      if (val !== undefined) {
+        upd(masp, 'initial_env', 'entries', args.name, val);
+        upd(c, 'value', null); return true;
+      }
+    }
+    masp_enter('as');
+  }, dont_eval_args: true },
+  'block': { body: (c, args) => {
+      let i; for (i=1; args[i] !== undefined; i++);
+      upd(c, 'value', map_get(args, i-1, 'value'));
+    }
+  },
+}}));
+import_state('1lisp-fac.json').then(x => {
+  upd(masp, 'program', x);
+  upd(masp, 'ctx', map_new({
+    env: map_get(masp, 'initial_env'),
+    expr: map_get(masp, 'program'),
+    is_root: true,
+  }));
+});
+
+function masp_step() {
+  const c = map_get(masp, 'ctx');
+  const expr = map_get(c, 'expr');
+  let value = undefined;
+  if (typeof expr === 'string' && !masp_has_value(c)) { // lookup the name
+    const try_lookup = env => {
+      let val = map_get(env, 'entries', expr);
+      const par = map_get(env, 'parent');
+      if (val === undefined && par !== undefined)
+        return try_lookup(par);
+      else return val;
+    }
+    value = try_lookup(masp_curr_env());
+  } else if (typeof expr === 'object') {
+    if (map_get(expr, 'apply') === undefined) { // lit map
+      const defining_env = masp_curr_env();
+      value = map_new({ literal: expr, env: () => defining_env });
+    } else { // application
+      if (!masp_has_value(expr, 'apply')) { // eval func part
+        upd(c, 'expr', map_new({...expr.entries}));
+        masp_enter('apply'); return;
+      }
+      const func = map_get(expr, 'apply', 'value');
+      const do_eval_args = !map_get(func, 'dont_eval_args');
+      if (do_eval_args) { // eval args
+        const keys = Object.keys(expr.entries);
+        if (map_get(c, 'arg_i') === undefined) upd(c, 'arg_i', 1);
+        const arg_i = map_get(c, 'arg_i');
+        if (arg_i <= keys.length) {
+          const key = keys[arg_i-1]; 
+          if (key !== 'apply' || arg_i !== keys.length) {
+            upd(c, 'arg_i', arg_i+1);
+            if (key !== 'apply') masp_enter(key);
+            return;
+          }
+        }
+      }
+      const arg_vals = map_new();
+      map_iter(expr, (k,v) => {
+        if (k === 'apply') return;
+        let val = v;
+        if (do_eval_args && masp_has_value(v))
+          val = map_get(v, 'value');
+        map_set(arg_vals, k, val);
+      });
+      let body = map_get(func, 'body');
+      if (typeof body === 'function') { // primitive
+        if (!body(c, arg_vals.entries)) return;
+      } else { // body is a MASP expression
+        let path = ['body'];
+        if (body === undefined) {
+          const selector = map_get(arg_vals, 'to');
+          path = ['literal', selector];
+          body = map_get(func, ...path);
+          if (body === undefined) {
+            path[1] = '_';
+            body = map_get(func, ...path);
+            if (body === undefined)
+              throw ["Pattern match fail: ", func, selector];
+          }
+        }
+        if (masp_has_value(body)) { value = map_get(body, 'value');
+        } else { // Not yet eval'd
+          const defining_env = map_get(func, 'env')();
+          // make a local env
+          let body_env;
+          if (path[0] === 'literal')
+            body_env = defining_env;
+          else body_env = map_new({
+            entries: arg_vals, parent: defining_env
+          });
+          // Instantiate a fresh copy of the closure for scribbling
+          const closure = map_new({ ...func.entries });
+          if (path[0] === 'literal')
+            map_set_rel(closure, 'literal', l => map_new({ ...l.entries }));
+          upd(expr, 'apply', 'value', closure);
+          // Enter a context for eval'ing the body
+          masp_enter('apply', 'value', ...path);
+          // Ensure it sees its local bindings
+          upd(masp, 'ctx', 'env', body_env); return;
+        }
+      }
+    }
+  } else if (!masp_has_value(c)) value = expr;
+  if (value !== undefined) upd(c, 'value', value);
+  if (!map_get(c, 'is_root')) {
+    if (c.parent.parent_key === 'literal')
+      upd(masp, 'ctx', c.parent.parent.parent.parent.parent);
+    else
+      upd(masp, 'ctx', c.parent.parent);
+  }
+}
+
+function masp_enter(...path) {
+  const old_ctx = map_get(masp, 'ctx');
+  const expr = map_get(old_ctx, 'expr', ...path);
+  const new_ctx = map_new({ expr });
+  upd(old_ctx, 'expr', ...path, new_ctx);
+  upd(masp, 'ctx', new_ctx);
+}
+
+function masp_has_value(...path) {
+  const map = map_get(...path);
+  return typeof map === 'object' &&
+    map_get(map, 'value') !== undefined;
+}
+
+function masp_curr_env() {
+  let curr_ctx = map_get(masp, 'ctx');
+  while (map_get(curr_ctx, 'env') === undefined)
+    curr_ctx = curr_ctx.parent.parent;
+  return map_get(curr_ctx, 'env');
+}
 
 camera.position.z = 10;
 r();

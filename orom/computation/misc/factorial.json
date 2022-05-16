@@ -1,0 +1,24 @@
+{
+  "apply": "defun", "to": { "name": "fac", "value": { "apply": "proc",
+    "to": { "pattern": { "1": "n" },
+      "body": {
+        "apply": "cond", "to": {
+          "1": { "if": { "apply": "=", "to": { "1": "n", "2": 0 }}, "then": 1 },
+          "2": { "if": true, "then": {
+            "apply": "*", "to": { "1": "n", "2": {
+              "apply": "fac", "to": { "n": {
+                  "apply": "-", "to": { "1": "n", "2": 1 }
+              }}
+            }}
+          }}
+        }
+      }
+    }
+  }}
+}
+1. Is all structure covered by structured editing?
+2. Is there any structure editing?
+3. Is the persistent representation structured?
+4. Graphical caps?
+
+c.f. Cog Dims checklists

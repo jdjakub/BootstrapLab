@@ -1,0 +1,14 @@
+{
+  "apply":"block",
+  "1": {
+  "apply":"define", "name":"fac", "as": {
+    "apply":"fun", "arg_names": {"1": "n"},
+    "body":{ "to":"n", "apply": {
+      "0": 1,
+      "_":{ "apply": "mul", "1": "n", "2": {
+          "apply": "fac",
+          "n": { "apply":"decr", "1":"n" }}}}}}},
+  "2": {
+    "apply":"fac", "n":0
+  }
+}

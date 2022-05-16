@@ -1,0 +1,17 @@
+{
+"pattern": { 1: "scene_node" },
+"environment": null,
+"body": {
+  "1": { "apply": "set", "to": {
+      "dest": "children", "source": { "1": "scene_node", "2": "children" }
+    }},
+  "2": { "apply": "set", "to": {
+      "dest": "state_node", "source": { "1": "scene_node", "2": "source" }
+    }},
+  "3": { "apply": {"entries": {
+      "undefined": "???"
+    }}, "to": { "1": 
+      { "apply": "typeof", "to": {"1": {"deref": "state_node"}}
+    }}}
+}
+}
