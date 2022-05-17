@@ -159,7 +159,15 @@ JSONTree = { // eslint-disable-line no-unused-vars
   _jsObj: function(object) {
     let { id } = ref(object);
     const elements = [];
-    map_iter(object, (key, value) => {
+    let entries = [];
+    //if (object.parent_key === 'apply') debugger;
+    map_iter(object, (k, v) => { entries.push([k,v]); });
+    // Do numerical indices *after* string keys usually
+    const nums = entries.filter(([k,v]) =>  Number.isInteger(+k));
+    const strs = entries.filter(([k,v]) => !Number.isInteger(+k));
+    if (strs.length === 1 && strs[0][0] === '_') entries = nums.concat(strs);
+    else entries = strs.concat(nums);
+    entries.forEach(([key, value]) => {
       if (value === undefined) return;
       const html = [];
       html.push('<li class="jstItem">');
