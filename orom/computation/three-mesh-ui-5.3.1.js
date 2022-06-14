@@ -1412,6 +1412,7 @@ class Text extends mix.withBase( THREE.Object3D )(
 
         // Update 'inlines' property, so that the parent can compute each glyph position
         this.inlines = glyphInfos;
+        this.width = this.inlines.reduce((w,i) => w+i.width, 0);
         resolve();
     }
 

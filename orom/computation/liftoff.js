@@ -212,9 +212,10 @@ renderer.domElement.onwheel = e => {
 };
 
 function r() {
-  ThreeMeshUI.update();
-  renderer.render(scene, camera);
-  need_rerender = false;
+  ThreeMeshUI.update().then(() => {
+    renderer.render(scene, camera);
+    need_rerender = false;
+  });
 }
 
 r();
@@ -963,6 +964,7 @@ function measure_tree_height(scene_node) { // DF traversal
   return total;
 }
 
+nodes_to_bump = [];
 // JS breadth-first on-demand tree rendering (with layout)
 function toggle_expand(scene_node) {
   const children = map_get(scene_node, 'children');
@@ -991,9 +993,10 @@ function toggle_expand(scene_node) {
         text: k+':', top_left: {right: .2, up: -.3*i}, children: {}
       });
       // key_r := <expr>
-      if (typeof v !== 'object' || v === null) // render primitive value
+      if (typeof v !== 'object' || v === null) { // render primitive value
         map_set(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: v }));
-        // key_r.children.1 := <expr>
+        nodes_to_bump.push(key_r); // layout after key width calc'd
+      } // key_r.children.1 := <expr>
       upd(children, i, key_r);
       // children.[i] := key_r
     });
@@ -1019,6 +1022,13 @@ function toggle_expand(scene_node) {
       siblings = parent_sc_node.parent;
     }
   }
+}
+
+function bump() {
+  nodes_to_bump.forEach(n => {
+    const width = n._3js_text.width;
+    upd(n, 'children', 1, 'top_left', 'right', width+0.1);
+  });
 }
 
 upd(ctx, 'scene', 'root', 'source', ['<CTX>', ctx]);
