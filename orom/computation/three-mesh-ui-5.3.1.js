@@ -1358,6 +1358,11 @@ class Text extends mix.withBase( THREE.Object3D )(
         this.isText = true;
         this.set( options );
     }
+    
+    measure() {
+      this.parseParams(x=>x);
+      return [this.width, this.height];
+    }
 
     ///////////
     // UPDATES
@@ -1412,6 +1417,10 @@ class Text extends mix.withBase( THREE.Object3D )(
 
         // Update 'inlines' property, so that the parent can compute each glyph position
         this.inlines = glyphInfos;
+        
+        const minAnchor = glyphInfos.reduce((l,i) => l < i.anchor ? i.anchor : l, 0);
+        const maxTop = glyphInfos.reduce((h,i) => h < i.height-i.anchor ? i.height-i.anchor : h, 0);
+        this.height = minAnchor + maxTop;
         this.width = this.inlines.reduce((w,i) => w+i.width, 0);
         resolve();
     }
