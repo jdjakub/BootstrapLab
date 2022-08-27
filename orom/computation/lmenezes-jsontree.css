@@ -47,6 +47,13 @@ li.jstItem {
 .jstStr {
   color: #9cc966;
 }
+.jstRef {
+  color: #5b5caa;
+  font-style: italic;
+}
+.jstErr {
+  color: red;
+}
 .jstFunc {
   color: #5b5caa;
 }

@@ -170,39 +170,8 @@ renderer.domElement.onmouseup = e => {
     if (scene_node) {
       let old = map_get(ctx, 'currently_editing');
       if (typeof old === 'function') old = old();
-      if (old !== undefined) {
-        try { upd(old, 'children', 1, 'opacity', undefined); } catch (e) {}
-        let isFresh = map_get(old, 'isFresh');
-        const keyNode = map_get(old, 'children')? old : old.parent.parent;
-        try {
-          isFresh ||= map_get(old, 'children', 1, 'isFresh');
-        } catch (e) {}
-        if (isFresh) {
-          const [p, pk] = [keyNode.parent, keyNode.parent_key];
-          if (pk == 1) { // 1st entry of empty map
-            upd(p, pk, maps_init({
-              text: '(empty)', top_left: {right: .2, up: -.3}, dummy: true,
-            }));
-          } else {
-            displace_treeview(keyNode, -1);
-            upd(p, pk, undefined);
-          }
-        }
-      }
-      let key_node = scene_node;
-      let focus;
-      if (map_get(scene_node, 'dummy')) {
-        const new_keyNode = maps_init({
-          text: 'newKey:', top_left: {right: .2, up: -.3}, isFresh: true, editKey: true,
-          children: {1: { top_left: {right: .75}, text: 'newValue', isFresh: true }}
-        });
-        upd(key_node.parent, key_node.parent_key, new_keyNode);
-        key_node = focus = new_keyNode;
-      } else if (!map_get(scene_node, 'children')) {
-         key_node = scene_node.parent.parent; focus = scene_node;
-      } else focus = map_get(scene_node, 'children', 1);
-      upd(ctx, 'currently_editing', () => key_node);
-      if (focus) upd(focus, 'opacity', 1);
+      if (old !== undefined) ed_unselect(old);
+      ed_select(scene_node);
     }
     return;
   }
@@ -218,6 +187,60 @@ renderer.domElement.onmouseup = e => {
   nodes_to_bump.push(map_get(ctx, 'scene', 'edit_box'));
   upd(ctx, 'currently_editing', map_get(ctx, 'scene', 'edit_box'));
 };
+
+function ed_unselect(old) {
+  try { upd(old, 'children', 1, 'opacity', undefined); } catch (e) {}
+  let isFresh = map_get(old, 'isFresh');
+  const keyNode = map_get(old, 'children')? old : old.parent.parent;
+  try {
+    isFresh ||= map_get(old, 'children', 1, 'isFresh');
+  } catch (e) {}
+  if (isFresh) { // new mapentry - delete / make empty
+    const [p, pk] = [keyNode.parent, keyNode.parent_key];
+    if (pk == 1) ed_make_empty(keyNode); // 1st entry of empty map
+    else {
+      displace_treeview(keyNode, -1);
+      upd(p, pk, undefined);
+    }
+  }
+}
+
+function ed_select(scene_node) {
+  let key_node = scene_node;
+  let focus;
+  if (map_get(scene_node, 'dummy')) {
+    const new_keyNode = maps_init({
+      text: 'newKey:', top_left: {right: .2, up: -.3}, isFresh: true, editKey: true,
+      children: {1: { top_left: {right: .75}, text: 'newValue', isFresh: true }}
+    });
+    upd(key_node.parent, key_node.parent_key, new_keyNode);
+    key_node = focus = new_keyNode;
+  } else if (!map_get(scene_node, 'children')) {
+     key_node = scene_node.parent.parent; focus = scene_node;
+  } else focus = map_get(scene_node, 'children', 1);
+  upd(ctx, 'currently_editing', () => key_node);
+  if (focus) upd(focus, 'opacity', 1);
+}
+
+function ed_make_empty(keyNode) {
+  const newNode = maps_init({
+    text: '(empty)', top_left: {right: .2, up: -.3}, dummy: true,
+  });
+  upd(keyNode.parent, keyNode.parent_key, newNode);
+  return newNode;
+}
+
+function ed_make_new(map, key, up) {
+  const new_keyNode = maps_init({
+    text: 'newKey:', top_left: {right: .2, up}, isFresh: true, editKey: true,
+    children: {1: { top_left: {right: .75}, text: 'newValue', isFresh: true }}
+  });
+  const old = map_get(map, key);
+  upd(map, key, new_keyNode);
+  if (old === undefined || map_get(old, 'top_left', 'up') === undefined)
+    displace_treeview(map.parent, 1);
+  return new_keyNode;
+}
 
 document.body.onkeydown = e => {
   let key_node = map_get(ctx, 'currently_editing');
@@ -242,11 +265,8 @@ document.body.onkeydown = e => {
       displace_treeview(key_node, -1);
     }
     if (oldContent.length === 0) { // delete entry
-      if (map_get(siblings, 2) === undefined) {
-        const dummy_node = maps_init({
-          text: '(empty)', top_left: {right: .2, up: -.3}, dummy: true, opacity: 1
-        });
-        upd(siblings, key_node.parent_key, dummy_node);
+      if (map_get(siblings, 2) === undefined) { // sole entry
+        const dummy_node = ed_make_empty(key_node);
         const new_keyNode = dummy_node.parent.parent;
         upd(ctx, 'currently_editing', () => new_keyNode);
       } else {
@@ -280,7 +300,7 @@ document.body.onkeydown = e => {
     else { upd(focus, 'text', e.key+suffix); upd(focus, 'isFresh', undefined); }
   } else if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
-    if (map_get(focus, 'isFresh')) return;
+    if (map_get(focus, 'isFresh')) return; // can't tab out of new mapentry
     upd(focus, 'opacity', undefined);
     if (suffix === ':') {
       const child = map_get(children, 1);
@@ -306,7 +326,7 @@ document.body.onkeydown = e => {
           //else if (value === 'undefined') value = undefined;
         }
         upd(map, key, value);
-        if (e.key === 'Enter') upd(key_node, 'source', ['<state>', value]);
+        if (e.key === 'Enter') upd(key_node, 'source', value);
       }
     }
     // Advance to next key
@@ -317,23 +337,12 @@ document.body.onkeydown = e => {
       if (new_keyNode === undefined) {
         const vertical_start = map_get(key_node, 'top_left', 'up');
         const new_up = vertical_start -.3*measure_tree_height(key_node);
-        new_keyNode = maps_init({
-          text: 'newKey:', top_left: {right: .2, up: new_up}, isFresh: true, editKey: true,
-          children: {1: { top_left: {right: .75}, text: 'newValue', isFresh: true }}
-        });
-        upd(key_node.parent, next_index, new_keyNode);
-        displace_treeview(key_node.parent.parent, 1);
-        new_focus = new_keyNode;
+        new_keyNode = new_focus = ed_make_new(key_node.parent, next_index, new_up);
       } else new_focus = map_get(new_keyNode, 'children', 1);
       upd(ctx, 'currently_editing', () => new_keyNode);
       upd(new_focus, 'opacity', 1);
     } else { // Enter
-      const new_keyNode = maps_init({
-        text: 'newKey:', top_left: {right: .2, up: -.3}, isFresh: true, editKey: true,
-        children: {1: { top_left: {right: .75}, text: 'newValue', isFresh: true }}
-      });
-      upd(key_node, 'children', 1, new_keyNode);
-      displace_treeview(key_node, 1);
+      const new_keyNode = ed_make_new(map_get(key_node, 'children'), 1, -.3);
       upd(ctx, 'currently_editing', () => new_keyNode);
       upd(new_keyNode, 'opacity', 1);
     }
@@ -523,8 +532,12 @@ function clone(o) {
 }
 
 let old_value = undefined; // In case a scene node with 3js proxy is overwritten!
-function single_step(nofetch=false) {
-  const inst = map_get(ctx, 'next_instruction', 'value'); // i.e. Instruction Pointer
+function single_step(nofetch=false, instr=undefined) {
+  let inst;
+  if (instr === undefined)
+    inst = map_get(ctx, 'next_instruction', 'value'); // i.e. Instruction Pointer
+  else inst = instr;
+  
   // Cache values, before any modifications, for later
   const op       = map_get(inst, 'op');    // i.e. opcode
   const focus    = map_get(ctx, 'focus');  // i.e. accumulator / bottleneck / map key register
@@ -535,7 +548,8 @@ function single_step(nofetch=false) {
   const do_break = map_get(inst, 'break'); // whether to pause execution after
   let continue_nested = false; // whether current 'instruction' contains instructions
 
-  map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
+  if (instr === undefined)
+    map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
 
   // Modify state according to instruction
     // load: copy value to .focus register
@@ -1049,7 +1063,7 @@ function load_state() {
   map_set(rnd_instrs, 'typeof_curr_val', '_', 'continue_to', common_exit);
   map_set(rnd_instrs, 'any_keys_left', 'undefined', 'continue_to', common_exit);
 
-  treeView.innerHTML = JSONTree.create(ctx, id_from_jsobj);
+  JSONTree.create(ctx, id_from_jsobj, treeView);
   //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
   //JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
   map_iter(rnd_instrs, (_,blk) => JSONTree.toggle(blk));
@@ -1180,7 +1194,7 @@ function toggle_expand(scene_node) {
   if (lines === 0) return;
   
   if (map_num_entries(children) === 0) { // expand
-    upd(scene_node, 'source', ['<state>', state_node]);
+    upd(scene_node, 'source', state_node);
     // scene_node.source := state_node
     map_iter(state_node, (k,v,i) => {
       i++;
@@ -1238,7 +1252,7 @@ function bump() {
   });
 }
 
-upd(ctx, 'scene', 'root', 'source', ['<CTX>', ctx]);
+upd(ctx, 'scene', 'root', 'source', ctx);
 
 // 2022-05-04: 1-masp eval
 const masp =  map_new();
@@ -1394,6 +1408,10 @@ function masp_curr_env() {
     curr_ctx = curr_ctx.parent.parent;
   return map_get(curr_ctx, 'env');
 }
+
+import_state('misc/textbox.json').then(x => {
+  upd(ctx, 'textbox', x);
+});
 
 camera.position.z = 10;
 r();

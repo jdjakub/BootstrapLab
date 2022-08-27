@@ -38,10 +38,15 @@ JSONTree = { // eslint-disable-line no-unused-vars
   id_of_obj: new Map(),
   last_highlighted: new Map(),
 
-  create: function(data, id_of_obj_map) {
+  create: function(data, id_of_obj_map, treeView) {
     JSONTree.instances += 1;
     JSONTree.id_of_obj = id_of_obj_map;
-    return '<div class="jstTree">' + JSONTree._jsVal(data) + '</div>';
+    treeView.innerHTML =
+`<div class="jstTree">
+  <span class="jstProperty" style="display: none;">[root]</span>
+  <div></div>
+</div>`;
+    JSONTree.renderFrom(data, treeView.firstElementChild.children[1]);
   },
 
   locate: function(obj, key) {
@@ -70,26 +75,12 @@ JSONTree = { // eslint-disable-line no-unused-vars
         '<li class="jstItem">' + JSONTree._property(key, null) + '</li>');
       jstItem = jstList.firstElementChild;
     }
-    // If collapsible, ensure control is there; otherwise, ensure it isn't
-    let c = jstItem.firstElementChild.className;
-    const control_present = c === 'jstCollapse' || c === 'jstExpand';
-    const collapsible = JSONTree._canCollapse(value);
-    if (collapsible && !control_present) {
-      jstItem.insertAdjacentHTML('afterbegin', JSONTree._expandElem()); // new items start collapsed
-      c = 'jstExpand';
-    } else if (!collapsible && control_present) {
-      jstItem.firstElementChild.remove();
-      c = undefined;
-    }
 
-    // Finally, splice in the value
+    // Splice in the value
     const jstColon = jstItem.querySelector('.jstColon');
     let jstValue = jstColon.nextElementSibling;
     //if (jstValue.classList.contains('jstBracket')) jstValue = jstValue.nextElementSibling;
-    jstValue.outerHTML = JSONTree._jsVal(value);
-    jstValue = jstColon.nextElementSibling;
-    if (c === 'jstExpand') // obj should be collapsed
-      jstValue.classList.add('jstHiddenBlock');
+    JSONTree.renderFrom(value, jstValue);
   });},
 
   highlight: function(cssClass, obj, key) {
@@ -121,6 +112,10 @@ JSONTree = { // eslint-disable-line no-unused-vars
 
   click: function(jstCollapse) {
     const jstList = jstCollapse.parentElement.querySelector('.jstList');
+    if (!jstList) { // must be jstRef; delete the collapse control
+      jstCollapse.remove();
+      return;
+    }
     if (jstCollapse.className === 'jstCollapse')
       jstCollapse.className = 'jstExpand'
     else
@@ -138,7 +133,7 @@ JSONTree = { // eslint-disable-line no-unused-vars
     });
   },
 
-  _jsVal: function(value) {
+  _jsPrimitive: function(value) {
     const type = typeof value;
     switch (type) {
       case 'boolean': return JSONTree._jsBool(value);
@@ -148,20 +143,28 @@ JSONTree = { // eslint-disable-line no-unused-vars
       default:
         if (value === null) {
           return JSONTree._jsNull();
-        } else if (value instanceof Array) {
-          return JSONTree._jsArr(value); // ARRAYS ARE JUST MAPS IN MAP-LAND!!
-        } else {
-          return JSONTree._jsObj(value);
-        }
+        } else return JSONTree._element('(not primitive!)', {class: 'jstErr'});
     }
   },
 
-  _jsObj: function(object) {
-    let { id } = ref(object);
+  renderFrom: function(value, outputElem) {
+    if (value === null || typeof value !== 'object') {
+      outputElem.outerHTML = JSONTree._jsPrimitive(value); return;
+    }
+    
+    let { id } = ref(value); // Phase 1: detect cycles. linear in tree path
+    for (let curr=outputElem.parentElement, i=0, str=''; curr;
+         curr = curr.parentElement, i++) {
+      if (i % 2 === 1) str += '^';
+      if (curr.classList.contains('object_'+id)) { // avoid cycles
+        if (curr.parentElement) str += curr.parentElement.querySelector('.jstProperty').innerText;
+        outputElem.outerHTML = JSONTree._element(str+' (obj '+id+')', {class: 'jstRef'});
+        return;
+      }
+    }
     const elements = [];
     let entries = [];
-    //if (object.parent_key === 'apply') debugger;
-    map_iter(object, (k, v) => { entries.push([k,v]); });
+    map_iter(value, (k, v) => { entries.push([k,v]); });
     // Do numerical indices *after* string keys usually
     const nums = entries.filter(([k,v]) =>  Number.isInteger(+k));
     const strs = entries.filter(([k,v]) => !Number.isInteger(+k));
@@ -171,9 +174,6 @@ JSONTree = { // eslint-disable-line no-unused-vars
       if (value === undefined) return;
       const html = [];
       html.push('<li class="jstItem">');
-      if (JSONTree._canCollapse(value)) {
-        html.push(JSONTree._collapseElem());
-      }
       html.push(JSONTree._property(key, value));
       //if (index !== keys.length - 1) {
       html.push(JSONTree._comma());
@@ -182,7 +182,22 @@ JSONTree = { // eslint-disable-line no-unused-vars
       elements.push(html.join(''));
     });
     const body = elements.join('');
-    return JSONTree._collection(JSONTree._open('{', id), body, JSONTree._close('}', id), id);
+    let classes = '';
+    if (id !== 0) {
+      const firstEl = outputElem.parentElement.firstElementChild;
+      if (firstEl && firstEl.classList.contains('jstExpand')) classes = ' jstHiddenBlock';
+      if (!firstEl || !firstEl.classList.contains('jstCollapse')
+                   && !firstEl.classList.contains('jstExpand'))
+        outputElem.parentElement.insertAdjacentHTML(
+          'afterbegin', JSONTree._collapseElem()
+        );
+    }
+    outputElem = replaceDOM(outputElem, [JSONTree._open('{', id),
+      '<ul class="jstList object_'+id+classes+'">', body, '</ul>',
+    JSONTree._close('}', id)].join(''));
+    outputElem.querySelectorAll('.valuePlaceholder').forEach(child =>
+      JSONTree.renderFrom(deref(+child.innerText), child)
+    );
   },
 
   _jsFunc: function(func) {
@@ -200,25 +215,20 @@ JSONTree = { // eslint-disable-line no-unused-vars
     return '<span class="jstExpand" ' + onClick + '></span>';
   },
 
-  _canCollapse: function(data) {
-    const type = typeof data;
+  _canCollapse: function(value, jstValue) {
+    const type = typeof value;
     switch (type) {
       case 'boolean':
-        return false;
       case 'number':
-        return false;
       case 'string':
-        return false;
       case 'function':
         return false;
       default:
-        if (data === null) {
+        if (value === null) {
           return false;
         //} else if (data instanceof Array) {
         //  return data.length > 0;
-        } else {
-          return map_num_entries(data) > 0;
-        }
+      } else return !jstValue.classList.contains('jstRef'); //map_num_entries(data) > 0;
     }
   },
 
@@ -248,10 +258,13 @@ JSONTree = { // eslint-disable-line no-unused-vars
   _jsNull:    () => JSONTree._element('null', {class: 'jstNull'}),
 
   _property: function(name, value) {
-    const escapedValue = JSONTree._escape(JSON.stringify(name));
-    const property = JSONTree._element(escapedValue, {class: 'jstProperty'});
-    const propertyValue = JSONTree._jsVal(value);
-    return [property +JSONTree._colon(), propertyValue].join('');
+    const escapedName = JSONTree._escape(JSON.stringify(name));
+    const property = JSONTree._element(escapedName, {class: 'jstProperty'});
+    let propertyValue;
+    if (value !== null && typeof value === 'object')
+      propertyValue = '<div class="valuePlaceholder">'+ref(value).id+'</div>';
+    else propertyValue = JSONTree._jsPrimitive(value);
+    return [property + JSONTree._colon(), propertyValue].join('');
   },
 
   _colon: () => JSONTree._element(': ', {class: 'jstColon'}),
@@ -265,46 +278,21 @@ JSONTree = { // eslint-disable-line no-unused-vars
 
   _open:  (sym, id) => '',//JSONTree._element(sym, {id: 'opening_' + id, class: 'jstBracket'}),
   _close: (sym, id) => '',//JSONTree._element(sym, {id: 'opening_' + id + '_end', class: 'jstBracket'}),
-
-  /*_jsArr: function(array) {
-    const id = JSONTree._id();
-    const elements = [];
-    array.forEach((element, index) => {
-      var html = ['<li class="jstItem">'];
-      if (JSONTree._canCollapse(element)) {
-        html.push(JSONTree._collapseElem());
-      }
-      html.push(JSONTree._jsVal(element));
-      if (index !== array.length - 1) {
-        html.push(JSONTree._comma());
-      }
-      html.push('</li>');
-      elements.push(html.join(''));
-    });
-    const body = elements.join('');
-    return JSONTree._collection(JSONTree._open('[', id), body, JSONTree._close(']', id));
-  },*/
-
-  /*_nextUntil: function(elem, id) {
-    const siblings = [];
-    elem = elem.nextElementSibling;
-    while (elem) {
-      if (elem.id == id) {
-        break;
-      }
-      siblings.push(elem);
-      elem = elem.nextElementSibling;
-    }
-    return siblings;
-  },*/
-
-  /*findNextWithClass: function(element, clazz) {
-    let next = element.nextElementSibling;
-    while (true) {
-      if (next.className === clazz) {
-        return next;
-      }
-      next = next.nextElementSibling;
-    }
-  },*/
 };
+
+// modified https://stackoverflow.com/a/35997272
+function replaceDOM(ele, outerHTML) {
+  let parent = false, refEle;
+  // if element that's going to be changed has previousElementSibling, take it as reference. If not, the parentElement will be the reference.
+  if (ele.previousElementSibling !== null) refEle = ele.previousElementSibling;
+  else {
+    refEle = ele.parentElement;
+    // indicate that parentElement has been taken as reference
+    parent = true;
+  }
+  // change the outerHTML
+  ele.outerHTML = outerHTML;
+  // return the correct reference
+  if (parent) return refEle.firstElementChild;
+  else return refEle.nextElementSibling;
+}
