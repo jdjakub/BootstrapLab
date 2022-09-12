@@ -164,14 +164,20 @@ renderer.domElement.onmouseup = e => {
     let scene_node, t;
     try {
       scene_node = isects[0].object.parent.parent.parent.userData.sceneNode;
-      t = map_get(scene_node, 'text') + '';
+      t = map_get(scene_node, 'text');
+      if (t !== undefined) t = t + '';
     } catch (e) {}
-    if (t !== undefined && t.slice(-1) === ':') toggle_expand(scene_node);
     if (scene_node) {
       let old = map_get(ctx, 'currently_editing');
       if (typeof old === 'function') old = old();
-      if (old !== undefined) ed_unselect(old);
-      ed_select(scene_node);
+      
+      if (t !== undefined && t.slice(-1) === ':' && old === scene_node)
+        toggle_expand(scene_node);
+      
+      if (old !== scene_node) {
+        if (old !== undefined) ed_unselect(old);
+        ed_select(scene_node);
+      }
     }
     return;
   }

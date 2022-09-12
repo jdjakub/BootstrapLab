@@ -1,0 +1,104 @@
+onkeydown:
+currently_editing is the key_node
+if there isn't one, return
+un-thunk it if applicable
+children is key_node.children
+if key_node.{editKey or dummy},
+  focus on the key_node
+otherwise
+  focus on the 1st child
+  if that has a top_left.up, composite
+  otherwise it's primitive
+cache the current text content in focus, excluding :
+
+BACKSPACE:
+  get key_node's siblings and index within
+  if focus is (empty),
+    turn focus (back) into a prim value
+  if old content was empty, delete entry:
+    if it's the sole entry:
+      make it into (empty)
+    otherwise:
+      remove entry from the listing
+    delete source data
+  otherwise:
+    if fresh focus:
+      clear focus, mark not fresh
+    else:
+      pass backspace to tb (del last char)
+    
+TEXT KEY:
+  ignore if Ctrl or focus is (empty)
+  if fresh focus:
+    clear focus, mark not fresh
+  pass key to tb (append)
+
+TAB / ENTER:
+  if fresh focus, return
+  if focus is keynode:
+    change focus to value node (1st child)
+    return
+  if primitive value:
+    key = text in key_node
+    map = key_node^^.source or ctx
+    if key exists:
+      if ENTER, value = {}
+      else TAB: value = focus.text as appropriate type
+      [map].[key] = value
+      if ENTER: key_node.source = value
+  if TAB:
+    if last entry:
+      insert next sibling at appropriate height
+    select next sibling
+  else if ENTER:
+    replace value node with new composite
+    select it
+    
+BTW, here's the code for a text box:
+
+on create:
+  text := default text
+  
+on highlight:
+  background := highlight col
+  
+on append(char):
+  text += char
+  
+on backspace:
+  if len(text) = 0, unhandled
+  else:
+    text := text[0..-1), handled
+    
+on *: unhandled
+
+Plus some JS
+onkeydown ---> in-system code entry calling the above
+
+TODO:
+- state change should cause state change (finite extent) in scene tree, if that state is visualised there.
+
+In other words: there exists some addr -> gfx node mapping (e.g. in obj metadata) inside the substrate.
+
+Analogous to VMM GDT, LDT descriptor tables...
+
+...nah, this makes too much complexity e.g. the gfx tree format part of the substrate!!
+
+Instead: uhh....
+
+Well, a hex editor doesn't change memory, trigger a HW interrupt, and then sync the display data to match. Causality goes not:
+
+Edit --> Mem --> OnMemChange --> Display
+
+But:
+
+Edit ---> Mem
+     \--> Display
+     
+Aha! But how does x64dbg work? When instructions, the OS, or whatever ... change memory, how does it notice and display the changes??
+
+It must either re-poll everything after a run/step, or get a changelog from OS...?
+
+changelog could be a special part of state expected to change constantly so just poll on demand... assume stale by default when looking at its viz
+
+Also: suppose 

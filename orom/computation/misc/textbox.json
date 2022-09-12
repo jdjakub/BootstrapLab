@@ -1,1 +1,1 @@
-{"1":{"op":"load","value":"replace me"},"2":{"op":"store","register":"source"},"3":{"op":"load","value":"self"},"4":{"op":"deref"},"5":{"op":"store","register":"map"},"6":{"op":"load","value":"text"},"7":{"op":"store"}}
+{"create":{"1":{"op":"load","value":"replace me"},"2":{"op":"store","register":"source"},"3":{"op":"load","value":"self"},"4":{"op":"deref"},"5":{"op":"store","register":"map"},"6":{"op":"load","value":"text"},"7":{"op":"store"}}}
