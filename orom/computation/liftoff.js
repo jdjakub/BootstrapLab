@@ -224,7 +224,7 @@ function ed_select(scene_node) {
   } else if (!map_get(scene_node, 'children')) {
      key_node = scene_node.parent.parent; focus = scene_node;
   } else focus = map_get(scene_node, 'children', 1);
-  upd(ctx, 'currently_editing', () => key_node);
+  upd(ctx, 'currently_editing', /*() => */key_node);
   if (focus) upd(focus, 'opacity', 1);
 }
 
@@ -274,8 +274,10 @@ document.body.onkeydown = e => {
       if (map_get(siblings, 2) === undefined) { // sole entry
         const dummy_node = ed_make_empty(key_node);
         const new_keyNode = dummy_node.parent.parent;
-        upd(ctx, 'currently_editing', () => new_keyNode);
+        upd(ctx, 'currently_editing', /*() => */new_keyNode);
       } else {
+        let prev_sibling = map_get(siblings, index-1);
+        if (prev_sibling) ed_select(prev_sibling);
         upd(siblings, key_node.parent_key, undefined); // remove
         let next_sibling = map_get(siblings, index+1);
         while (next_sibling) { // move later siblings up one
@@ -345,11 +347,11 @@ document.body.onkeydown = e => {
         const new_up = vertical_start -.3*measure_tree_height(key_node);
         new_keyNode = new_focus = ed_make_new(key_node.parent, next_index, new_up);
       } else new_focus = map_get(new_keyNode, 'children', 1);
-      upd(ctx, 'currently_editing', () => new_keyNode);
+      upd(ctx, 'currently_editing', /*() => */new_keyNode);
       upd(new_focus, 'opacity', 1);
     } else { // Enter
       const new_keyNode = ed_make_new(map_get(key_node, 'children'), 1, -.3);
-      upd(ctx, 'currently_editing', () => new_keyNode);
+      upd(ctx, 'currently_editing', /*() => */new_keyNode);
       upd(new_keyNode, 'opacity', 1);
     }
   } else return;
@@ -698,10 +700,15 @@ function update_relevant_proxy_objs(obj, key) {
   if (obj.isChildrenFor !== undefined) f = sync_3js_children;
   else if (obj.isPositionFor !== undefined) f = sync_3js_pos;
   else if (obj._3js_proxy !== undefined) f = sync_3js_proxy;
+  else if (obj._3js_potential_child_in !== undefined) f = sync_3js_proxy;
   else return;
   const val = map_get(obj, key);
   f(obj)(key, val);
   old_value = undefined;
+  if (obj._3js_potential_child_in !== undefined && obj._3js_proxy !== undefined) {
+    obj._3js_potential_child_in.isChildrenFor._3js_proxy.add(obj._3js_proxy); // SMELL dupe of sync below
+    obj._3js_potential_child_in = undefined;
+  }
 }
 
 square_geom = new e3.PlaneGeometry(1, 1);
@@ -732,7 +739,7 @@ sync_3js_children = (children, do_delete) => (ch_name, child) => {
       parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
       if (bases[ch_name] === undefined) bases[ch_name] = child; // SMELL unique names
     }
-  }
+  } else child._3js_potential_child_in = children;
 }
 
 sync_3js_proxy = (obj, parent) => (key, val) => {
@@ -775,7 +782,9 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
         v.copy(vecInBasis(v, true, curr_basis._3js_proxy, targ_basis._3js_proxy));
     }
   } else if (key === 'text') {
-    init_3js_text(obj); obj._3js_text.set({ content: ""+val });
+    // For some reason MSDF default font has cyrillic letters but not <> ...
+    const sanVal = (''+val).replaceAll('<', 'Ж').replaceAll('>', 'ж');
+    init_3js_text(obj); obj._3js_text.set({ content: sanVal });
   } else if (key === 'opacity') {
     const backgroundOpacity = val === undefined ? 0 : Number.parseFloat(val);
     init_3js_text(obj); obj._3js_text.parent.set({ backgroundOpacity });
@@ -1017,33 +1026,6 @@ function load_state() {
         }
       },
     },
-    lisp_stuff: {
-      type: 'apply',  proc_e: 'define',  args_e: {
-        name: 'fac',
-        value: {
-          type: 'apply',  proc_e: 'lambda',  args_e: {
-            pattern_e: { 1: 'n' },
-            body_e: {
-              1: {
-                args_e: { 1: 'n' },
-                type: 'apply',  proc_e: {
-                  type: 'dict',  entries: {
-                    0: 1,  _: {
-                      type: 'apply',  proc_e: 'sub',  args_e: {
-                        1: 'fac',  2: {
-                          type: 'apply',  proc_e: 'sub',  args_e: { 1: 'n', 2: 1 }
-                        }
-                      }
-                    }
-                  }
-                },
-                //args_e: { 1: 'n' }
-              }
-            }
-          }
-        }
-      }
-    },
   });
   const instrs = map_get(ctx, 'instructions');
   map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'example_render', 'start'));
@@ -1071,7 +1053,6 @@ function load_state() {
 
   JSONTree.create(ctx, id_from_jsobj, treeView);
   //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
-  //JSONTree.toggle(map_get(ctx, 'lisp_stuff'));
   map_iter(rnd_instrs, (_,blk) => JSONTree.toggle(blk));
   JSONTree.toggle(map_get(ctx, 'scene', 'shapes'));
   JSONTree.toggle(map_get(ctx, 'pointer'));
@@ -1097,7 +1078,7 @@ function upd(o, ...args) {
 
 load_state();
 
-upd(ctx, 'src_tree', map_get(ctx, 'lisp_stuff', 'args_e', 'value', 'args_e', /*'body_e', 1, 'proc_e', 'entries', '_', 'args_e', 2, 'args_e'*/));
+// original line 12345
 //upd(ctx, 'scene', 'lisp_3js', 'children', maps_init(tree_to_3js(map_get(ctx, 'src_tree'))[0]));
 
 upd(ctx, 'scene', 'camera', 'position', map_new({basis: 'world', right: 1.01, up: -4.764}));
@@ -1263,7 +1244,18 @@ upd(ctx, 'scene', 'root', 'source', ctx);
 // 2022-05-04: 1-masp eval
 const masp =  map_new();
 upd(ctx, 'masp', masp);
+/*
+ * Primitive funcs protocol:
+   c is the Masp context
+   args is JS obj containing arg vals (or exprs if, dont_eval_args)
+   If dont_eval_args, then must eval them manually.
+   To eval an expr, modify the context and return non-true.
+   To Masp-return the value, set it in the context.
+   To exit the current expr and return to its container, return true.
+*/
 upd(masp, 'initial_env', maps_init({ entries: {
+  'quote': { dont_eval_args: true, body: (c, args) => 
+    { upd(c, 'value', args.to); return true; }},
   'mul': { body: (c, args) =>
     { upd(c, 'value', args[1]*args[2]); return true; }},
   'decr': { body: (c, args) =>
@@ -1287,10 +1279,36 @@ upd(masp, 'initial_env', maps_init({ entries: {
     masp_enter('as');
   }, dont_eval_args: true },
   'block': { body: (c, args) => {
-      let i; for (i=1; args[i] !== undefined; i++);
-      upd(c, 'value', map_get(args, i-1, 'value'));
-    }
-  },
+    let i; for (i=1; args[i] !== undefined; i++);
+    upd(c, 'value', args[i-1]); return true;
+  }},
+  'get': { body: (c, args) => {  
+    if (!masp_has_value(args.map)) { masp_enter('map'); return; }
+    const map = map_get(args.map, 'value');
+    upd(c, 'value', map_get(map, args.key));
+    return true;
+  }, dont_eval_args: true },
+  'set': { body: (c, args) => {
+    if (!masp_has_value(args.map)) { masp_enter('map'); return; }
+    const map = map_get(args.map, 'value');
+    if (!masp_has_value(args.to)) { masp_enter('to'); return; }
+    const val = map_get(args.to, 'value');
+    upd(map, args.key, val);
+    upd(c, 'value', null); return true;
+  }, dont_eval_args: true },
+  'slice': { body: (c, args) => {
+    let slice;
+    if (typeof args.of === 'string')
+      slice = args.of.slice(args.from, args.toExcl);
+    else throw ['slice: not a string', args.of]
+    upd(c, 'value', slice); return true;
+  }},
+  'concat': { body: (c, args) => {  
+    upd(c, 'value', (args[1]+'')+(args[2]+'')); return true;
+  }},
+  'length': { body: (c, args) => {
+    upd(c, 'value', args.of.length); return true;
+  }}
 }}));
 import_state('1lisp-fac.json').then(x => {
   upd(masp, 'program', x);
@@ -1417,6 +1435,14 @@ function masp_curr_env() {
 
 import_state('misc/textbox.json').then(x => {
   upd(ctx, 'textbox', x);
+  // From original line 12345
+  upd(ctx, 'src_tree', map_get(ctx, 'textbox', 'onBackspace'));
+  JSONTree.toggle(map_get(ctx, 'src_tree'));
+  
+  // Masp textbox editing trial
+  upd(ctx, 'scene', 'mytb', maps_init({text: 'Hello World', top_left: {right: 1, up: 0.5}}));
+  upd(ctx, 'masp', 'ctx', 'env', 'entries', 'self', map_get(ctx, 'scene', 'mytb'));
+  upd(ctx, 'masp', 'ctx', 'expr', map_get(ctx, 'textbox', 'onBackspace'));
 });
 
 camera.position.z = 10;

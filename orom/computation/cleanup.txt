@@ -19,6 +19,7 @@ BACKSPACE:
     if it's the sole entry:
       make it into (empty)
     otherwise:
+      highlight prev entry
       remove entry from the listing
     delete source data
   otherwise:
@@ -71,6 +72,8 @@ on backspace:
     text := text[0..-1), handled
     
 on *: unhandled
+
+must impl: quote, path, set, slice, concat
 
 Plus some JS
 onkeydown ---> in-system code entry calling the above
