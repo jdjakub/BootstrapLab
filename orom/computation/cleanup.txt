@@ -33,6 +33,9 @@ TEXT KEY:
   if fresh focus:
     clear focus, mark not fresh
   pass key to tb (append)
+  
+i.e. pass key/bksp to tb
+if unhandled, delete entry
 
 TAB / ENTER:
   if fresh focus, return
@@ -54,6 +57,7 @@ TAB / ENTER:
   else if ENTER:
     replace value node with new composite
     select it
+    
     
 BTW, here's the code for a text box:
 

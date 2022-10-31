@@ -298,14 +298,29 @@ document.body.onkeydown = e => {
       if (map === undefined) map = ctx;
       if (key !== undefined) upd(map, key, undefined);
     } else {
-      if (!map_get(focus, 'isFresh'))
-        upd(focus, 'text', oldContent.slice(0, -1) + suffix);
-      else { upd(focus, 'text', suffix); upd(focus, 'isFresh', undefined); }
+      if (!map_get(focus, 'isFresh')) {
+        upd(focus, 'text', oldContent); // ensure string
+        upd(focus, 'suffix', suffix);
+        upd(masp, 'initial_env', 'entries', 'self', focus);
+        upd(masp, 'ctx', 'value', undefined);
+        upd(masp, 'ctx', 'arg_i', undefined);
+        upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', 'backspace'));
+        masp_eval();
+        //upd(focus, 'text', oldContent.slice(0, -1) + suffix);
+      } else { upd(focus, 'text', suffix); upd(focus, 'isFresh', undefined); }
     }
   } else if (e.key.length === 1 && !e.metaKey && !map_get(focus, 'dummy')) {
-    if (!map_get(focus, 'isFresh'))
-      upd(focus, 'text', oldContent+e.key+suffix);
-    else { upd(focus, 'text', e.key+suffix); upd(focus, 'isFresh', undefined); }
+    if (!map_get(focus, 'isFresh')) {
+      upd(focus, 'text', oldContent); // ensure string
+      upd(focus, 'suffix', suffix);
+      upd(masp, 'initial_env', 'entries', 'self', focus);
+      upd(masp, 'initial_env', 'entries', 'char', e.key);
+      upd(masp, 'ctx', 'value', undefined);
+      upd(masp, 'ctx', 'arg_i', undefined);
+      upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', 'append'));
+      masp_eval();
+      //upd(focus, 'text', oldContent+e.key+suffix);
+    } else { upd(focus, 'text', e.key+suffix); upd(focus, 'isFresh', undefined); }
   } else if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
     if (map_get(focus, 'isFresh')) return; // can't tab out of new mapentry
@@ -1059,6 +1074,7 @@ function load_state() {
   fetch_next();
 }
 
+upd_rerender = true;
 function upd(o, ...args) {
   let real_v; // Hack for doing cyclic structures w/o breaking JSONTree...
   let v = args.pop();
@@ -1067,10 +1083,10 @@ function upd(o, ...args) {
   o = map_get(o, ...args);
   old_value = map_get(o, k);
   map_set(o, k, v);
-  JSONTree.update(o, k);
+  if (upd_rerender) JSONTree.update(o, k);
   if (real_v !== undefined) map_set(o, k, real_v); // Hidden from JSONTree
   update_relevant_proxy_objs(o, k);
-  if (v !== undefined)
+  if (v !== undefined && upd_rerender)
     JSONTree.highlight('jstExternalChange', o, k);
   if (need_rerender) r();
   return v;
@@ -1285,7 +1301,8 @@ upd(masp, 'initial_env', maps_init({ entries: {
   'get': { body: (c, args) => {  
     if (!masp_has_value(args.map)) { masp_enter('map'); return; }
     const map = map_get(args.map, 'value');
-    upd(c, 'value', map_get(map, args.key));
+    const val = map_get(map, args.key);
+    upd(c, 'value', val === undefined? null : val); // urgh
     return true;
   }, dont_eval_args: true },
   'set': { body: (c, args) => {
@@ -1304,10 +1321,17 @@ upd(masp, 'initial_env', maps_init({ entries: {
     upd(c, 'value', slice); return true;
   }},
   'concat': { body: (c, args) => {  
-    upd(c, 'value', (args[1]+'')+(args[2]+'')); return true;
+    const strs = [];
+    for (let i=1; args[i] !== undefined; i++) strs.push(args[i] + '');
+    upd(c, 'value', strs.join('')); return true;
   }},
   'length': { body: (c, args) => {
     upd(c, 'value', args.of.length); return true;
+  }},
+  'null': null,
+  'undefined': undefined, // ummmm
+  'asBool': { body: (c, args) => {
+    upd(c, 'value', args.to ? true : false); return true;
   }}
 }}));
 import_state('1lisp-fac.json').then(x => {
@@ -1382,7 +1406,9 @@ function masp_step() {
         }
         if (masp_has_value(body)) { value = map_get(body, 'value');
         } else { // Not yet eval'd
-          const defining_env = map_get(func, 'env')();
+          let defining_env = map_get(func, 'env');
+          // LEGACY holdover from the dark days of cycles breaking the view
+          if (typeof defining_env === 'function') defining_env = defining_env();
           // make a local env
           let body_env;
           if (path[0] === 'literal')
@@ -1422,7 +1448,7 @@ function masp_enter(...path) {
 
 function masp_has_value(...path) {
   const map = map_get(...path);
-  return typeof map === 'object' &&
+  return map !== null && typeof map === 'object' &&
     map_get(map, 'value') !== undefined;
 }
 
@@ -1433,6 +1459,18 @@ function masp_curr_env() {
   return map_get(curr_ctx, 'env');
 }
 
+fast_eval = false;
+function masp_eval() {
+  const initial_ctx = map_get(masp, 'ctx');
+  const saved = upd_rerender;
+  if (fast_eval) upd_rerender = false;
+    while (!masp_has_value(initial_ctx)) {
+      masp_step();
+      if (map_get(masp, 'break')) break;
+    }
+  if (fast_eval) upd_rerender = saved;
+}
+
 import_state('misc/textbox.json').then(x => {
   upd(ctx, 'textbox', x);
   // From original line 12345
@@ -1440,9 +1478,16 @@ import_state('misc/textbox.json').then(x => {
   JSONTree.toggle(map_get(ctx, 'src_tree'));
   
   // Masp textbox editing trial
-  upd(ctx, 'scene', 'mytb', maps_init({text: 'Hello World', top_left: {right: 1, up: 0.5}}));
-  upd(ctx, 'masp', 'ctx', 'env', 'entries', 'self', map_get(ctx, 'scene', 'mytb'));
-  upd(ctx, 'masp', 'ctx', 'expr', map_get(ctx, 'textbox', 'onBackspace'));
+  upd(ctx, 'scene', 'mytb', maps_init({
+    text: 'Hello World', top_left: {right: 1, up: 0.5}, suffix: ''
+  }));
+  upd(masp, 'ctx', 'env', 'entries', 'self', map_get(ctx, 'scene', 'mytb'));
+  upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', 'append'));
+  upd(masp, 'ctx', 'env', 'entries', 'char', 'X');
+  upd(masp, 'ctx', 'env', 'entries', 'checkFresh', map_new({
+    body: map_get(ctx, 'textbox', 'checkFresh'),
+    env: map_get(masp, 'initial_env')
+  }));
 });
 
 camera.position.z = 10;
