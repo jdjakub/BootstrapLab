@@ -483,14 +483,14 @@ function map_get(o, ...path) {
   path.forEach(k => o = o.entries[k]); return o;
 }
 function map_set(o, ...args) {
-  if (args.length === 1) { o.entries[args[1]] = undefined; return; }
+  if (args.length === 1) { delete o.entries[args[0]]; return; }
   let k = args.shift(); const v = args.pop();
   args.forEach(a => { o = o.entries[k]; k = a; });
   const old = o.entries[k];
   if (typeof old === 'object' && old !== null && old !== v && old.parent === o) {
     old.parent = old.parent_key = undefined; // if overwriting a tree child, remove parent
   }
-  o.entries[k] = v;
+  if (v !== undefined) o.entries[k] = v; else delete o.entries[k];
   if (typeof v === 'object' && v !== null && v.parent === undefined) {
     v.parent = o; // first to reference v becomes its parent
     v.parent_key = k;
