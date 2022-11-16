@@ -109,3 +109,9 @@ It must either re-poll everything after a run/step, or get a changelog from OS..
 changelog could be a special part of state expected to change constantly so just poll on demand... assume stale by default when looking at its viz
 
 Also: suppose 
+
+Nov 2022
+When expanding a scene node:
+if value node is string and [0..1] = '0x':
+reserve space for the rect; output the bg rect and the selector rect
+Link the selector rect to the on LMB / mouse move combo

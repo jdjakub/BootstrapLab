@@ -247,7 +247,9 @@ JSONTree = { // eslint-disable-line no-unused-vars
   },
 
   _jsStr: function(value) {
-    const jsonString = JSONTree._escape(JSON.stringify(value));
+    const jsonString = JSONTree._escape(
+      value.length === 0 ? '<empty string>' : JSON.stringify(value)
+    );
     return JSONTree._element(jsonString, {class: 'jstStr'});
   },
 

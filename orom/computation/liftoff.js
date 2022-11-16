@@ -261,66 +261,57 @@ document.body.onkeydown = e => {
   }
   let oldContent = map_get(focus, 'text')+'';
   if (suffix === ':') oldContent = oldContent.slice(0, -1);
-  if (e.key === 'Backspace') {
-    const siblings = key_node.parent;
-    let index = key_node.parent_key|0;
-    if (map_get(focus, 'dummy')) {
-      upd(children, focus.parent_key, maps_init({
-        text: 'value', top_left: { right: 0.75 }, opacity: 1
-      }));
-      displace_treeview(key_node, -1);
-    }
-    if (oldContent.length === 0) { // delete entry
-      if (map_get(siblings, 2) === undefined) { // sole entry
-        const dummy_node = ed_make_empty(key_node);
-        const new_keyNode = dummy_node.parent.parent;
-        upd(ctx, 'currently_editing', /*() => */new_keyNode);
-      } else {
-        let prev_sibling = map_get(siblings, index-1);
-        if (prev_sibling) ed_select(prev_sibling);
-        upd(siblings, key_node.parent_key, undefined); // remove
-        let next_sibling = map_get(siblings, index+1);
-        while (next_sibling) { // move later siblings up one
-          upd(siblings, index+1, undefined);
-          upd(siblings, index, next_sibling);
-          const up = map_get(next_sibling, 'top_left', 'up');
-          upd(next_sibling, 'top_left', 'up', up+.3);
-          index++; next_sibling = map_get(siblings, index+1);
-        }
-        displace_treeview(siblings.parent, -1);
+  
+  let isBackspace = e.key === 'Backspace';
+  let isChar = e.key.length === 1 && !e.metaKey && !map_get(focus, 'dummy');
+  if (isBackspace || isChar) {
+    upd(focus, 'text', oldContent); // ensure string
+    upd(focus, 'suffix', suffix);
+    upd(masp, 'initial_env', 'entries', 'self', focus);
+    if (isChar) upd(masp, 'initial_env', 'entries', 'char', e.key);
+    upd(masp, 'ctx', 'value', undefined);
+    upd(masp, 'ctx', 'arg_i', undefined);
+    const method = isBackspace ? 'backspace' : 'append';
+    upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', method));
+    masp_eval();
+    if (isBackspace && map_get(masp, 'ctx', 'value') === 'unhandled') {
+      const siblings = key_node.parent;
+      let index = key_node.parent_key|0;
+      if (map_get(focus, 'dummy')) {
+        upd(children, focus.parent_key, maps_init({
+          text: 'value', top_left: { right: 0.75 }, opacity: 1
+        }));
+        displace_treeview(key_node, -1);
       }
-      // delete source state entry
-      let map, key;
-      try {
-        key = map_get(key_node, 'text').slice(0, -1);
-        map = map_get(siblings.parent, 'source');
-      } catch (e) {}
-      if (map === undefined) map = ctx;
-      if (key !== undefined) upd(map, key, undefined);
-    } else {
-      if (!map_get(focus, 'isFresh')) {
-        upd(focus, 'text', oldContent); // ensure string
-        upd(focus, 'suffix', suffix);
-        upd(masp, 'initial_env', 'entries', 'self', focus);
-        upd(masp, 'ctx', 'value', undefined);
-        upd(masp, 'ctx', 'arg_i', undefined);
-        upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', 'backspace'));
-        masp_eval();
-        //upd(focus, 'text', oldContent.slice(0, -1) + suffix);
-      } else { upd(focus, 'text', suffix); upd(focus, 'isFresh', undefined); }
+      if (oldContent.length === 0) { // delete entry
+        if (map_get(siblings, 2) === undefined) { // sole entry
+          const dummy_node = ed_make_empty(key_node);
+          const new_keyNode = dummy_node.parent.parent;
+          upd(ctx, 'currently_editing', /*() => */new_keyNode);
+        } else {
+          let prev_sibling = map_get(siblings, index-1);
+          if (prev_sibling) ed_select(prev_sibling);
+          upd(siblings, key_node.parent_key, undefined); // remove
+          let next_sibling = map_get(siblings, index+1);
+          while (next_sibling) { // move later siblings up one
+            upd(siblings, index+1, undefined);
+            upd(siblings, index, next_sibling);
+            const up = map_get(next_sibling, 'top_left', 'up');
+            upd(next_sibling, 'top_left', 'up', up+.3);
+            index++; next_sibling = map_get(siblings, index+1);
+          }
+          displace_treeview(siblings.parent, -1);
+        }
+        // delete source state entry
+        let map, key;
+        try {
+          key = map_get(key_node, 'text').slice(0, -1);
+          map = map_get(siblings.parent, 'source');
+        } catch (e) {}
+        if (map === undefined) map = ctx;
+        if (key !== undefined) upd(map, key, undefined);
+      }
     }
-  } else if (e.key.length === 1 && !e.metaKey && !map_get(focus, 'dummy')) {
-    if (!map_get(focus, 'isFresh')) {
-      upd(focus, 'text', oldContent); // ensure string
-      upd(focus, 'suffix', suffix);
-      upd(masp, 'initial_env', 'entries', 'self', focus);
-      upd(masp, 'initial_env', 'entries', 'char', e.key);
-      upd(masp, 'ctx', 'value', undefined);
-      upd(masp, 'ctx', 'arg_i', undefined);
-      upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', 'append'));
-      masp_eval();
-      //upd(focus, 'text', oldContent+e.key+suffix);
-    } else { upd(focus, 'text', e.key+suffix); upd(focus, 'isFresh', undefined); }
   } else if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
     if (map_get(focus, 'isFresh')) return; // can't tab out of new mapentry
@@ -1275,7 +1266,7 @@ upd(masp, 'initial_env', maps_init({ entries: {
   'mul': { body: (c, args) =>
     { upd(c, 'value', args[1]*args[2]); return true; }},
   'decr': { body: (c, args) =>
-    { upd(c, 'value', args[1]-1); return true; }},
+    { upd(c, 'value', args.to-1); return true; }},
   'fun': { body: (c, args) => {
     const defining_env = masp_curr_env();
     const closure = map_new({
@@ -1332,6 +1323,9 @@ upd(masp, 'initial_env', maps_init({ entries: {
   'undefined': undefined, // ummmm
   'asBool': { body: (c, args) => {
     upd(c, 'value', args.to ? true : false); return true;
+  }},
+  'neg': { body: (c, args) => {
+    upd(c, 'value', -args.to); return true;
   }}
 }}));
 import_state('1lisp-fac.json').then(x => {
