@@ -115,3 +115,35 @@ When expanding a scene node:
 if value node is string and [0..1] = '0x':
 reserve space for the rect; output the bg rect and the selector rect
 Link the selector rect to the on LMB / mouse move combo
+
+render_mapentry(key_name, value):
+key_name is:
+  color ->
+    local box is {width: .25, height: .25,
+           center: { right: .75, up: -.25, forward: -1 }}
+    set(box, 'color', value)
+    box
+  _ -> 'unhandled'
+
+toggle_expand(scene_node):
+  children := get(scene_node, 'children')
+  state_node := get(scene_node, 'source')
+  typeof(state_node) is:
+    undefined ->
+      state_node := get(get(parent(parent(scene_node)), 'source'), substr(get(scene_node, 'text'), 0, -1))
+    _ -> null
+  typeof(state_node) is:
+    object -> eq(state_node, null) is:
+      true -> return()
+      false -> null
+    _ ->
+      lines := map_num_entries(state_node)
+      lines is:
+        0 -> return()
+        _ -> null
+  map_num_entries(children) is:
+    _ ->
+      lines := neg(decr(measure_tree_height(scene_node)))
+      set(scene_node, 'children', {})
+    0 ->
+      

@@ -29,7 +29,7 @@ camera = new e3.OrthographicCamera( -aspect, +aspect, +1, -1, 0, 1000);
 
 geom = new e3.PlaneGeometry(2, 2);
 mat = new e3.MeshBasicMaterial({ color: 0x770077, side: e3.DoubleSide });
-shapes = new e3.Mesh(geom, mat);
+shapes = new e3.Group();//e3.Mesh(geom, mat); DEMO
 shapes.name = 'shapes'; scene.add(shapes);
 shapes.translateZ(-100);
 
@@ -265,6 +265,7 @@ document.body.onkeydown = e => {
   let isBackspace = e.key === 'Backspace';
   let isChar = e.key.length === 1 && !e.metaKey && !map_get(focus, 'dummy');
   if (isBackspace || isChar) {
+    /* TODO debug and fix this Masp for backspace
     upd(focus, 'text', oldContent); // ensure string
     upd(focus, 'suffix', suffix);
     upd(masp, 'initial_env', 'entries', 'self', focus);
@@ -274,7 +275,13 @@ document.body.onkeydown = e => {
     const method = isBackspace ? 'backspace' : 'append';
     upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', method));
     masp_eval();
-    if (isBackspace && map_get(masp, 'ctx', 'value') === 'unhandled') {
+    if (isBackspace && map_get(masp, 'ctx', 'value') === 'unhandled') {*/
+    if (map_get(focus, 'isFresh')) {
+      upd(focus, 'text', (isChar ? e.key : '') + suffix);
+      upd(focus, 'isFresh', undefined);
+    } else upd(focus, 'text', (isBackspace ? oldContent.slice(0, -1)
+                                           : oldContent+e.key) + suffix);
+    if (isBackspace && oldContent.length === 0) {
       const siblings = key_node.parent;
       let index = key_node.parent_key|0;
       if (map_get(focus, 'dummy')) {
@@ -334,7 +341,7 @@ document.body.onkeydown = e => {
           value = map_get(focus, 'text');
           const numVal = Number.parseFloat(value);
           const boolVal = {true: true, false: false}[value];
-          if (!Number.isNaN(numVal)) value = numVal;
+          if (!value.startsWith('0x') && !Number.isNaN(numVal)) value = numVal;
           else if (boolVal !== undefined) value = boolVal;
           else if (value === 'null') value = null;
           //else if (value === 'undefined') value = undefined;
@@ -354,7 +361,7 @@ document.body.onkeydown = e => {
         new_keyNode = new_focus = ed_make_new(key_node.parent, next_index, new_up);
       } else new_focus = map_get(new_keyNode, 'children', 1);
       upd(ctx, 'currently_editing', /*() => */new_keyNode);
-      upd(new_focus, 'opacity', 1);
+      if (new_focus !== undefined) upd(new_focus, 'opacity', 1); // SMELL demo
     } else { // Enter
       const new_keyNode = ed_make_new(map_get(key_node, 'children'), 1, -.3);
       upd(ctx, 'currently_editing', /*() => */new_keyNode);
@@ -1023,7 +1030,7 @@ function load_state() {
         children: {
           yellow_shape: {
             color: '0x999900', width: 2, height: 2,
-            center: { basis: 'shapes', right: -1.75, up: 1.75, forward: -1 },
+            center: { basis: 'shapes', right: 2, up: 1.75, forward: -1 },
           },
           blue_shape: {
             color: '0x009999', width: 2, height: 2,
@@ -1167,6 +1174,8 @@ function measure_tree_height(scene_node) { // DF traversal
   return total;
 }
 
+local_notation_demo = false;
+
 nodes_to_bump = [];
 // JS breadth-first on-demand tree rendering (with layout)
 function toggle_expand(scene_node) {
@@ -1191,12 +1200,43 @@ function toggle_expand(scene_node) {
     upd(scene_node, 'source', state_node);
     // scene_node.source := state_node
     map_iter(state_node, (k,v,i) => {
+      if (state_node.parent_key === 'is' && k === 'color') return;
       i++;
       const key_r = maps_init({
         text: k+':', top_left: {right: .2, up: -.3*i}, children: {}
       });
       // key_r := <expr>
-      if (typeof v !== 'object' || v === null) { // render primitive value
+      // Try render in Masp
+      if (local_notation_demo && k === 'color' && typeof v === 'string') {/*
+        map_set(key_r, 'children', 1, maps_init({
+          width: .25, height: .25, center: {right: .75, up: -.1, forward: -1},
+          color: v
+        }));*/
+        fast_eval = false; upd_rerender = true;
+        //upd(masp, 'break', true);
+      }
+      upd(masp, 'initial_env', 'entries', 'key_name', k);
+      upd(masp, 'initial_env', 'entries', 'value', v);
+      upd(masp, 'ctx', 'value', undefined);
+      upd(masp, 'ctx', 'arg_i', undefined);
+      upd(masp, 'ctx', 'expr', map_get(ctx, 'render_map_entry'));
+      masp_eval();
+      //if (k === 'color') throw "Color Break Exception";
+      let rendered = 'unhandled';
+      if (local_notation_demo && k === 'color' && typeof v === 'string')
+        rendered = map_get(masp, 'ctx', 'value'); // HACK demo
+      if (rendered !== 'unhandled') { // insert rendered val into tree
+        const actual_value = map_get(rendered, 'literal');
+        if (actual_value) rendered = actual_value; // HACK demo
+        if (typeof rendered === 'object') { // HACK demo deep-enough copy
+          rendered = map_new({ ...rendered.entries });
+          const tl = map_get(rendered, 'top_left');
+          if (tl) map_set(rendered, 'top_left', map_new({ ...tl.entries }));
+          const ch = map_get(rendered, 'children');
+          if (ch) map_set(rendered, 'children', map_new({ 1: map_new({ ...map_get(ch, 1).entries })}));
+        }
+        map_set(key_r, 'children', 1, rendered);//*/
+      } else if (typeof v !== 'object' || v === null) { // render primitive value
         map_set(key_r, 'children', 1, maps_init({ top_left: {right: .75}, text: v }));
         nodes_to_bump.push(key_r); // layout after key width calc'd
         nodes_to_bump.push(map_get(key_r, 'children', 1));
@@ -1285,6 +1325,16 @@ upd(masp, 'initial_env', maps_init({ entries: {
     }
     masp_enter('as');
   }, dont_eval_args: true },
+  'local': { body: (c, args) => {
+    if (typeof args.is === 'object') {
+      const val = map_get(args.is, 'value');
+      if (val !== undefined) {
+        upd(masp_curr_env(), 'entries', args.name, val);
+        upd(c, 'value', null); return true;
+      }
+    }
+    masp_enter('is');
+  }, dont_eval_args: true },
   'block': { body: (c, args) => {
     let i; for (i=1; args[i] !== undefined; i++);
     upd(c, 'value', args[i-1]); return true;
@@ -1301,7 +1351,8 @@ upd(masp, 'initial_env', maps_init({ entries: {
     const map = map_get(args.map, 'value');
     if (!masp_has_value(args.to)) { masp_enter('to'); return; }
     const val = map_get(args.to, 'value');
-    upd(map, args.key, val);
+    if (map_get(map, 'literal')) upd(map, 'literal', args.key, val); // HACK demo
+    else upd(map, args.key, val);
     upd(c, 'value', null); return true;
   }, dont_eval_args: true },
   'slice': { body: (c, args) => {
@@ -1328,14 +1379,6 @@ upd(masp, 'initial_env', maps_init({ entries: {
     upd(c, 'value', -args.to); return true;
   }}
 }}));
-import_state('1lisp-fac.json').then(x => {
-  upd(masp, 'program', x);
-  upd(masp, 'ctx', map_new({
-    env: map_get(masp, 'initial_env'),
-    expr: map_get(masp, 'program'),
-    is_root: true,
-  }));
-});
 
 function masp_step() {
   const c = map_get(masp, 'ctx');
@@ -1465,8 +1508,12 @@ function masp_eval() {
   if (fast_eval) upd_rerender = saved;
 }
 
+import_state('misc/render.json').then(x => {
+  upd(ctx, 'render_map_entry', x);
+});
 import_state('misc/textbox.json').then(x => {
   upd(ctx, 'textbox', x);
+  JSONTree.toggle(map_get(ctx, 'textbox'));
   // From original line 12345
   upd(ctx, 'src_tree', map_get(ctx, 'textbox', 'onBackspace'));
   JSONTree.toggle(map_get(ctx, 'src_tree'));
@@ -1475,14 +1522,28 @@ import_state('misc/textbox.json').then(x => {
   upd(ctx, 'scene', 'mytb', maps_init({
     text: 'Hello World', top_left: {right: 1, up: 0.5}, suffix: ''
   }));
+  /*
   upd(masp, 'ctx', 'env', 'entries', 'self', map_get(ctx, 'scene', 'mytb'));
   upd(masp, 'ctx', 'expr', map_get(ctx, 'textbox', 'append'));
   upd(masp, 'ctx', 'env', 'entries', 'char', 'X');
   upd(masp, 'ctx', 'env', 'entries', 'checkFresh', map_new({
     body: map_get(ctx, 'textbox', 'checkFresh'),
     env: map_get(masp, 'initial_env')
+  }));*/ // Demo
+});
+import_state('1lisp-fac.json').then(x => {
+  upd(masp, 'program', x);
+  upd(masp, 'ctx', map_new({
+    env: map_get(masp, 'initial_env'),
+    expr: map_get(masp, 'program'),
+    is_root: true,
   }));
+  JSONTree.toggle(map_get(masp, 'ctx', 'env'));
+  JSONTree.toggle(map_get(masp, 'initial_env'));
+  JSONTree.toggle(map_get(masp, 'program'));
 });
 
 camera.position.z = 10;
 r();
+
+fast_eval = true;
