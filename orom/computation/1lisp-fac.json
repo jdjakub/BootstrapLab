@@ -7,7 +7,7 @@
       "0": 1,
       "_":{ "apply": "mul", "1": "n", "2": {
           "apply": "fac",
-          "n": { "apply":"decr", "1":"n" }}}}}}},
+          "n": { "apply":"decr", "to":"n" }}}}}}},
   "2": {
     "apply":"fac", "n":1
   }
