@@ -1,6 +1,19 @@
+/*
+ * ### EASY-TO-TYPE UTILITIES
+ * For use in the JS console.
+*/
+// For entering the debugger in a JS console statement. Add it as a dummy param
+// or use it to wrap a param in a function call so it evaluates first.
+// E.g: I want to step through the execution of `foo(1, 2, 3)`.
+// So I put: `foo(1, 2, DEBUG(3))` or `foo(1, 2, 3, DEBUG())`.
 DEBUG = (x) => { debugger; return x; };
+// `last([1,2,3])` = 3, `last([1,2,3], 2)` = 2
 last = (arr, n) => arr[arr.length-(n || 1)];
+// Interpose anywhere in an expression to transparently probe its value.
+// E.g. `foo(1, bar(x)*baz(y))` - I wonder what the 2nd argument is.
+// So I put: `foo(1, log(bar(x)*baz(y)))`
 log = (...args) => { console.log(...args); return last(args); };
+// Render a THREE.js matrix in a non-stupid way
 function forMat4(m) {
   const s = m.elements.map(n => n.toPrecision(2));
   return [
@@ -10,60 +23,122 @@ function forMat4(m) {
     [s[3], s[7], s[11], s[15]].join('\t'),
   ].join('\n');
 }
+/* ### EXPLICIT AXIS NAMES
+ * Opinion: calling things x, y, z or 0, 1, 2 is a terrible norm.
+ * These symbols have little stable meaning:
+ * - x in 2D and 3D usually means the rightward direction.
+ * - y in 2D can be up or down. In 3D it can be those OR forward/backward!
+ * - z in 3D can be forward, backward, up...
+ *
+ * The result is trial-and-error graphics coding, puzzling reflection and
+ * rotations, and it's completely unnecessary. When we additionally make this
+ * dependent on the *order* they are stored in, we are just asking for trouble.
+ *
+ * Better: just be explicit about the intended direction.
+ * In an ideal system, you can express coordinates however is convenient using
+ * the words left, right, up, down, forward, backward, or abbreviations thereof.
+ * The system knows which are opposites and when to internally flip signs.
+ *
+ * BootstrapLab does not yet have that capability, but we do use the names
+ * right, up, forward.
+ */
+// Stringify a negative quantity as left/down, right/up otherwise.
 lr = n => n.toPrecision(2) + (n < 0 ? ' left' : ' right');
 ud = n => n.toPrecision(2) + (n < 0 ? ' down' : ' up');
+// Convert between BL vecs and THREE.js vecs according to the likely convention
 xyz = (o) => new e3.Vector3(o.right, o.up, o.forward);
 ruf = (o) => ({ right: o.x, up: o.y, forward: o.z });
+// THREE takes way too long to type in the console for every API object. Ideally
+// we would type 3 but that is a number literal. The `e` key is closest to 3 so
+// this is the next best option.
 e3 = THREE;
+
+/* ### THREE.js BOILERPLATE */
+// Goal: call `renderer.render(scene, camera)` to see what the camera sees.
+// We need a renderer:
 renderer = new e3.WebGLRenderer({ antialias: true });
+// The render creates its own `<canvas>` element which needs attaching:
 document.body.appendChild(renderer.domElement);
+// Fill the available area:
 renderer.domElement.style.display = 'inline-block';
 const [rw, rh] = [window.innerWidth*.50, window.innerHeight*.99];
 renderer.setSize(rw, rh);
 const DPR = window.devicePixelRatio || 1;
-renderer.setPixelRatio(DPR);
-scene = new e3.Scene(); scene.name = 'world';
+renderer.setPixelRatio(DPR); // Take advantage of my Mac retina display
+scene = new e3.Scene(); scene.name = 'world'; // Named coord systems
 aspect = rw / rh;
-camera = new e3.OrthographicCamera( -aspect, +aspect, +1, -1, 0, 1000);
+// We need a 2D (ortho) camera:   (    left,   right, up, down, near, far )
+camera = new e3.OrthographicCamera( -aspect, +aspect, +1,   -1,    0, 1000);
 //camera.name = 'camera'; scene.add(camera);
+// ^ We'd normally add the camera like this, but for BL we'll connect it as the
+// 3js proxy for the in-system `camera` map. Our substrate will then add it to
+// the scene.
 
+// JARGON: A "map" is a key-value dictionary, the basic structuring unit of
+// the in-system state.
+
+// Create a 2x2 magenta square, which we'll later add to the scene
 geom = new e3.PlaneGeometry(2, 2);
 mat = new e3.MeshBasicMaterial({ color: 0x770077, side: e3.DoubleSide });
+// Create a coordinate system called "shapes"
 shapes = new e3.Group();//e3.Mesh(geom, mat); DEMO
 shapes.name = 'shapes'; scene.add(shapes);
-shapes.translateZ(-100);
+shapes.translateZ(-100); // Make sure it's moved in front of the camera
 
+// Set up some coloured arrows for the world axes.
 origin = new e3.Vector3();
 dir = new e3.Vector3(1,0,0);
+// So we can see where the axis called "x" ends up pointing:
 x_helper = new e3.ArrowHelper(dir, origin, 1, 0xff0000);
 scene.add(x_helper);
 dir = new e3.Vector3(0,1,0);
+// Ditto for "y":
 y_helper = new e3.ArrowHelper(dir, origin, 1, 0x00ff00);
 scene.add(y_helper);
 
+/* ### AUTO COORD SYSTEM CONVERSIONS
+ * Programmers should *never* have to do matrix mathematics ourselves. We
+ * should be able to refer to named coordinate frames and express vectors as
+ * convenient. Operations between vectors should convert automatically.
+ */
+
+// Given two 3js objects in the same scene tree, traverse their parents until
+// encountering the same node. This common ancestor can then be used for coord
+// conversions.
 function leastCommonAncestor(_3obj1, _3obj2) {
-  const nodes = [_3obj1, _3obj2];
-  const opp = x => 1-x; // 0 <-> 1
-  const visited = [new Set([_3obj1]), new Set([_3obj2])];
-  let curr = 0;
-  while (!visited[opp(curr)].has(nodes[curr])) { // current node not in other set
-    visited[curr].add(nodes[curr]); // mark current node as visited
+  // We're going to alternate between the two, climbing one parent at a time
+  const nodes = [_3obj1, _3obj2]; // Start at the roots
+  const opp = x => 1-x; // Gives the "other" node's array index (0 <-> 1)
+  // We will track which nodes have been visited from each root
+  const visited = [new Set([_3obj1]), new Set([_3obj2])]; // Roots visited!
+  let curr = 0; // opp(curr) indexes the "other" node in the pair
+  // If the current node hasn't been visited from the other root...
+  while (!visited[opp(curr)].has(nodes[curr])) {
+    visited[curr].add(nodes[curr]); // First, we've just visited it
     const parent = nodes[curr].parent;
-    if (parent !== null) nodes[curr] = parent; // climb up
-    else if (nodes[opp(curr)].parent === null)
-      if (nodes[0] === nodes[1]) return nodes[0];
+    if (parent !== null) nodes[curr] = parent; // Climb up if there's a parent
+    else if (nodes[opp(curr)].parent === null) // If neither have parents
+      if (nodes[0] === nodes[1]) return nodes[0]; // Top of tree? OK
       else throw ["Coord frames live in disjoint trees: ", _3obj1.name, _3obj2.name];
-    curr = opp(curr); // alternate between three1's and three2's path
+    curr = opp(curr); // Alternate between the two paths
   }
-  return nodes[curr];
+  // Here, the current node has already been visited on the other path
+  return nodes[curr]; // So return this ancestor
 }
 
+// Obtain the matrix that will take components in frame A, and transform them
+// into components in frame E, such that they represent the same vector.
 function coordMatrixFromTo(from3obj /* A */, to3obj /* E */) {
-  /*      C         We desire [A->E] = [E<-A]
-   *     / \        = [E<-D][D<-C][C<-B][B<-A]
-   *    B   D        each .matrix means [local->parent] = [parent<-local] coords
-   *   /     \        so [E<-A] = E' D' B ' = (E' D')(B A) = [DOWN] [UP]
-   *  A       E
+  // Matrices operate on the RHS, so we want M such that e = M a
+  // We can expand M notationally as follows: e = [E <- A] a
+  // Reading backwards: a through [A -> E] = e
+  // And [A -> E] = [A->B][B->C][D->E] if there are intermediate B,C,D frames
+  
+  /*      C         We desire [E<-A] = [E<-D][D<-C][C<-B][B<-A]
+   *  ↑  / \  ↓     In THREE.js, each node's `.matrix` "goes up", representing
+   *    B   D       [local->parent] a.k.a. [parent<-local] coords
+   *   /     \      So, writing M-inverse as M', [A->E] = A B D' E'
+   *  A       E     So [E<-A] = E' D' B A = (E' D')(B A) = [DOWN] [UP]
    */
   const common = leastCommonAncestor(from3obj, to3obj); // C
   const up_mat = new e3.Matrix4();
@@ -82,34 +157,52 @@ function coordMatrixFromTo(from3obj /* A */, to3obj /* E */) {
   return down_mat.multiply(up_mat);
 }
 
-ndc = new e3.Object3D(); ndc.name = 'ndc';
-camera.add(ndc);
-ndc.matrix.copy(camera.projectionMatrixInverse); // Needs sync
-ndc.matrixAutoUpdate = false;
+/* ### MAKE THE DEFAULT COORDINATE FRAMES EXPLICIT */
 
+// NORMALISED DEVICE COORDINATES: NDC. This is where we express 3D positions as
+// proportions of the cubic view dimensions, where each axis goes from -1 to +1
+// (or, sometimes, -0.5 to +0.5 so the total length is 1: watch out for that).
+ndc = new e3.Object3D(); ndc.name = 'ndc';
+camera.add(ndc); // NDC is inherently relative to the view i.e. camera
+// In THREE.js, a camera's .projectionMatrix is [Camera -> NDC] so...
+// Constraint: always NDC.matrix = camera.projectionMatrixInverse
+ndc.matrix.copy(camera.projectionMatrixInverse);
+// To maintain this equality, we'll need to sync whenever camera params change
+// (e.g. when zooming)
+ndc.matrixAutoUpdate = false; // 3JS please don't get in the way of that
+
+// SCREEN SPACE: pixel units from the top-left corner. Child of NDC.
+// x direction is the same, y has opposite sign: up in NDC, down in screen space
 screen = new e3.Object3D(); screen.name = 'screen';
 ndc.add(screen);
-(() => {
+(() => { // JavaScript: establish a local variable context
+  // JARGON: An *extent* is a half-width/half-height. It's useful because we
+  // usually measure from centre, the notable exception being screen space.
   const [xe,ye] = [rw/2, rh/2];
-  screen.matrix.set(
-    1/xe,     0, 0, -1,    // 0----xe--->..........
-       0, -1/ye, 0, +1,    // |-------x------>
-       0,     0, 1,  0,    // 0-----x/xe-----> = 1.5
-       0,     0, 0,  1,    // |         |---->   1.5 - 1 = 0.5
-  );
+  // Screen matrix: given top-left px coords, normalise and centre 'em.
+  screen.matrix.set(       // Step-by-step, ignore matrix row correspondence:
+    1/xe,     0, 0, -1,    // 0----xe--->..........       behold the x extent
+       0, -1/ye, 0, +1,    // |-------x------>            behold the px x coord
+       0,     0, 1,  0,    // 0-----x/xe-----> = 1.5        ...as % of x extent
+       0,     0, 0,  1,    // |         |---->   1.5 - 1 = 0.5  ...as from 100%
+  ); // So x -> e/xe - 1 and y -> -(y/ye - 1)
   screen.matrixAutoUpdate = false;
 })();
 
+// Given a Vector3 with components meant in currBasis, obtain a Vector4 with
+// components meant in targBasis
 function vecInBasis(v, isPoint, currBasis, targBasis) {
   return new e3.Vector4(v.x, v.y, v.z, isPoint? 1 : 0)
              .applyMatrix4(coordMatrixFromTo(currBasis, targBasis));
 }
 
+// Fossil function that used to be massive, now just an abbreviation.
+// Takes event handler client (pixel) coords to world (scene) coords
 function clientToWorld(v) {
   return new e3.Vector4(v.x, v.y, 0, v.z).applyMatrix4(coordMatrixFromTo(screen, scene));
 }
 
-/*
+/* Pseudocode for a machine-readable DSL for coord system specs:
 screen -> ndc -> camera-local -> world
 screen vec: s0 s-org + s1 s-right + s2 s-down
    ndc vec: n0 n-org + n1 n-right + n2 n-up
@@ -124,6 +217,8 @@ s-down = - n-up/hh
 n-up   = - hh s-down
 */
 
+// Take a 3JS vec in some role (property name) and construct the appropriate BL
+// map including the correct basis
 function bl_vec_from_3js(_3obj, propName) {
   const vec = _3obj[propName];
   if (propName === 'position') {
