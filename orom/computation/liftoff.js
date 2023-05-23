@@ -226,18 +226,25 @@ function bl_vec_from_3js(_3obj, propName) {
   }
 }
 
+/* ### EVENT HANDLERS / TREE EDITOR */
 // Warning: forward refs to tree stuff
 renderer.domElement.onmousedown = e => {
+  // Make the fact that the button is down visible in-system
+  // Global `ctx` is the entire in-system state graph
+  // `upd()` updates a state path and updates the DOM state view
   upd(ctx, 'pointer', 'is_dragging', true);
   //if (!ctx.dragging_in_system) return; // Smell: demo-dependence
   const tmp = map_get(ctx, 'pointer', 'pressed_at');
+  // Make where the button was pressed visible in-system
+  // Unlike `upd()`, `map_set()` updates the state without graphical update
   map_set(tmp, 'right', e.clientX); map_set(tmp, 'down', e.clientY);
   JSONTree.update(ctx, 'pointer', 'pressed_at');
   JSONTree.highlight('jstExternalChange', tmp);
 };
 
-raycaster = new e3.Raycaster();
+raycaster = new e3.Raycaster(); // For going px coords -> 3D object
 renderer.domElement.onmouseup = e => {
+  // Make this fact and where it occurred visible in-system
   const ptr = map_get(ctx, 'pointer');
   upd(ptr, 'is_dragging', false);
   //if (ctx.pointer === undefined || !ctx.dragging_in_system) return; // Smell: demo-dependence
@@ -246,29 +253,44 @@ renderer.domElement.onmouseup = e => {
   JSONTree.update(ptr, 'released_at');
   JSONTree.highlight('jstExternalChange', tmp);
   
+  // If the "drag" distance is small enough, count it as a click.
   const pressedX = map_get(ptr, 'pressed_at', 'right');
   const pressedY = map_get(ptr, 'pressed_at', 'down');
   const [dx,dy] = [e.clientX-pressedX, e.clientY-pressedY];
-  if (dx*dx + dy*dy > 5) return; // detect drag rather than click
+  if (dx*dx + dy*dy > 5) return;
   
+  // Cast a ray through the clicked point
   const screen_v = new e3.Vector3(e.clientX, e.clientY, 0);
   const ndc_v = vecInBasis(screen_v, true, screen, ndc);
   raycaster.setFromCamera(ndc_v, camera);
   const isects = raycaster.intersectObjects(scene.children, true);
   if (isects.length !== 0) {
+    // Time to expand/collapse tree editor nodes, select fields, etc.
     let scene_node, t;
     try {
+      // We use Three Mesh UI (3mu) for text rendering. Empirically, the thing
+      // we want is navigated to via the following:
       scene_node = isects[0].object.parent.parent.parent.userData.sceneNode;
+      // This "scene node" is a map inside the special `scene` tree of the state.
       t = map_get(scene_node, 'text');
-      if (t !== undefined) t = t + '';
-    } catch (e) {}
+      if (t !== undefined) t = t + ''; // Ensure any `text` content is a string
+    } catch (e) {} // If the navigation failed, move on
     if (scene_node) {
+      // `currently_editing` is the BL top-level register for the current text
+      // field, i.e. where keystrokes should be sent.
       let old = map_get(ctx, 'currently_editing');
+      // Legacy: we used to store thunks in case they pointed higher up in the
+      // tree, breaking the DOM tree view via cycles. No longer necessary but
+      // some later code might still store thunks.
       if (typeof old === 'function') old = old();
       
+      // If we'd already selected the scene node with a previous click, this
+      // click will expand/collapse it... as long as it's a *key* node (with
+      // text content that looks like `foo:`) instead of a value node
       if (t !== undefined && t.slice(-1) === ':' && old === scene_node)
         toggle_expand(scene_node);
       
+      // If we're clicking on something else, select it and unselect the old one
       if (old !== scene_node) {
         if (old !== undefined) ed_unselect(old);
         ed_select(scene_node);
@@ -276,15 +298,19 @@ renderer.domElement.onmouseup = e => {
     }
     return;
   }
-  // 2022-06-14: 3js tree editing
+  // Cmd+click should create a new map, but this functionality is incomplete.
   if (!e.metaKey) return;
   const world_v = vecInBasis(ndc_v, true, ndc, scene);
+  // Currently we just create a key-value field in the world frame.
   upd(ctx, 'scene', 'edit_box', maps_init({
     text: 'key:', top_left: { right: world_v.x, up: world_v.y },
     children: { 1: {
       text: 'value', top_left: { right: 0.75 }
     }}
   }));
+  // `nodes_to_bump` is a kludgy manual way to improve layout of text once it's
+  // been rendered and we actually know how wide it is. Here we're just saying
+  // these newly created text nodes should be "bumped" after the next render.
   nodes_to_bump.push(map_get(ctx, 'scene', 'edit_box'));
   upd(ctx, 'currently_editing', map_get(ctx, 'scene', 'edit_box'));
 };
