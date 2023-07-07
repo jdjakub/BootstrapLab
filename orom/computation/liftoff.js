@@ -316,7 +316,10 @@ renderer.domElement.onmouseup = e => {
 };
 
 function ed_unselect(old) {
+  // We expect its first child to be a rectangle, default zero opacity.
   try { upd(old, 'children', 1, 'opacity', undefined); } catch (e) {}
+  // A text field is "fresh" if it's just appeared with the default placeholder
+  // text. If the user clicks away it will vanish.
   let isFresh = map_get(old, 'isFresh');
   const keyNode = map_get(old, 'children')? old : old.parent.parent;
   try {
