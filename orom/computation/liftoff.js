@@ -30,7 +30,7 @@ function forMat4(m) {
  * - y in 2D can be up or down. In 3D it can be those OR forward/backward!
  * - z in 3D can be forward, backward, up...
  *
- * The result is trial-and-error graphics coding, puzzling reflection and
+ * The result is trial-and-error graphics coding, puzzling reflections and
  * rotations, and it's completely unnecessary. When we additionally make this
  * dependent on the *order* they are stored in, we are just asking for trouble.
  *
@@ -319,39 +319,68 @@ function ed_unselect(old) {
   // We expect its first child to be a rectangle, default zero opacity.
   try { upd(old, 'children', 1, 'opacity', undefined); } catch (e) {}
   // A text field is "fresh" if it's just appeared with the default placeholder
-  // text. If the user clicks away it will vanish.
+  // text. If the user clicks away, it will vanish.
   let isFresh = map_get(old, 'isFresh');
+  // A tree node in the `scene` map looks like this:
+  // text: 'myKey:'
+  // top_left: { right: 0.2, up: -3.9 }
+  // children:
+  //    1:
+  //       text: 'myValue'
+  //       top_left: { right: 0.75 }, isFresh: false
+  // `old` could be the key part or the value part. If the latter, we can
+  // get the key part by going upwards in the tree.
+  // (If `old` is `n.children.1`, `old.parent` is `n.children` and
+  // `old.parent.parent` is `n`)
   const keyNode = map_get(old, 'children')? old : old.parent.parent;
   try {
     isFresh ||= map_get(old, 'children', 1, 'isFresh');
+    // Now isFresh reflects whether the key OR the value is still fresh
+    // (i.e. we're unselecting a new entry that hasn't been finished yet)
   } catch (e) {}
   if (isFresh) { // new mapentry - delete / make empty
+    // We're unselecting a UI element for an entry that doesn't exist yet because
+    // the key/value weren't finished, so get rid of it
     const [p, pk] = [keyNode.parent, keyNode.parent_key];
-    if (pk == 1) ed_make_empty(keyNode); // 1st entry of empty map
+    if (pk == 1)
+      // This "new entry" was the first in its parent; instead of deleting the new
+      // entry we should replace it with the "(empty)" dummy marker
+      ed_make_empty(keyNode);
     else {
+      // Graphically move all lower entries one space higher
       displace_treeview(keyNode, -1);
+      // Actually remove the temporary new entry
       upd(p, pk, undefined);
     }
   }
 }
 
+
 function ed_select(scene_node) {
   let key_node = scene_node;
   let focus;
   if (map_get(scene_node, 'dummy')) {
+    // We're selecting an empty map, so immediately create a Fresh entry where the
+    // key gets edited first
     const new_keyNode = maps_init({
       text: 'newKey:', top_left: {right: .2, up: -.3}, isFresh: true, editKey: true,
       children: {1: { top_left: {right: .75}, text: 'newValue', isFresh: true }}
     });
+    // Replace the "(empty)" dummy with this
     upd(key_node.parent, key_node.parent_key, new_keyNode);
+    // Prepare to udpate display and route typing to this node (`focus`)
     key_node = focus = new_keyNode;
   } else if (!map_get(scene_node, 'children')) {
-     key_node = scene_node.parent.parent; focus = scene_node;
+    // We assume this is the value node, route typing to it
+    key_node = scene_node.parent.parent; focus = scene_node;
+    // Otherwise, if clicked on key node, route typing to value node
   } else focus = map_get(scene_node, 'children', 1);
+  // Make these facts visible in-system
   upd(ctx, 'currently_editing', /*() => */key_node);
-  if (focus) upd(focus, 'opacity', 1);
+  if (focus) upd(focus, 'opacity', 1); // Highlight new focus
 }
 
+// Replace a key node with the (empty) dummy placeholder
 function ed_make_empty(keyNode) {
   const newNode = maps_init({
     text: '(empty)', top_left: {right: .2, up: -.3}, dummy: true,
@@ -360,6 +389,8 @@ function ed_make_empty(keyNode) {
   return newNode;
 }
 
+// Display temporary newKey:newValue UI at a given scene tree address and
+// vertical height within the parent.
 function ed_make_new(map, key, up) {
   const new_keyNode = maps_init({
     text: 'newKey:', top_left: {right: .2, up}, isFresh: true, editKey: true,
@@ -367,6 +398,8 @@ function ed_make_new(map, key, up) {
   });
   const old = map_get(map, key);
   upd(map, key, new_keyNode);
+  // If we're not replacing any existing node, we need to displace/re-layout
+  // lines further down. (Why the second condition???)
   if (old === undefined || map_get(old, 'top_left', 'up') === undefined)
     displace_treeview(map.parent, 1);
   return new_keyNode;
@@ -375,14 +408,18 @@ function ed_make_new(map, key, up) {
 document.body.onkeydown = e => {
   let key_node = map_get(ctx, 'currently_editing');
   if (key_node === undefined) return;
-  if (typeof key_node === 'function') key_node = key_node();
+  if (typeof key_node === 'function') key_node = key_node(); // un-thunk
   const children = map_get(key_node, 'children');
   let valueIsPrimitive = true;
   let focus = key_node, suffix = ':';
+  // If focus is on an ordinary map entry, focus the value node
   if (!map_get(key_node, 'editKey') && !map_get(key_node, 'dummy')) {
     focus = map_get(children, 1); suffix = '';
+    // If primitive, we'll edit the primitive value. Otherwise, we're editing
+    // the entire list of children (e.g. to make it (empty) via backspace)
     valueIsPrimitive = map_get(focus, 'top_left', 'up') === undefined;
   }
+  // Cache the current text content in focus, excluding :
   let oldContent = map_get(focus, 'text')+'';
   if (suffix === ':') oldContent = oldContent.slice(0, -1);
   
@@ -401,58 +438,67 @@ document.body.onkeydown = e => {
     masp_eval();
     if (isBackspace && map_get(masp, 'ctx', 'value') === 'unhandled') {*/
     if (map_get(focus, 'isFresh')) {
+      // Clear newKey:/newValue: and begin typing
       upd(focus, 'text', (isChar ? e.key : '') + suffix);
-      upd(focus, 'isFresh', undefined);
+      upd(focus, 'isFresh', undefined); // Mark no longer fresh
+      // Append char / backspace as necessary
     } else upd(focus, 'text', (isBackspace ? oldContent.slice(0, -1)
                                            : oldContent+e.key) + suffix);
+    // We're backspacing over an empty field
     if (isBackspace && oldContent.length === 0) {
       const siblings = key_node.parent;
       let index = key_node.parent_key|0;
-      if (map_get(focus, 'dummy')) {
+      if (map_get(focus, 'dummy')) { // Focus is (empty)
+        // Turn focus (back) into a prim value
         upd(children, focus.parent_key, maps_init({
           text: 'value', top_left: { right: 0.75 }, opacity: 1
         }));
         displace_treeview(key_node, -1);
       }
-      if (oldContent.length === 0) { // delete entry
-        if (map_get(siblings, 2) === undefined) { // sole entry
-          const dummy_node = ed_make_empty(key_node);
+      // If old content was empty, delete entry
+      if (oldContent.length === 0) {
+        if (map_get(siblings, 2) === undefined) { // It's the sole entry
+          const dummy_node = ed_make_empty(key_node); // Make it into (empty)
           const new_keyNode = dummy_node.parent.parent;
           upd(ctx, 'currently_editing', /*() => */new_keyNode);
         } else {
+          // Highlight previous entry
           let prev_sibling = map_get(siblings, index-1);
           if (prev_sibling) ed_select(prev_sibling);
-          upd(siblings, key_node.parent_key, undefined); // remove
+          // Remove entry from the listing
+          upd(siblings, key_node.parent_key, undefined);
           let next_sibling = map_get(siblings, index+1);
-          while (next_sibling) { // move later siblings up one
+          while (next_sibling) {
+            // Renumber later siblings by one less
             upd(siblings, index+1, undefined);
             upd(siblings, index, next_sibling);
             const up = map_get(next_sibling, 'top_left', 'up');
+            // And move them up one line graphically
             upd(next_sibling, 'top_left', 'up', up+.3);
             index++; next_sibling = map_get(siblings, index+1);
           }
           displace_treeview(siblings.parent, -1);
         }
-        // delete source state entry
+        // Delete source state entry
         let map, key;
         try {
-          key = map_get(key_node, 'text').slice(0, -1);
+          key = map_get(key_node, 'text').slice(0, -1); // Remove trailing colon
           map = map_get(siblings.parent, 'source');
         } catch (e) {}
-        if (map === undefined) map = ctx;
-        if (key !== undefined) upd(map, key, undefined);
+        if (map === undefined) map = ctx; // No source? Assume global
+        if (key !== undefined) upd(map, key, undefined); // Do the delete
       }
     }
   } else if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
-    if (map_get(focus, 'isFresh')) return; // can't tab out of new mapentry
+    if (map_get(focus, 'isFresh')) return; // Can't tab out of new mapentry
     upd(focus, 'opacity', undefined);
-    if (suffix === ':') {
+    if (suffix === ':') { // Committing key node...
       const child = map_get(children, 1);
-      upd(key_node, 'editKey', undefined); // advance to value node
+      upd(key_node, 'editKey', undefined); // Advance to value node
       upd(child, 'opacity', 1);
       return;
-    } else if (valueIsPrimitive) { // commit the value
+    } else if (valueIsPrimitive) { // Commit the value
       let map, key;
       try {
         key = map_get(key_node, 'text').slice(0, -1);
@@ -460,7 +506,7 @@ document.body.onkeydown = e => {
       } catch (e) {}
       if (map === undefined) map = ctx;
       if (key !== undefined) {
-        let value = map_new();
+        let value = map_new(); // If Enter, replace value node with new composite
         if (e.key === 'Tab') {
           value = map_get(focus, 'text');
           const numVal = Number.parseFloat(value);
@@ -471,6 +517,7 @@ document.body.onkeydown = e => {
           //else if (value === 'undefined') value = undefined;
         }
         upd(map, key, value);
+        // Commit value to underlying source
         if (e.key === 'Enter') upd(key_node, 'source', value);
       }
     }
@@ -479,11 +526,12 @@ document.body.onkeydown = e => {
       const next_index = (key_node.parent_key|0) + 1;
       let new_keyNode = map_get(key_node.parent, next_index);
       let new_focus;
-      if (new_keyNode === undefined) {
+      if (new_keyNode === undefined) { // We're on the last entry
         const vertical_start = map_get(key_node, 'top_left', 'up');
+        // Insert next sibling at appropriate height
         const new_up = vertical_start -.3*measure_tree_height(key_node);
         new_keyNode = new_focus = ed_make_new(key_node.parent, next_index, new_up);
-      } else new_focus = map_get(new_keyNode, 'children', 1);
+      } else new_focus = map_get(new_keyNode, 'children', 1); // Select value node
       upd(ctx, 'currently_editing', /*() => */new_keyNode);
       if (new_focus !== undefined) upd(new_focus, 'opacity', 1); // SMELL demo
     } else { // Enter
@@ -495,7 +543,7 @@ document.body.onkeydown = e => {
   e.preventDefault();
 };
 
-last_pointer = undefined;
+last_pointer = undefined; // Last pointer [x,y] to distinguish drag from click
 last_delta = new e3.Vector3();
 renderer.domElement.onmousemove = e => {
   const curr = new e3.Vector3(e.clientX, e.clientY, 1);
@@ -508,8 +556,11 @@ renderer.domElement.onmousemove = e => {
     if (selected_shape === undefined) {
       const delta_camera = clientToWorld(last_delta);
       delta_camera.z = 0;
+      // dragging_in_system implements the following in ASM instead
       if (!map_get(ctx, 'dragging_in_system')) {
+        // Move the camera view as if the world was dragged underneath
         camera.position.sub(delta_camera);
+        // That updated the 3JS camera, now sync the in-system map to show it
         upd(ctx, 'scene', 'camera', 'position', bl_vec_from_3js(camera, 'position'));
       }
     } else { // SMELL hapoc demo dependence
@@ -530,22 +581,27 @@ renderer.domElement.onwheel = e => {
   let focus = clientToWorld(focus_px);
   focus = new e3.Vector4(focus.x, focus.y, 0, 1);
   const new_focus = focus.clone().applyMatrix4(camera.matrixWorldInverse);
+  // new_focus is now in camera space.
 
+  // Scroll up = zoom in, scroll down = zoom out.
   const change_factor = e.deltaY > 0 ? 1/zoom_per_pixel : zoom_per_pixel;
   camera.zoom *= change_factor;
   upd(ctx, 'scene', 'camera', 'zoom', camera.zoom);
+  // Shrink the camera-space vector to land on the same point after the zoom
   new_focus.divideScalar(change_factor); new_focus.w = 1;
   new_focus.applyMatrix4(camera.matrixWorld);
+  // new_focus is now in world space, and is some delta from the original focus
 
   const delta = focus.clone().sub(new_focus);
   delta.z = 0;
-  camera.position.add(delta);
+  camera.position.add(delta); // Shift camera by this delta
   upd(ctx, 'scene', 'camera', 'position', bl_vec_from_3js(camera, 'position'));
 
   e.preventDefault();
 };
 
 function r() {
+  // Update any text graphics and then render via 3js
   ThreeMeshUI.update().then(() => {
     renderer.render(scene, camera);
     need_rerender = false;
@@ -554,10 +610,29 @@ function r() {
 
 r();
 
+/*
+In-system, data is made of dictionaries called "maps" made of key-value pairs called
+entries. It'd be nice to just use the JS object system, but we need to wrap it so we
+can include metadata. E.g. if we want maps to have a "parent" property for an intrinsic
+tree structure, we could reserve the user-level key "parent" but in general it's not
+good to have reserved keys at the user level. No: the user should be able to have a
+key called "parent" for their own purposes, while we put the metadata as properties
+on the JS obj, where they belong.
+
+Therefore in JS, a map looks like this:
+{ parent: ..., metadata1: ..., metadataN: ..., entries: { k1: v1, k2: v2, ...} }
+
+Arrays do not appear in this schema. In-system, a list of items is just a map with
+numerical keys: { 1: ..., 2: ..., 3: ... }
+*/
+
+// Maintain a global reversible mapping between maps and their IDs
 next_id = 0;
 jsobj_from_id = new Map();
 id_from_jsobj = new Map();
 
+// deref(12) --> map#12
+// deref({ id: 12, key: foo }) --> map#12[ 'foo' ]
 function deref(id) {
   if (typeof id === 'number') {
     return jsobj_from_id.get(id);
@@ -568,6 +643,7 @@ function deref(id) {
   }
 }
 
+// ref({ ... }) => { id: 12 }
 function ref(obj) {
   if (typeof obj === 'object' || typeof obj === 'function') {
     if (!id_from_jsobj.has(obj)) {
@@ -579,8 +655,23 @@ function ref(obj) {
   } else return null;
 }
 
-// In-universe, we call objs / dicts "maps"
+/*
+Given a JS object tree, expand it in-place into a map tree. E.g.
+{ foo: {bar: 1, baz: {}}} -->
+{ entries: {
+    foo: {
+      entries: { bar: 1, baz: {
+        entries: {}
+      }}
+    }
+}}
 
+This function is also used by the save/load mechanism. Because arrays don't have a role
+in our schema, we re-purpose them to "label" maps to store a graph as a tree. E.g.
+{ foo: { bar: 1, baz: [35, {}], quux: ['ref', 35] }}
+gets expanded into a map, but also the {} map gets ID 35. On the fixup pass, the quux
+entry gets pointed at map#35.
+*/
 function maps_init(o, refs) { // REWRITES o; Traverse TREE (no cycles!)
   if (typeof o !== 'object' || o === null) return o;
   let map = { entries: o };
@@ -592,18 +683,27 @@ function maps_init(o, refs) { // REWRITES o; Traverse TREE (no cycles!)
   map_iter(map, (k,v) => { map_set(map, k, maps_init(v, refs)); });
   return map;
 }
+
+// Resolve any ['ref', 35] instances
 function maps_fixup(o, refs) {
   if (o instanceof Array && o[0] === 'ref') return refs.get(o[1]);
   else if (typeof o !== 'object' || o === null) return o;
   map_iter(o, (k,v) => { map_set(o, k, maps_fixup(v, refs)); });
   return o;
 }
+
+// Wrap a JSobj as a map. Warning: values must be primitives. For trees/graphs, use init
 function map_new(o={}) {
   return { entries: o };
 }
+
+// m = map_init({one: {two: {three: 'done'}}});
+// map_get(m, 'one', 'two', 'three') = 'done'
 function map_get(o, ...path) {
   path.forEach(k => o = o.entries[k]); return o;
 }
+
+// Set a path to a value ... and update metadata
 function map_set(o, ...args) {
   if (args.length === 1) { delete o.entries[args[0]]; return; }
   let k = args.shift(); const v = args.pop();
@@ -619,6 +719,11 @@ function map_set(o, ...args) {
   }
   return v;
 }
+
+// Used to abbreviate a tedious construction e.g.
+// my.very.long.path += 1
+// map_set(map_get(my, 'very', 'long'), 'path', map_get(my, 'very', 'long', 'path')+1)
+// map_set_rel(map_get(my, 'very', 'long'), 'path', x => x+1)
 function map_set_rel(o, ...args) {
   /*let k = args.shift(); const f = args.pop();*/
   /*args.forEach(a => { o = o.entries[k]; k = a; });
@@ -626,10 +731,13 @@ function map_set_rel(o, ...args) {
   const f = args.pop(), v = map_get(o, ...args);
   return map_set(o, ...args, f(v));
 }
+
+// Iterate through entries; f takes key, value, and index
 map_iter = (o, f) => Object.entries(o.entries).forEach(([k,v],i) => v !== undefined ? f(k,v,i) : 0);
+// How many entries in a map
 map_num_entries = (o) => Object.keys(o.entries).length;
 
-ctx = {};
+ctx = {}; // The global "context" forming the root of the in-system state
 
 treeView = document.getElementById('treeview');
 document.body.appendChild(treeView); // So that it's last
