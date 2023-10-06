@@ -1,4 +1,12 @@
 /*
+ * Q: Why is everything in one file?
+ * A: For building a self-sustainable system, the pressure to move stuff in-system
+ *    is well-served this way. This file is too long; this is an honest, unignorable
+ *    signal about the early state of implementation of the system. It would be worse
+ *    to hide it.
+ */
+
+/*
  * ### EASY-TO-TYPE UTILITIES
  * For use in the JS console.
 */
@@ -202,7 +210,9 @@ function clientToWorld(v) {
   return new e3.Vector4(v.x, v.y, 0, v.z).applyMatrix4(coordMatrixFromTo(screen, scene));
 }
 
-/* Pseudocode for a machine-readable DSL for coord system specs:
+/* Pseudocode for a machine-readable DSL for coord system specs.
+ * org = origin, hw = half-width, hh = half-height
+
 screen -> ndc -> camera-local -> world
 screen vec: s0 s-org + s1 s-right + s2 s-down
    ndc vec: n0 n-org + n1 n-right + n2 n-up
@@ -354,7 +364,6 @@ function ed_unselect(old) {
     }
   }
 }
-
 
 function ed_select(scene_node) {
   let key_node = scene_node;
@@ -610,7 +619,7 @@ function r() {
 
 r();
 
-/*
+/* ### ONTOLOGY OF STATE: MAPS
 In-system, data is made of dictionaries called "maps" made of key-value pairs called
 entries. It'd be nice to just use the JS object system, but we need to wrap it so we
 can include metadata. E.g. if we want maps to have a "parent" property for an intrinsic
@@ -622,8 +631,12 @@ on the JS obj, where they belong.
 Therefore in JS, a map looks like this:
 { parent: ..., metadata1: ..., metadataN: ..., entries: { k1: v1, k2: v2, ...} }
 
+Curlies {} are for JS; we'll notate the in-system visible map structure as:
+
+( k1: v1, k2: v2, ... )
+
 Arrays do not appear in this schema. In-system, a list of items is just a map with
-numerical keys: { 1: ..., 2: ..., 3: ... }
+numerical keys: ( 1: ..., 2: ..., 3: ... )
 */
 
 // Maintain a global reversible mapping between maps and their IDs
@@ -657,7 +670,7 @@ function ref(obj) {
 
 /*
 Given a JS object tree, expand it in-place into a map tree. E.g.
-{ foo: {bar: 1, baz: {}}} -->
+{ foo: {bar: 1, baz: {}}} --> ( foo: (bar: 1, baz: ())) i.e.
 { entries: {
     foo: {
       entries: { bar: 1, baz: {
@@ -725,9 +738,6 @@ function map_set(o, ...args) {
 // map_set(map_get(my, 'very', 'long'), 'path', map_get(my, 'very', 'long', 'path')+1)
 // map_set_rel(map_get(my, 'very', 'long'), 'path', x => x+1)
 function map_set_rel(o, ...args) {
-  /*let k = args.shift(); const f = args.pop();*/
-  /*args.forEach(a => { o = o.entries[k]; k = a; });
-  o.entries[k] = f(o.entries[k]);*/
   const f = args.pop(), v = map_get(o, ...args);
   return map_set(o, ...args, f(v));
 }
@@ -739,25 +749,38 @@ map_num_entries = (o) => Object.keys(o.entries).length;
 
 ctx = {}; // The global "context" forming the root of the in-system state
 
+// HTML tree view of system state. "Temporary" in the long term
 treeView = document.getElementById('treeview');
-document.body.appendChild(treeView); // So that it's last
+document.body.appendChild(treeView); // Guarantee it comes after whatever's already there
 
+/* ### ONTOLOGY OF CHANGE: ASM INSTRUCTIONS
+"registers" are top-level / global entries in `ctx`. Denoted as .reg to abbreviate ctx.reg
+"instructions" are maps with an `op` entry (opcode / operation type) and relevant args.
+ */
+
+// Fetch next instruction and put it in register `next_instruction.value`.
 function fetch_next() {
-  const ref = map_get(ctx, 'next_instruction', 'ref');
-  let next_inst = map_get(ref, 'map', map_get(ref, 'key'));
+  const ref = map_get(ctx, 'next_instruction', 'ref'); // ( map: ..., key: ... )
+  let next_inst = map_get(ref, 'map', map_get(ref, 'key')); // Resolve the ref
+  // If that didn't work, we'll first need to get an alternative ref to resolve
   if (next_inst === undefined) {
-    let continue_to = map_get(ref, 'map', 'continue_to'); // check current block's continue addr
-    if (!continue_to) continue_to = map_get(ctx, 'continue_to'); // fall back to register
+    // This happens when, e.g. we've run off the end of a numerical list of instructions.
+    // If the list contains a `continue_to` entry, we'll go there to the next basic block.
+    let continue_to = map_get(ref, 'map', 'continue_to');
+    if (!continue_to) // Otherwise, we'll fall back to the `continue_to` register...
+      continue_to = map_get(ctx, 'continue_to'); 
     if (continue_to) {
-      if (map_get(continue_to, 'map')) {
+      if (map_get(continue_to, 'map')) { // next_instruction.map := continue_to.map
         map_set(ref, 'map', map_get(continue_to, 'map'));
         JSONTree.update(map_get(ctx, 'next_instruction', 'ref'), 'map');
-      }
+      } // next_instruction.key := continue_to.key
       if (map_get(continue_to, 'key')) map_set(ref, 'key', map_get(continue_to, 'key'));
       else map_set(ref, 'key', 1); // beginning of new basic block
-    } else { // check return_to SMELL just do this with continue_to?
+    } else {
+      // If there's no continue_to, we'll check for a `return_to` (procedure experiment)
+      // SMELL just do this with continue_to?
       const return_to = map_get(ctx, 'return_to');
-      if (return_to) { // pop and restore prev execution point
+      if (return_to) { // Pop and restore prev execution point
         map_set(ref, 'map', map_get(return_to, 'map'));
         map_set(ref, 'key', map_get(return_to, 'key'));
         map_set(ctx, 'return_to', map_get(return_to, 'next'));
@@ -765,16 +788,19 @@ function fetch_next() {
         JSONTree.update(ctx, 'return_to');
       }
     }
+    // Now we've finally decided on the address of the instruction to fetch, resolve it
     next_inst = map_get(ref, 'map', map_get(ref, 'key'));
   }
+  // Do the final update
   map_set(ctx, 'next_instruction', 'value', next_inst);
 
-  // Duped from run_and_render
+  // Duped from run_and_render (update the tree view)
   JSONTree.update(map_get(ctx, 'next_instruction', 'ref'), 'key');
   JSONTree.update(map_get(ctx, 'next_instruction'), 'value');
   JSONTree.highlight('jstNextInstruction', map_get(ctx, 'next_instruction', 'value'));
 }
 
+// Deep copy object tree, leave other stuff referenced but not copied.
 function clone(o) {
   if (typeof o === 'object') { // deep copy, intended for tree literals
     const o2 = {};
@@ -784,6 +810,10 @@ function clone(o) {
   return o;
 }
 
+// Single-step: the basic decode-execute-fetch cycle of the system.
+// nofetch: just execute, don't fetch something new afterwards.
+// instr: if specified, will use this instead of whatever's in the usual location
+//        (`next-instruction.value`)
 let old_value = undefined; // In case a scene node with 3js proxy is overwritten!
 function single_step(nofetch=false, instr=undefined) {
   let inst;
@@ -801,7 +831,7 @@ function single_step(nofetch=false, instr=undefined) {
   const do_break = map_get(inst, 'break'); // whether to pause execution after
   let continue_nested = false; // whether current 'instruction' contains instructions
 
-  if (instr === undefined)
+  if (instr === undefined) // If executing in a list, increment within-list counter for later fetch
     map_set_rel(ctx, 'next_instruction', 'ref', 'key', v => v+1);
 
   // Modify state according to instruction
@@ -852,8 +882,8 @@ function single_step(nofetch=false, instr=undefined) {
   }
   else if (op === 'typeof') {
     map_set(ctx, 'focus', typeof focus);
-  } // macro: copy reg|path := reg|path
-  else if (op === 'copy') {
+  }
+  else if (op === 'copy') { // Macro expansion experiment: copy reg|path := reg|path
     // expand copy A.B.C := X.Y.Z -->
     // l X; d; s map; l Y; i; l Z; i; l map; d; s source;
     // l A; d; s map; l B; i; l C; s
