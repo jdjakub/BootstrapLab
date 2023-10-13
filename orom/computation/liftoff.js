@@ -939,7 +939,7 @@ function single_step(nofetch=false, instr=undefined) {
       map_set(inst, 1, new_instrs); // Shove them under the 1 key...
     }
     continue_nested = true;
-  } // no op field: assume nested instruction list
+  } // If there's no op field, assume nested instruction list (expect keys 1,2,3,...)
   else if (op === undefined) {
     continue_nested = true;
   }
@@ -951,8 +951,11 @@ function single_step(nofetch=false, instr=undefined) {
     map_set(ref, 'map', inst); map_set(ref, 'key', 1); // Dive in
   }
 
-  if (!nofetch) fetch_next(); // This goes here in case the instruction changed next_instruction
+  // This goes here in case the instruction changed next_instruction (e.g. for a jump)
+  if (!nofetch) fetch_next();
 
+  // Mark what changed and trigger any necessary downstream changes
+  // (e.g. graphical updates for graphics objects)
   let obj = ctx, key = 'focus'; // i.e. what changed?
   if (op === 'store')
     if (dest_reg === undefined) { obj = map; key = focus; }
@@ -964,68 +967,103 @@ function single_step(nofetch=false, instr=undefined) {
   // Check if the map being changed is a proxy for some 3JS thing
   update_relevant_proxy_objs(obj, key);
 
-  // Return changeset
+  // Return changeset (imperfect...)
   return [do_break, [
     [obj, key], [map_get(ctx, 'next_instruction', 'ref'), 'key'], [map_get(ctx, 'next_instruction'), 'value']
   ].map(([o, k]) => [ref(o).id, k])];
 }
 
+/* ### 3JS SYNCHRONISATION INFRASTRUCTURE
+ * In JS there's a 3JS Square with a position, while in BL there's a map with a position.
+ * These should stay in sync.
+ * Furthermore, 3JS objects form a tree. The parent-child relationships also need to be
+ * synced.
+*/
+
+// Update things that depend on this piece of state which was changed
 function update_relevant_proxy_objs(obj, key) {
   let f;
+  // Map represents the list of children of some 3JS node (*)
   if (obj.isChildrenFor !== undefined) f = sync_3js_children;
+  // Map represents the position of some 3JS node
   else if (obj.isPositionFor !== undefined) f = sync_3js_pos;
+  // Map is backed by a 3JS node
   else if (obj._3js_proxy !== undefined) f = sync_3js_proxy;
+  // Map could be a member of a "children" map (*)
   else if (obj._3js_potential_child_in !== undefined) f = sync_3js_proxy;
   else return;
   const val = map_get(obj, key);
   f(obj)(key, val);
   old_value = undefined;
   if (obj._3js_potential_child_in !== undefined && obj._3js_proxy !== undefined) {
+    // If a child was delayed in getting its 3JS proxy, and it now has one, add it
     obj._3js_potential_child_in.isChildrenFor._3js_proxy.add(obj._3js_proxy); // SMELL dupe of sync below
-    obj._3js_potential_child_in = undefined;
+    obj._3js_potential_child_in = undefined; // Now we don't need to do it again
   }
 }
 
 square_geom = new e3.PlaneGeometry(1, 1);
 need_rerender = false;
+
+// Imperfect start at automatically managing named coordinate systems.
+// Global function going name -> map backed by 3JS proxy
+// Really ought to be tree-structured; currently vulnerable to name collisions
 bases = {};
 
+// A children list has been updated; update the 3JS tree
+// Scenario: children[ch_name] := child
+// or it's being deleted if do_delete=true
 sync_3js_children = (children, do_delete) => (ch_name, child) => {
   const parent = children.isChildrenFor;
   if (old_value !== undefined) {
-    if (child === undefined) { child = old_value; do_delete = true; }
-    else {
+    if (child === undefined) {
+      // Overwriting an existing entry with undefined = delete old value
+      child = old_value; do_delete = true;
+    } else {
+      // Overwriting an existing entry with a new one
+      // SMELL possibly duplicated from below
       if (old_value._3js_proxy && parent._3js_proxy)
         parent._3js_proxy.remove(old_value._3js_proxy);
       bases[ch_name] = undefined;
     }
   }
   if (!do_delete) {
+    // SMELL tracking old_value should evidently be a stack or something
     const local_old_value = old_value; old_value = undefined; // ew
+    // Child has been newly added to this list of children.
+    // Go through all its entries and sync them.
     map_iter(child, sync_3js_proxy(child, parent));
     old_value = local_old_value; // ew
   }
   if (child._3js_proxy) {
     if (do_delete) {
+      // Update 3JS tree and forget basis asociation
       if (parent._3js_proxy) parent._3js_proxy.remove(child._3js_proxy);
       bases[ch_name] = undefined;
     } else {
-      child._3js_proxy.name = ch_name; // set name in 3js
-      parent._3js_proxy.add(child._3js_proxy); // <-- the syncing part
-      if (bases[ch_name] === undefined) bases[ch_name] = child; // SMELL unique names
+      child._3js_proxy.name = ch_name; // set 3JS name to current key name
+      parent._3js_proxy.add(child._3js_proxy); // Update 3JS tree with its presence
+      if (bases[ch_name] === undefined) bases[ch_name] = child; // SMELL name clashes
     }
+  // Child hasn't been initialised yet, so no 3JS proxy to add yet. Wait for later
   } else child._3js_potential_child_in = children;
 }
 
+// Some property of a graphical object has been changed. Depending on the key name,
+// take appropriate action
 sync_3js_proxy = (obj, parent) => (key, val) => {
   if (key === 'children') {
+    // The entire child list is being replaced.
     if (old_value !== undefined) { // AAAAAGH!! WRONG AT HIGHER LVL
+      // Delete all children from the old one and sync
       map_iter(old_value, sync_3js_children(old_value, true));
-      old_value.isChildrenFor = undefined;
+      old_value.isChildrenFor = undefined; // Can only have one parent at a time
     }
     if (val !== undefined) {
       val.isChildrenFor = obj;
+      // Lazy init the parent's 3JS proxy to a group if absent
       if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group(); // SMELL group not added!?
+      // Sync each child in the list
       map_iter(val, sync_3js_children(val));
     }
   } else if (key === 'color' && val !== undefined) {
@@ -1067,6 +1105,8 @@ sync_3js_proxy = (obj, parent) => (key, val) => {
   need_rerender = true;
 }
 
+// Rects are implemented as a 3JS Group containing a 3JS rect mesh. This way, width/height
+// can be changed via the 3JS mesh scale without affecting the children.
 function init_3js_rect(obj) {
   if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group();
   if (obj._3js_rect === undefined) {
@@ -1076,6 +1116,7 @@ function init_3js_rect(obj) {
   }
 }
 
+// Similarly, text nodes are children of a Group.
 function init_3js_text(obj) {
   if (obj._3js_proxy === undefined) obj._3js_proxy = new e3.Group();
   if (obj._3js_text === undefined) {
@@ -1103,6 +1144,10 @@ sync_3js_pos = (obj) => (key, val) => {
   need_rerender = true;
 }
 
+/* ### ASM CONVENIENCE FUNCTIONS */
+
+// Perform the decode-execute-fetch cycle a certain number of times. Highlight
+// any changed state in the tree view.
 function run_and_render(num_steps=1) {
   let nofetch = false;
   if (num_steps === 0) {
@@ -1115,19 +1160,24 @@ function run_and_render(num_steps=1) {
     in_order.push([deref(id), key]); // add it to the end
     if (do_break) break;
   }
+  // At this point, in_order is a list of addresses that have been written, in
+  // chronological order. It may contain the same address multiple times.
 
-  const changes = new Map();
+  const changes = new Map(); // BL map -> { set of changed keys }
   const no_repeats = [];
-  for (let i=in_order.length-1; i>=0; i--) {
-    const [id, key] = in_order[i];
-    if (!changes.has(id)) changes.set(id, new Set()); // lazy init
-    if (!changes.get(id).has(key)) {
+  for (let i=in_order.length-1; i>=0; i--) { // From the latest, go backwards in time
+    const [map, key] = in_order[i];
+    if (!changes.has(map)) changes.set(map, new Set()); // lazy init
+    if (!changes.get(map).has(key)) {
       no_repeats.push(in_order[i]); // Save most recent occurrence
-      changes.get(id).add(key);
+      changes.get(map).add(key);
     }
   }
+  // At this point, no_repeats contains the changed addresses without duplicates.
 
   no_repeats.reverse();
+
+  // Now it's in chronological order.
 
   let last_change;
   no_repeats.forEach(([obj, key]) => {
@@ -1145,6 +1195,7 @@ function run_and_render(num_steps=1) {
   if (need_rerender) r();
 }
 
+// Used by the assembler
 function typed(str, objs) {
   if (str === '{}') return {};
   if (str[0] === '$') return objs[+str.substring(1)]; // $N = insert obj[N]
@@ -1153,6 +1204,9 @@ function typed(str, objs) {
   else return n;
 }
 
+// Convert ASM syntax into explicitly structured instructions.
+// Explicit Structure in the system is necessary, but in the absence of a better UI
+// it's more convenient to create large blocks of ASM via a mini-language...
 function assemble_code(blocks, ...args) {
   const obj = {};
   let start_i = 1;
@@ -1175,6 +1229,14 @@ function assemble_code(blocks, ...args) {
   return obj;
 }
 
+/* ### STATE INIT/LOADING/SAVING
+It's not a great idea to have system state defined in the substrate file here, because that
+permanently establishes it as it cannot be (persistently) changed in-system.
+
+Most of this is legacy ASM examples/experiments which were easier to change in this
+text editor anyway. State that I actually wanted to evolve in-system were moved out to
+JSON files.
+*/
 function load_state() {
   ctx = maps_init({
     next_instruction: { ref: { map: null, key: 1 } },
@@ -1273,6 +1335,7 @@ function load_state() {
       //position: { basis: 'screen-pt', right: 200, down: 300 },
       //delta: { basis: 'screen-vec', right: -2, down: 1 },
     },
+    // This is strictly a tree structure and defines what's in the graphics view
     scene: {
       camera: {
         zoom: camera.zoom,
@@ -1302,17 +1365,23 @@ function load_state() {
       },
     },
   });
+  // That's the tree portion, now we connect DAG stuff or insert 3js proxies
+
   const instrs = map_get(ctx, 'instructions');
   map_set(ctx, 'next_instruction', 'ref', 'map', map_get(instrs, 'example_render', 'start'));
   //map_set(ctx, 'map', map_get(ctx, 'scene', 'shapes', 'children', 'blue_shape', 'position'));
 
+  // Establish a dummy map backed by root 3JS obj for the "world" basis
   bases['world'] = { _3js_proxy: scene };
+  // Connect BL tree structure to 3JS tree structure
   map_get(ctx, 'scene', 'camera')._3js_proxy = camera;
   map_get(ctx, 'scene', 'shapes')._3js_proxy = shapes;
   map_get(ctx, 'scene', 'camera', 'children', 'ndc')._3js_proxy = ndc;
   map_get(ctx, 'scene', 'camera', 'children', 'ndc', 'children', 'screen')._3js_proxy = screen;
+  // Sync all objects under `scene` as if they were children of the 3JS Scene
   sync_3js_proxy(bases['world'])('children', map_get(ctx, 'scene'));
   
+  // Connecting the basic block control flow structure of a demo example
   const rnd_instrs = map_get(ctx, 'instructions', 'example_render');
   common_exit = map_new({ map: map_get(rnd_instrs, 'render_key') });
   map_set(rnd_instrs, 'does_parent_frame_exist', 0, 'continue_to', common_exit);
@@ -1326,40 +1395,61 @@ function load_state() {
   map_set(rnd_instrs, 'typeof_curr_val', '_', 'continue_to', common_exit);
   map_set(rnd_instrs, 'any_keys_left', 'undefined', 'continue_to', common_exit);
 
+  // Set up the DOM tree view
   JSONTree.create(ctx, id_from_jsobj, treeView);
   //JSONTree.toggle(map_get(ctx, 'next_instruction', 'ref', 'map'));
+  // Collapse all named blocks in the rendering demo
   map_iter(rnd_instrs, (_,blk) => JSONTree.toggle(blk));
+  // Collapse these too
   JSONTree.toggle(map_get(ctx, 'scene', 'shapes'));
   JSONTree.toggle(map_get(ctx, 'pointer'));
+  // Ensure first instruction is loaded
   fetch_next();
 }
 
-upd_rerender = true;
+// If you want to change something from the JS console, you use `upd()`.
+// This is the main "agent of change" in the system.
+// While `map_set()` is just a local operation to the map, `upd()` updates the
+// downstream dependents in terms of state, graphics, etc.
+// This was developed in the context of having the DOM tree view only.
+// Now we've got an in-system tree editor, but this wasn't updated for that...
+// Therefore changes to state won't show up in the graphics view until something is
+// re-rendered via collapse/expand.
+// Ideally, we would reify state dependencies instead of having them implicit in JS code.
+// Further research is needed!
+upd_rerender = true; // If false, turns off JSONTree updates. (Toggle if slow/laggy)
 function upd(o, ...args) {
-  let real_v; // Hack for doing cyclic structures w/o breaking JSONTree...
+  let real_v; // Old hack for doing cyclic structures w/o breaking JSONTree...
   let v = args.pop();
+  // If last arg (the value) is [real,dummy], `real` goes in the BL state but JSONTree
+  // sees `dummy`. JSONTree can't handle cycles and will run out of stack so we do this
   if (v instanceof Array) { real_v = v[1]; v = v[0]; }
   const k = args.pop();
   o = map_get(o, ...args);
   old_value = map_get(o, k);
-  map_set(o, k, v);
+  map_set(o, k, v); // upd() is a big wrapper around the local operation of map_set()
   if (upd_rerender) JSONTree.update(o, k);
   if (real_v !== undefined) map_set(o, k, real_v); // Hidden from JSONTree
-  update_relevant_proxy_objs(o, k);
+  update_relevant_proxy_objs(o, k); // Propagate any changes to graphics stuff
+  // Sets need_rerender if we should re-render graphics view
   if (v !== undefined && upd_rerender)
+    // Highlight the change
     JSONTree.highlight('jstExternalChange', o, k);
   if (need_rerender) r();
   return v;
 }
 
+// Now actually set up the basic state
 load_state();
 
 // original line 12345
 //upd(ctx, 'scene', 'lisp_3js', 'children', maps_init(tree_to_3js(map_get(ctx, 'src_tree'))[0]));
 
+// Setup view according to empirically determined nice configuration
 upd(ctx, 'scene', 'camera', 'position', map_new({basis: 'world', right: 1.01, up: -4.764}));
 upd(ctx, 'scene', 'camera', 'zoom', .2147);
 
+/* (MASP Tree Rendering) */
 // Setup initial stack frame for depth-first tree rendering.
 stack = upd(ctx, 'stack', maps_init({
   1: {src_key: 'lisp_iter', nlines: 1, dst_key: 1}
@@ -1370,6 +1460,12 @@ upd(ctx, 'stack', 1, 'dst_map', map_get(ctx, 'scene', 'lisp_iter', 'children'));
 upd(ctx, 'stack_top', 1);
 JSONTree.toggle(stack);
 
+// Walk some part of the state from `root` and download as a file.
+// This provides a tedious but viable way to defy the Unix Volatility Split as inherited
+// by the web browser and assert some continuity of system state lifetime.
+// Because JSON is tree-structured, we have to cleverly represent non-tree references.
+// However, because Arrays aren't used in the BL state implementation, we re-purpose
+// them for labelling nodes and referencing them.
 function export_state(root, filename='bl-state.json') {
   const visited = new Map(); // node -> id
   const reffed = new Set();
@@ -1383,8 +1479,8 @@ function export_state(root, filename='bl-state.json') {
     case 'object':
       if (val === null) return null;
     case 'function':
-      const id = visited.get(val);
-      if (id) { reffed.add(id); return ['ref', id]; }
+      const id = visited.get(val); // Already visited?
+      if (id) { reffed.add(id); return ['ref', id]; } // Reference it.
       break;
     default: return val;
     }
