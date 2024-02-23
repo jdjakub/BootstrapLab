@@ -1730,6 +1730,8 @@ upd(masp, 'initial_env', maps_init({ entries: {
   }},
   'null': null,
   'undefined': undefined, // ummmm
+  'true': true,
+  'false': false,
   'asBool': { body: (c, args) => {
     upd(c, 'value', args.to ? true : false); return true;
   }},
