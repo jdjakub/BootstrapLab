@@ -1,4 +1,6 @@
-/* Piumarta's Id can be seen as an object model *relative* to a chosen starting platform.
+/* BETTER NOTES: http://programmingmadecomplicated.wordpress.com/2025/02/18/ode-to-id-notes-on-colas-object-model-part-1/
+ * 
+ * Piumarta's Id can be seen as an object model *relative* to a chosen starting platform.
  * All of the base language features are available, but they are augmented by the Id model.
  *
  * In the terminology of my PhD thesis: Id is a *substrate* over a platform. In this file, the platform is "The vanilla JS programming language".
@@ -7,9 +9,12 @@
  * 
  * All that is needed to do this, is a mapping called vtable: Plafobj -> Idobj. Since every Idobj is also a plafobj, every Idobj will also have a vtable.
  * 
- * In the example C implementation [OROM], vtable is implemented as a pointer *before* the first byte of the plafobj. This has pros and cons. A more sophisticated later development [ObjMem] stores the vtable mapping in a separate global table.
+ * In the example C implementation [OROM], vtable is implemented as a pointer *before* the first byte of the plafobj. This has pros and cons. A more sophisticated later development [BareBlocks] stores the vtable mapping in a separate global table.
  *
  * But in JS, we are empowered to *annotate* any non-primitive object with properties of our own. So we'll use that. The caveat is that primitives (numbers, booleans etc) don't let us do this (the sin of Java contra Smalltalk) so we are forced to do a little wrapping.
+ * 
+ * [OROM]: https://tinlizzie.org/VPRIPapers/tr2006003a_objmod.pdf
+ * [BareBlocks]: https://tinlizzie.org/VPRIPapers/m2007005a_barebloc.pdf
 */
 
 // vt(o) returns o's vtable, vt(o,v) sets it to v
@@ -23,7 +28,7 @@ function vt(obj, new_vt) {
     if (typeof obj === 'object') obj.vtable = new_vt;
 }
 
-/* A vtable is like a class. It represents the "behaviour" of an object, allowing multiple instances to share the same behaviour. In a more general system I would rename "vtable" to "method lookup object" or MLO, since that is functionally what it is.
+/* A vtable is like a class. It represents the "behaviour" of an object, allowing multiple instances to share the same behaviour. In a more general system I would rename "vtable" to "binder object", since that is functionally what it is.
  * In order to send a message to an object, a 'lookup' message is sent to its vtable. This recurses until hitting a base case.
  * 
  * Because Id is relative, it wraps a given platform, in our case JS. Therefore, the default language in which to express code is JS. All activity in the system will be split into JS functions; the Id object model is simply a way to specify which JS code will get executed in response to which messages on which objects.
@@ -110,8 +115,10 @@ vtables.Primitive           = send(vtables.Object,    'newDelegatingToMe', 'Prim
 vtables.primitive.boolean   = send(vtables.Primitive, 'newDelegatingToMe', 'Boolean');
 vtables.primitive.number    = send(vtables.Primitive, 'newDelegatingToMe', 'Number');
 vtables.primitive.string    = send(vtables.Primitive, 'newDelegatingToMe', 'String');
-vtables.primitive.object    = send(vtables.Primitive, 'newDelegatingToMe', 'Null'); // for Null
+vtables.primitive.object    = send(vtables.Primitive, 'newDelegatingToMe', 'Null'); // since typeof null = 'object'
 vtables.primitive.undefined = send(vtables.Primitive, 'newDelegatingToMe', 'Undefined');
 
 send(vtables.Primitive, 'addMethod', 'log', self => {console.log(self);});
 send(vtables.Object,    'addMethod', 'log', self => {console.log(self.name);});
+
+[3, vtables.Object, null, vtables.Vtable, undefined].forEach(o => send(o, 'log'));
