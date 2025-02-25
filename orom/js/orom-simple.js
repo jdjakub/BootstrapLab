@@ -17,6 +17,18 @@
  * [BareBlocks]: https://tinlizzie.org/VPRIPapers/m2007005a_barebloc.pdf
 */
 
+// For entering the debugger in a JS console statement. Add it as a dummy param
+// or use it to wrap a param in a function call so it evaluates first.
+// E.g: I want to step through the execution of `foo(1, 2, 3)`.
+// So I put: `foo(1, 2, DEBUG(3))` or `foo(1, 2, 3, DEBUG())`.
+DEBUG = (x) => { debugger; return x; };
+// `last([1,2,3])` = 3, `last([1,2,3], 2)` = 2
+last = (arr, n) => arr[arr.length-(n || 1)];
+// Interpose anywhere in an expression to transparently probe its value.
+// E.g. `foo(1, bar(x)*baz(y))` - I wonder what the 2nd argument is.
+// So I put: `foo(1, log(bar(x)*baz(y)))`
+log = (...args) => { console.log(...args); return last(args); };
+
 // vt(o) returns o's vtable, vt(o,v) sets it to v
 function vt(obj, new_vt) {
     let curr_vtable;
@@ -66,8 +78,33 @@ vt(vtables.Object, vtables.Vtable);
 
 vtables.Vtable.parent = vtables.Object;
 
+// Here is where we will cache the results of sending 'lookup'
+bind_cache = new Array(31); // apparently prime numbers are good idk
+
+// We'll install its initialisation in Object
+function object_flushCache(self) {
+    log('Clearing bind cache...');
+    for (let i=0; i<bind_cache.length; i++) {
+        bind_cache[i] = {vtable: null, selector: null, method_desc: null};
+    }
+}
+
+function peek_cache() {
+    for (let i=0; i<bind_cache.length; i++) {
+        const {vtable, selector} = bind_cache[i];
+        if (vtable !== null) log(`${vtable.name} >> ${selector}`);
+    }
+}
+
+// Creates or updates the method descriptor in the vtable `self`.
 function vtable_addMethod(self, symbol, method) {
-    self.entries[symbol] = method;
+    let method_desc = self.entries[symbol];
+    if (method_desc === undefined)
+        method_desc = self.entries[symbol] = {};
+    method_desc.method = method; // Also updates all cache lines holding onto this method descriptor
+    // If the method lookup algorithm is being changed, all bets are off!
+    if (vt(self) === vtables.Vtable && symbol === 'lookup')
+        object_flushCache();
 }
 
 // We want to send addMethod,
@@ -78,23 +115,53 @@ function vtable_addMethod(self, symbol, method) {
 vtable_addMethod(vtables.Vtable, 'addMethod', vtable_addMethod);
 
 function vtable_lookup(self, symbol) {
-    let method = self.entries[symbol];
-    if (method !== undefined) return method;
+    let method_desc = self.entries[symbol];
+    if (method_desc !== undefined) return method_desc;
     if (self.parent !== undefined)
         return send(self.parent, 'lookup', symbol);
 }
 
 // Make Vtable aware of lookup...
 vtable_addMethod(vtables.Vtable, 'lookup', vtable_lookup);
+// (This will call object_flushCache thereby initialising the cache)
+
+function cachehash(vtable, selector) {
+    const str = vtable.name + selector;
+    // thanks https://stackoverflow.com/a/8831937
+    let hash = 0;
+    for (let i=0, len=str.length; i<len; i++) {
+        let chr = str.charCodeAt(i);
+        hash = (hash << 5) - hash + chr;
+        hash |= 0; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+}
 
 /* Now we may define bind, which resolves the appropriate method for a selector
  * in the context of the receiver object.
 */
 function bind(recv, selector) {
-    let vtable = vt(recv);
+    const vtable = vt(recv);
+    // Catch the fixed-point case
     if (recv === vtables.Vtable && selector === 'lookup')
-        return vtable_lookup(vtable, 'lookup');
-    return send(vtable, 'lookup', selector);
+        return vtable_lookup;
+    // Consult the cache
+    const offset = cachehash(vtable, selector) % bind_cache.length;
+    const cache_line = bind_cache[offset];
+    const is_collision = !(cache_line.vtable === vtable && cache_line.selector === selector);
+    let method_desc;
+    if (is_collision) {
+        log(`Miss: ${vtable.name} >> ${selector}`);
+        method_desc = send(vtable, 'lookup', selector);
+    } else {
+        log(`Hit: ${vtable.name} >> ${selector}`);
+        return cache_line.method_desc.method;
+    }
+    // Update the cache
+    cache_line.vtable      = vtable;
+    cache_line.selector    = selector;
+    cache_line.method_desc = method_desc;
+    return method_desc.method;
 }
 
 function send(recv, selector, ...args) {
@@ -104,6 +171,8 @@ function send(recv, selector, ...args) {
 }
 
 // Now we can do:
+// Object addMethod invalidateCache object_invalidateCache
+send(vtables.Object, 'addMethod', 'flushCache', object_flushCache);
 // Vtable addMethod newInstance vtable_newInstance
 send(vtables.Vtable, 'addMethod', 'newInstance', vtable_newInstance);
 // Vtable addMethod newDelegatingToMe vtable_newDelegatingToMe
@@ -118,7 +187,40 @@ vtables.primitive.string    = send(vtables.Primitive, 'newDelegatingToMe', 'Stri
 vtables.primitive.object    = send(vtables.Primitive, 'newDelegatingToMe', 'Null'); // since typeof null = 'object'
 vtables.primitive.undefined = send(vtables.Primitive, 'newDelegatingToMe', 'Undefined');
 
-send(vtables.Primitive, 'addMethod', 'log', self => {console.log(self);});
-send(vtables.Object,    'addMethod', 'log', self => {console.log(self.name);});
+log('Finished initialising Id/JS.');
 
+// I want all objects to respond to 'log': okay, add it to Object
+send(vtables.Object,    'addMethod', 'log', self => {log(self.name);});
+// Wait, JS primitives don't have a name. I'll just override it for them
+send(vtables.Primitive, 'addMethod', 'log', self => {log(self);});
+
+// Now send 'log' to some JS primitives and objects (all Id Objects!)
+log("Testing 'log'...");
 [3, vtables.Object, null, vtables.Vtable, undefined].forEach(o => send(o, 'log'));
+
+// Let's edit the definition of 'log' for primitives
+log("Editing 'log'...");
+send(vtables.Primitive, 'addMethod', 'log', self => {console.log(self, '(primitives have no name)');});
+
+// Hopefully the cache will see the new method.
+log("Testing new 'log'...");
+[3, vtables.Object, null, vtables.Vtable, undefined].forEach(o => send(o, 'log'));
+
+// Let's edit the definition of 'lookup' ... carefully!
+function vtable_lookup2(self, symbol) {
+    // We'll make binding case-insensitive
+    // This may cause pairs of cache entries, but I think that's appropriate
+    // considering what the cache should and shouldn't know. It's supposed to be simple.
+    symbol = symbol.toLowerCase();
+    let method_desc = self.entries[symbol];
+    if (method_desc !== undefined) return method_desc;
+    if (self.parent !== undefined)
+        return send(self.parent, 'lookup', symbol);
+}
+
+log("Editing 'lookup'...");
+send(vtables.Vtable, 'addMethod', 'lookup', vtable_lookup2);
+
+// Hopefully the cache got cleared out and this will work...
+log("Testing new 'lookup'...");
+[3, vtables.Object, null, vtables.Vtable, undefined].forEach(o => send(o, 'LOG'));
